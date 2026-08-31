@@ -5,8 +5,40 @@ escalabilidad**. Como pediste, no las tomo en silencio: presento alternativas y
 recomiendo una. Las que dependen de información que solo vos tenés están en la
 sección **L (Preguntas)** al final.
 
-Cada decisión tiene una recomendación. Si estás de acuerdo con todas, la Fase 1 arranca
-con ellas. Si querés discutir alguna, es el momento.
+> ## ✅ Estado tras tus respuestas L1–L9 (2026-08-31)
+>
+> **CERRADAS y confirmadas:** D1 (ciudad = región; White Label 3ro = tenant nuevo),
+> D2 (Agent Core in-process/desacoplado, expone tools/APIs/eventos), D3 (Customer Agent
+> propiedad de Commerce OS sobre runtime de agent-core), D4 (RLS + contexto), D7
+> (dinero en enteros/centavos), D8 (config tipada + reglas acotadas), D9 (Node/TS), D10
+> (core agnóstico + módulos de vertical), D11 (fórmula corregida).
+>
+> **CERRADAS con matices tuyos:**
+> - **D5 (pagos):** V1 = Pet Shop propio, pago a la operación, **sin marketplace**.
+>   V2 = comercios externos vía **OAuth**, evaluar **Mercado Pago Split 1:1**, el
+>   comercio recibe su parte y la plataforma su comisión. Payment Orchestrator con
+>   `PaymentProvider` para no atarse a MP. Todo esto **queda diseñado** (ver
+>   [05-pagos-y-economia.md](05-pagos-y-economia.md) y [11-cierre.md](11-cierre.md)).
+> - **L1 (entidad legal):** V1 modela el Pet Shop propio como **Commerce/Tenant
+>   independiente** aunque legalmente sea la misma sociedad. Jerarquía
+>   `Plataforma → Tenant/Commerce(Pet Shop) → …`. **No** se crea una segunda sociedad
+>   para V1.
+> - **L4 (comisión/delivery):** **7% base como parámetro** (no constante), delivery por
+>   zona/distancia/modalidad, subsidio configurable. Los escenarios 5/7/10% ya están
+>   **calculados** (ver [11-cierre.md](11-cierre.md) §Profitability).
+>
+> **PENDIENTES — necesitan definición futura, NO bloquean la Fase 1:**
+> - **[VALIDACIÓN PROFESIONAL — contador/abogado AR]** Todo lo fiscal: quién es el
+>   vendedor de registro y quién factura en V1 (misma sociedad opera plataforma +
+>   Pet Shop), tratamiento de IVA/IIBB, y —para V2— si el esquema MP Split 1:1 evita
+>   que la plataforma quede como agregador/intermediario de pagos. El **software no
+>   asume** ninguna postura fiscal: `InvoiceIssuer` y el "quién-factura-a-quién" son
+>   configurables. **Marcado para validar antes de producción.**
+> - **[L4 números finales]** Los % definitivos de comisión y las políticas de subsidio
+>   se fijan como **config** tras revisar los escenarios; no hace falta para arrancar.
+> - **[L2 acceso MP]** Confirmar a futuro qué producto MP Split queda habilitado (V2).
+
+Cada decisión tiene una recomendación. Debajo queda el detalle y el razonamiento.
 
 ---
 

@@ -44,6 +44,11 @@ cierran ahora, sí obligan a reconstruir después. Son arreglables en Fase 0.
 | [08-seguridad-testing.md](08-seguridad-testing.md) | Aislamiento multi-tenant, secretos, RBAC/MFA, auditoría; estrategia de testing | H |
 | [09-api.md](09-api.md) | Contratos de API, versionado, idempotencia, webhooks | G |
 | [10-roadmap-riesgos.md](10-roadmap-riesgos.md) | Roadmap V1–V6 y riesgos | J, K |
+| **[11-cierre.md](11-cierre.md)** | **Cierre: los 10 entregables consolidados + escenarios de rentabilidad 5/7/10% (post L1–L9)** | **Todos** |
+
+> **Actualización (2026-08-31):** respondidas L1–L9. Decisiones cerradas y los 10
+> entregables previos a Fase 1 están en **[11-cierre.md](11-cierre.md)**. Empezá por ahí
+> si ya leíste la auditoría.
 
 ## Prioridad usada para ordenar todo
 
