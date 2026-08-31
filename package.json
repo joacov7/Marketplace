@@ -1,0 +1,29 @@
+{
+  "name": "commerce-os",
+  "version": "0.0.0",
+  "private": true,
+  "description": "White Label Multi-Tenant Commerce OS. Core agnóstico de vertical, configuration-first, multi-tenant con aislamiento por RLS. Deploy full-stack en Vercel (Next.js) + Neon.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --build --dry",
+    "clean": "tsc --build --clean",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "echo \"(lint boundaries pendiente F1)\" && exit 0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.9"
+  }
+}

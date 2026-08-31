@@ -38,6 +38,22 @@ sección **L (Preguntas)** al final.
 >   se fijan como **config** tras revisar los escenarios; no hace falta para arrancar.
 > - **[L2 acceso MP]** Confirmar a futuro qué producto MP Split queda habilitado (V2).
 
+> ## 🚀 Actualización de hosting (Fase 1): Vercel + Next.js + Neon
+>
+> Tras cerrar Fase 0, se decidió desplegar en **Vercel full-stack**. Esto **no cambia**
+> el diseño (RLS, Config Engine, modelo de datos, Payment Orchestrator, agent-core como
+> paquetes siguen igual), pero ajusta D9 y A2:
+> - **D9 (stack):** el backend deja de ser NestJS long-running y pasa a **Next.js
+>   (App Router + route handlers como BFF)** desplegado en Vercel. Sigue siendo TS y
+>   sigue siendo un monolito modular, ahora ejecutado como funciones serverless.
+> - **A2 (outbox):** al no haber worker residente, el outbox se **drena por Vercel Cron
+>   / Upstash QStash**, no por un proceso siempre vivo. El patrón (escribir evento en la
+>   misma transacción) es idéntico.
+> - **Postgres:** **Neon** (serverless, integra con Vercel; RLS con `SET LOCAL` funciona
+>   en modo transacción). **Redis → Upstash** (serverless).
+> - **Agent-core:** in-process dentro de la función para request/response del Customer
+>   Agent; las recomendaciones batch corren por Cron.
+
 Cada decisión tiene una recomendación. Debajo queda el detalle y el razonamiento.
 
 ---
