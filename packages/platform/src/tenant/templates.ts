@@ -30,6 +30,9 @@ export const PET_SHOP_TEMPLATE: VerticalTemplate = {
     { key: "features.loyalty", value: false },
     { key: "branding.displayName", value: "Pet Shop" },
     { key: "branding.primaryColor", value: "#2563eb" },
+    { key: "branding.secondaryColor", value: "#1e293b" },
+    { key: "branding.bannerText", value: "Todo para tu mascota, en el día" },
+    { key: "branding.layout", value: "grid" },
   ],
   enabledModules: [
     "catalog",

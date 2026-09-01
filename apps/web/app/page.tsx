@@ -7,13 +7,18 @@ import Storefront, { type StoreProduct } from "./storefront";
 export const dynamic = "force-dynamic"; // depende del tenant resuelto por request
 
 /** Normaliza un color de config a un hex CSS válido (con fallback). Defensivo. */
-function cssColor(v: string | undefined): string {
+function cssColor(v: string | undefined, fallback = "#2563eb"): string {
   const s = (v ?? "").replace(/^"+|"+$/g, "").trim();
-  return /^#[0-9a-fA-F]{6}$/.test(s) ? s : "#2563eb";
+  return /^#[0-9a-fA-F]{6}$/.test(s) ? s : fallback;
 }
 function cleanText(v: string | undefined, fallback: string): string {
   const s = (v ?? "").replace(/^"+|"+$/g, "").trim();
   return s.length > 0 ? s : fallback;
+}
+/** Sanea una URL de tema: solo http/https (evita javascript:/data: en img/css). Vacío si no. */
+function safeUrl(v: string | undefined): string {
+  const s = (v ?? "").replace(/^"+|"+$/g, "").trim();
+  return /^https?:\/\/[^\s"'<>]+$/i.test(s) ? s : "";
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -59,9 +64,14 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
   }
 
   try {
-    const [primary, displayName, agentEnabled, catalog] = await Promise.all([
+    const [primary, secondary, displayName, logoUrl, bannerText, bannerImageUrl, layout, agentEnabled, catalog] = await Promise.all([
       resolveConfigValue<string>(db(), "branding.primaryColor", { tenantId: tenant.tenantId }).then((r) => r.value),
+      resolveConfigValue<string>(db(), "branding.secondaryColor", { tenantId: tenant.tenantId }).then((r) => r.value),
       resolveConfigValue<string>(db(), "branding.displayName", { tenantId: tenant.tenantId }).then((r) => r.value),
+      resolveConfigValue<string>(db(), "branding.logoUrl", { tenantId: tenant.tenantId }).then((r) => r.value),
+      resolveConfigValue<string>(db(), "branding.bannerText", { tenantId: tenant.tenantId }).then((r) => r.value),
+      resolveConfigValue<string>(db(), "branding.bannerImageUrl", { tenantId: tenant.tenantId }).then((r) => r.value),
+      resolveConfigValue<string>(db(), "branding.layout", { tenantId: tenant.tenantId }).then((r) => r.value),
       resolveConfigValue<boolean>(db(), "features.customerAgent", { tenantId: tenant.tenantId }).then((r) => r.value),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
@@ -84,6 +94,11 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
         tenant={tenant.slug}
         displayName={cleanText(displayName, "Pet Shop")}
         primary={cssColor(primary)}
+        secondary={cssColor(secondary, "#1e293b")}
+        logoUrl={safeUrl(logoUrl)}
+        bannerText={cleanText(bannerText, "")}
+        bannerImageUrl={safeUrl(bannerImageUrl)}
+        layout={layout === "list" ? "list" : "grid"}
         agentEnabled={agentEnabled}
         products={products}
       />

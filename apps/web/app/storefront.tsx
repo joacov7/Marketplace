@@ -26,10 +26,16 @@ export default function Storefront(props: {
   tenant: string;
   displayName: string;
   primary: string;
+  secondary?: string;
+  logoUrl?: string;
+  bannerText?: string;
+  bannerImageUrl?: string;
+  layout?: "grid" | "list";
   agentEnabled: boolean;
   products: StoreProduct[];
 }) {
   const { tenant, primary } = props;
+  const layout = props.layout ?? "grid";
   const [cart, setCart] = useState<Cart>({});
   const [agentOpen, setAgentOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -139,12 +145,28 @@ export default function Storefront(props: {
 
   return (
     <main style={{ maxWidth: 820, margin: "0 auto", padding: 16 }}>
-      <header style={{ background: primary, color: "white", padding: "20px 16px", borderRadius: 12, marginBottom: 16 }}>
+      <header
+        style={{
+          color: "white",
+          padding: "20px 16px",
+          borderRadius: 12,
+          marginBottom: 16,
+          background: props.bannerImageUrl
+            ? `linear-gradient(135deg, ${primary}dd, ${(props.secondary ?? primary)}cc), url("${props.bannerImageUrl}") center/cover`
+            : `linear-gradient(135deg, ${primary}, ${props.secondary ?? primary})`,
+        }}
+      >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <h1 style={{ margin: 0, fontSize: 22 }}>{props.displayName}</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {props.logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={props.logoUrl} alt={props.displayName} style={{ height: 40, width: 40, objectFit: "contain", borderRadius: 8, background: "rgba(255,255,255,.9)", padding: 4 }} />
+            )}
+            <h1 style={{ margin: 0, fontSize: 22 }}>{props.displayName}</h1>
+          </div>
           <AccountWidget tenant={tenant} />
         </div>
-        <p style={{ margin: "6px 0 0", opacity: 0.9 }}>¿Qué necesitás para tu mascota?</p>
+        <p style={{ margin: "6px 0 0", opacity: 0.9 }}>{props.bannerText && props.bannerText.length > 0 ? props.bannerText : "¿Qué necesitás para tu mascota?"}</p>
         {props.agentEnabled && (
           <button
             onClick={() => setAgentOpen((v) => !v)}
@@ -160,16 +182,31 @@ export default function Storefront(props: {
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
         <section>
           <h2 style={{ fontSize: 16, color: "#444" }}>Productos</h2>
-          <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 10 }}>
+          <ul
+            style={{
+              listStyle: "none",
+              padding: 0,
+              display: "grid",
+              gap: 10,
+              gridTemplateColumns: layout === "grid" ? "repeat(auto-fill, minmax(200px, 1fr))" : "1fr",
+            }}
+          >
             {props.products.map((p) => (
-              <li key={p.variantId} style={cardStyle}>
+              <li
+                key={p.variantId}
+                style={
+                  layout === "grid"
+                    ? { ...cardStyle, flexDirection: "column", alignItems: "stretch", gap: 10 }
+                    : cardStyle
+                }
+              >
                 <span>
                   <strong>{p.productName}</strong>
                   <span style={{ color: "#999", marginLeft: 8, fontSize: 13 }}>
                     {p.variantName} · {p.sku}
                   </span>
                 </span>
-                <span style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <span style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: layout === "grid" ? "space-between" : undefined }}>
                   <b>{p.priceMinor ? money(Number(p.priceMinor), p.currency ?? "ARS") : "—"}</b>
                   {p.priceMinor && (
                     <button onClick={() => add(p.variantId, `${p.productName} ${p.variantName}`, Number(p.priceMinor))} style={btn(primary)}>

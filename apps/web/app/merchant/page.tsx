@@ -10,6 +10,15 @@ interface ReportSeries { day: string; orders: number; gmvMinor: string }
 interface ReportTop { productId: string; productName: string; unitsSold: number; revenueMinor: string }
 interface ReportAlert { variantId: string; productName: string; variantName: string; available: number; reserved: number }
 interface ReportData { summary: ReportSummary; series: ReportSeries[]; top: ReportTop[]; alerts: ReportAlert[] }
+interface Theme {
+  "branding.displayName": string;
+  "branding.primaryColor": string;
+  "branding.secondaryColor": string;
+  "branding.logoUrl": string;
+  "branding.bannerText": string;
+  "branding.bannerImageUrl": string;
+  "branding.layout": string;
+}
 
 const NEXT: Record<string, string[]> = {
   pending: ["preparing", "rejected"], preparing: ["ready"], ready: ["in_transit"],
@@ -30,7 +39,7 @@ export default function MerchantPanel() {
   const [tokenInput, setTokenInput] = useState("");
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [merchantId, setMerchantId] = useState<string>("");
-  const [tab, setTab] = useState<"catalogo" | "pedidos" | "reportes">("catalogo");
+  const [tab, setTab] = useState<"catalogo" | "pedidos" | "reportes" | "diseno">("catalogo");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -96,9 +105,9 @@ export default function MerchantPanel() {
       </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 14, borderBottom: "1px solid #eee" }}>
-        {(["catalogo", "pedidos", "reportes"] as const).map((t) => (
+        {(["catalogo", "pedidos", "reportes", "diseno"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} style={{ ...btnGhost, background: tab === t ? "#2563eb" : "#eee", color: tab === t ? "white" : "#333", borderRadius: "8px 8px 0 0" }}>
-            {t === "catalogo" ? "Catálogo" : t === "pedidos" ? "Pedidos" : "Reportes"}
+            {t === "catalogo" ? "Catálogo" : t === "pedidos" ? "Pedidos" : t === "reportes" ? "Reportes" : "Diseño"}
           </button>
         ))}
       </div>
@@ -107,7 +116,8 @@ export default function MerchantPanel() {
 
       {tab === "catalogo" ? <CatalogTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
         : tab === "pedidos" ? <OrdersTab tenant={tenant} token={token} onError={setError} />
-        : <ReportsTab tenant={tenant} token={token} onError={setError} />}
+        : tab === "reportes" ? <ReportsTab tenant={tenant} token={token} onError={setError} />
+        : <DesignTab tenant={tenant} token={token} onError={setError} />}
     </main>
   );
 }
@@ -322,6 +332,135 @@ function ReportsTab({ tenant, token, onError }: { tenant: string | null; token: 
               ))}
             </ul>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const DEFAULT_THEME: Theme = {
+  "branding.displayName": "Pet Shop",
+  "branding.primaryColor": "#2563eb",
+  "branding.secondaryColor": "#1e293b",
+  "branding.logoUrl": "",
+  "branding.bannerText": "",
+  "branding.bannerImageUrl": "",
+  "branding.layout": "grid",
+};
+
+function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+  return (
+    <label style={{ display: "block", marginBottom: 12 }}>
+      <span style={{ display: "block", fontSize: 13, color: "#555", marginBottom: 4 }}>{label}</span>
+      {children}
+      {hint && <span style={{ display: "block", fontSize: 11, color: "#aaa", marginTop: 2 }}>{hint}</span>}
+    </label>
+  );
+}
+
+function DesignTab({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const auth = { authorization: `Bearer ${token}` };
+  const set = (k: keyof Theme, v: string) => { setTheme((t) => ({ ...t, [k]: v })); setSaved(false); };
+
+  const load = useCallback(async () => {
+    if (!tenant) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/merchant/branding?tenant=${encodeURIComponent(tenant)}`, { headers: auth });
+      const d = await res.json();
+      setLoading(false);
+      if (!res.ok) { onError(d.error); return; }
+      setTheme({ ...DEFAULT_THEME, ...d.theme });
+    } catch (e) { setLoading(false); onError(String(e)); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function save() {
+    onError(null);
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/merchant/branding?tenant=${encodeURIComponent(tenant ?? "")}`, {
+        method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(theme),
+      });
+      const d = await res.json();
+      setSaving(false);
+      if (!res.ok) { onError(`${d.error}${d.key ? ` (${d.key})` : ""}`); return; }
+      setSaved(true);
+    } catch (e) { setSaving(false); onError(String(e)); }
+  }
+
+  const primary = theme["branding.primaryColor"] || "#2563eb";
+  const secondary = theme["branding.secondaryColor"] || "#1e293b";
+  const banner = theme["branding.bannerImageUrl"];
+
+  return (
+    <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+      <div style={card}>
+        <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>Diseño de la tienda</h3>
+        {loading && <p style={{ color: "#888" }}>Cargando…</p>}
+        <Field label="Nombre visible">
+          <input value={theme["branding.displayName"]} onChange={(e) => set("branding.displayName", e.target.value)} style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        </Field>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Field label="Color primario">
+            <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(primary) ? primary : "#2563eb"} onChange={(e) => set("branding.primaryColor", e.target.value)} style={{ width: 56, height: 34, border: "1px solid #ccc", borderRadius: 8, background: "white" }} />
+          </Field>
+          <Field label="Color secundario">
+            <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(secondary) ? secondary : "#1e293b"} onChange={(e) => set("branding.secondaryColor", e.target.value)} style={{ width: 56, height: 34, border: "1px solid #ccc", borderRadius: 8, background: "white" }} />
+          </Field>
+        </div>
+        <Field label="Logo (URL)" hint="http/https. Vacío = sin logo.">
+          <input value={theme["branding.logoUrl"]} onChange={(e) => set("branding.logoUrl", e.target.value)} placeholder="https://…/logo.png" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        </Field>
+        <Field label="Texto del banner" hint="Lema que se muestra bajo el nombre.">
+          <input value={theme["branding.bannerText"]} onChange={(e) => set("branding.bannerText", e.target.value)} placeholder="Todo para tu mascota, en el día" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        </Field>
+        <Field label="Imagen del banner (URL)" hint="http/https. Vacío = fondo de color.">
+          <input value={theme["branding.bannerImageUrl"]} onChange={(e) => set("branding.bannerImageUrl", e.target.value)} placeholder="https://…/banner.jpg" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        </Field>
+        <Field label="Disposición del catálogo">
+          <select value={theme["branding.layout"]} onChange={(e) => set("branding.layout", e.target.value)} style={{ ...input, width: "100%" }}>
+            <option value="grid">Grilla</option>
+            <option value="list">Lista</option>
+          </select>
+        </Field>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
+          <button onClick={save} disabled={saving} style={btn}>{saving ? "Guardando…" : "Guardar diseño"}</button>
+          {saved && <span style={{ color: "#2e7d32", fontSize: 13 }}>✓ Guardado. Recargá la tienda para verlo.</span>}
+        </div>
+      </div>
+
+      <div style={card}>
+        <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>Vista previa</h3>
+        <div
+          style={{
+            color: "white", padding: "20px 16px", borderRadius: 12,
+            background: banner
+              ? `linear-gradient(135deg, ${primary}dd, ${secondary}cc), url("${banner}") center/cover`
+              : `linear-gradient(135deg, ${primary}, ${secondary})`,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {theme["branding.logoUrl"] && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={theme["branding.logoUrl"]} alt="logo" style={{ height: 40, width: 40, objectFit: "contain", borderRadius: 8, background: "rgba(255,255,255,.9)", padding: 4 }} />
+            )}
+            <strong style={{ fontSize: 20 }}>{theme["branding.displayName"] || "Pet Shop"}</strong>
+          </div>
+          <p style={{ margin: "6px 0 0", opacity: 0.9 }}>{theme["branding.bannerText"] || "¿Qué necesitás para tu mascota?"}</p>
+        </div>
+        <div style={{ marginTop: 12, display: "grid", gap: 8, gridTemplateColumns: theme["branding.layout"] === "list" ? "1fr" : "1fr 1fr" }}>
+          {["Alimento premium", "Juguete"].map((n) => (
+            <div key={n} style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, display: "flex", flexDirection: theme["branding.layout"] === "list" ? "row" : "column", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 14 }}>{n}</span>
+              <button style={{ ...btn, background: primary, alignSelf: theme["branding.layout"] === "list" ? "center" : "stretch" }}>Agregar</button>
+            </div>
+          ))}
         </div>
       </div>
     </div>
