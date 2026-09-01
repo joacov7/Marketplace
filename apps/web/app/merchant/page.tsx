@@ -37,10 +37,15 @@ const LABEL: Record<string, string> = { preparing: "Preparar", ready: "Listo", i
 const COLOR: Record<string, string> = { pending: "#b26a00", preparing: "#1a73e8", ready: "#8e24aa", in_transit: "#00796b", delivered: "#2e7d32", delivery_failed: "#c62828", rejected: "#c62828", cancelled: "#777" };
 
 const money = (minor: string | number, c = "ARS") => (Number(minor) / 100).toLocaleString("es-AR", { style: "currency", currency: c });
-const btn: React.CSSProperties = { background: "#2563eb", color: "white", border: "none", borderRadius: 8, padding: "7px 12px", fontWeight: 600, cursor: "pointer" };
-const btnGhost: React.CSSProperties = { ...btn, background: "#eee", color: "#333" };
-const input: React.CSSProperties = { padding: "7px 9px", borderRadius: 8, border: "1px solid #ccc" };
-const card: React.CSSProperties = { background: "white", border: "1px solid #eee", borderRadius: 10, padding: 12 };
+const btn: React.CSSProperties = { background: "#2563eb", color: "white", border: "none", borderRadius: 9, padding: "8px 14px", fontWeight: 600, cursor: "pointer" };
+const btnGhost: React.CSSProperties = { ...btn, background: "#eef0f3", color: "#334" };
+const input: React.CSSProperties = { padding: "8px 10px", borderRadius: 9, border: "1px solid #d4d6dc", background: "white" };
+const card: React.CSSProperties = { background: "white", border: "1px solid #ececef", borderRadius: 12, padding: 14, boxShadow: "0 1px 3px rgba(0,0,0,.04)" };
+const PANEL_CSS = `
+.mbtn{transition:filter .15s ease, transform .05s ease;}
+.mbtn:hover{filter:brightness(1.05);}
+.mbtn:active{transform:scale(.98);}
+`;
 
 export default function MerchantPanel() {
   const [tenant, setTenant] = useState<string | null>(null);
@@ -89,33 +94,42 @@ export default function MerchantPanel() {
 
   if (!token) {
     return (
-      <main style={{ maxWidth: 480, margin: "12vh auto", padding: 16 }}>
-        <h1 style={{ fontSize: 20 }}>Panel del comercio</h1>
-        <p style={{ color: "#666" }}>Ingresá el token de acceso (por ahora el <code>ADMIN_API_TOKEN</code>; el login con RBAC + MFA es el paso siguiente).</p>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} placeholder="token" style={{ ...input, flex: 1 }} />
-          <button onClick={saveToken} style={btn}>Entrar</button>
+      <div style={{ background: "#f6f7f9", minHeight: "100vh", display: "grid", placeItems: "center", padding: 16 }}>
+        <style>{PANEL_CSS}</style>
+        <div style={{ ...card, maxWidth: 420, width: "100%", padding: 24 }}>
+          <div style={{ fontSize: 30, marginBottom: 6 }}>🐾</div>
+          <h1 style={{ fontSize: 21, margin: "0 0 4px" }}>Panel del comercio</h1>
+          <p style={{ color: "#6b7280", fontSize: 14, marginTop: 0 }}>Ingresá el token de acceso (por ahora el <code>ADMIN_API_TOKEN</code>; el login con RBAC + MFA es el paso siguiente).</p>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveToken()} placeholder="token" type="password" style={{ ...input, flex: 1 }} />
+            <button onClick={saveToken} className="mbtn" style={btn}>Entrar</button>
+          </div>
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main style={{ maxWidth: 860, margin: "0 auto", padding: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <strong>Comercio:</strong>
-          <select value={merchantId} onChange={(e) => setMerchantId(e.target.value)} style={input}>
-            {merchants.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-          <button onClick={newMerchant} style={btnGhost}>+ Nuevo comercio</button>
+    <div style={{ background: "#f6f7f9", minHeight: "100vh" }}>
+      <style>{PANEL_CSS}</style>
+      <main style={{ maxWidth: 920, margin: "0 auto", padding: "16px 16px 40px" }}>
+      <div style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 22 }}>🐾</span>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <span style={{ fontSize: 11, color: "#9aa0aa", textTransform: "uppercase", letterSpacing: ".04em" }}>Comercio</span>
+            <select value={merchantId} onChange={(e) => setMerchantId(e.target.value)} style={{ ...input, fontWeight: 600 }}>
+              {merchants.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+          <button onClick={newMerchant} className="mbtn" style={btnGhost}>+ Nuevo comercio</button>
         </div>
-        <button onClick={logout} style={btnGhost}>Salir</button>
+        <button onClick={logout} className="mbtn" style={btnGhost}>Salir</button>
       </div>
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 14, borderBottom: "1px solid #eee" }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#eef0f3", padding: 4, borderRadius: 12, width: "fit-content", maxWidth: "100%", flexWrap: "wrap" }}>
         {(["catalogo", "pedidos", "reportes", "diseno"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} style={{ ...btnGhost, background: tab === t ? "#2563eb" : "#eee", color: tab === t ? "white" : "#333", borderRadius: "8px 8px 0 0" }}>
+          <button key={t} onClick={() => setTab(t)} className="mbtn" style={{ border: "none", cursor: "pointer", fontWeight: 600, fontSize: 14, padding: "8px 16px", borderRadius: 9, background: tab === t ? "white" : "transparent", color: tab === t ? "#2563eb" : "#5b6270", boxShadow: tab === t ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>
             {t === "catalogo" ? "Catálogo" : t === "pedidos" ? "Pedidos" : t === "reportes" ? "Reportes" : "Diseño"}
           </button>
         ))}
@@ -127,7 +141,8 @@ export default function MerchantPanel() {
         : tab === "pedidos" ? <OrdersTab tenant={tenant} token={token} onError={setError} />
         : tab === "reportes" ? <ReportsTab tenant={tenant} token={token} onError={setError} />
         : <DesignTab tenant={tenant} token={token} onError={setError} />}
-    </main>
+      </main>
+    </div>
   );
 }
 
@@ -177,7 +192,7 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
           <input placeholder="Precio $" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} style={{ ...input, width: 110 }} />
           <input placeholder="Stock" value={f.stock} onChange={(e) => setF({ ...f, stock: e.target.value })} style={{ ...input, width: 90 }} />
           <input placeholder="Foto (URL https://…)" value={f.imageUrl} onChange={(e) => setF({ ...f, imageUrl: e.target.value })} style={{ ...input, flex: 1, minWidth: 200 }} />
-          <button onClick={addProduct} style={btn}>Agregar</button>
+          <button onClick={addProduct} className="mbtn" style={btn}>Agregar</button>
         </div>
       </div>
 
@@ -207,7 +222,7 @@ function CatalogRow({ it, onSave }: { it: CatalogItem; onSave: (variantId: strin
         <label style={{ fontSize: 12, color: "#777" }}>$ <input value={price} onChange={(e) => setPrice(e.target.value)} style={{ ...input, width: 90 }} /></label>
         <label style={{ fontSize: 12, color: "#777" }}>Stock <input value={stock} onChange={(e) => setStock(e.target.value)} style={{ ...input, width: 70 }} /></label>
         <input placeholder="Foto (URL)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} style={{ ...input, width: 180 }} />
-        <button onClick={() => onSave(it.variantId, price ? Math.round(Number(price) * 100) : null, Number(stock), imageUrl.trim())} style={btn}>Guardar</button>
+        <button onClick={() => onSave(it.variantId, price ? Math.round(Number(price) * 100) : null, Number(stock), imageUrl.trim())} className="mbtn" style={btn}>Guardar</button>
       </span>
     </li>
   );
@@ -240,7 +255,7 @@ function OrdersTab({ tenant, token, onError }: { tenant: string | null; token: s
 
   return (
     <div>
-      <button onClick={load} style={{ ...btnGhost, marginBottom: 10 }}>{loading ? "…" : "Actualizar"}</button>
+      <button onClick={load} className="mbtn" style={{ ...btnGhost, marginBottom: 10 }}>{loading ? "…" : "Actualizar"}</button>
       {orders.length === 0 ? <p style={{ color: "#888" }}>No hay pedidos pagados todavía.</p> : (
         <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 10 }}>
           {orders.map((o) => (
@@ -252,7 +267,7 @@ function OrdersTab({ tenant, token, onError }: { tenant: string | null; token: s
               <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {(NEXT[o.status] ?? []).length === 0 ? <span style={{ color: "#aaa", fontSize: 13 }}>— sin acciones —</span>
                   : (NEXT[o.status] ?? []).map((to) => (
-                    <button key={to} onClick={() => transition(o.sellerOrderId, to)} style={to === "rejected" || to === "delivery_failed" ? { ...btn, background: "#c62828" } : btn}>{LABEL[to] ?? to}</button>
+                    <button key={to} onClick={() => transition(o.sellerOrderId, to)} className="mbtn" style={to === "rejected" || to === "delivery_failed" ? { ...btn, background: "#c62828" } : btn}>{LABEL[to] ?? to}</button>
                   ))}
               </div>
             </li>
@@ -298,7 +313,7 @@ function ReportsTab({ tenant, token, onError }: { tenant: string | null; token: 
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <button onClick={load} style={{ ...btnGhost, justifySelf: "start" }}>{loading ? "…" : "Actualizar"}</button>
+      <button onClick={load} className="mbtn" style={{ ...btnGhost, justifySelf: "start" }}>{loading ? "…" : "Actualizar"}</button>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <Metric label="Pedidos pagados" value={String(s.paidOrders)} />
@@ -467,7 +482,7 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
           </Field>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
-          <button onClick={save} disabled={saving} style={btn}>{saving ? "Guardando…" : "Guardar diseño"}</button>
+          <button onClick={save} disabled={saving} className="mbtn" style={btn}>{saving ? "Guardando…" : "Guardar diseño"}</button>
           {saved && <span style={{ color: "#2e7d32", fontSize: 13 }}>✓ Guardado. Recargá la tienda para verlo.</span>}
         </div>
       </div>
