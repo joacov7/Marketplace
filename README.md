@@ -37,6 +37,17 @@ handlers con resolución de tenant en el borde), **Identity/auth + MFA**.
 **46 tests** en total (44 verdes + 2 gated a Neon). Los módulos de dominio viven en
 `@commerce/modules`, dueños de sus tablas (migración `0001_catalog_inventory.sql`).
 
+### F3 — Orders (parte 1) ✅
+
+| Pieza | Qué hace | Dónde |
+|-------|----------|-------|
+| **Modelo Order/SellerOrder/OrderItem** | Items cuelgan de seller_order → multi-seller = N seller_orders, **sin rehacer Order** ([E1]). Todo bajo RLS. | `orders/migrations/0002_orders.sql` |
+| **Máquina de estados** | Transiciones válidas del pedido (pago/global) y del seller_order (cumplimiento), con estados de compensación ([G2]) | `orders/state.ts` |
+| **createOrder / confirm / cancel** | Reserva stock atómica, enforce `maxSellersPerOrder` **por config** (V1=1; subir el flag habilita multi-seller), rollback atómico, eventos por outbox | `orders/orders.ts` |
+
+**56 tests** (54 verdes + 2 gated a Neon). Pendiente de F3: **Payments + ledger de doble
+partida** (allocations, refund parcial) y **Payment Orchestrator**.
+
 ## Estructura
 
 ```

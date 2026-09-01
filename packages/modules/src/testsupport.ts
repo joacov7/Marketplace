@@ -12,7 +12,8 @@ import type { PGlite } from "@electric-sql/pglite";
 export async function freshModulesDb(): Promise<{ pg: PGlite; db: TenantAwareDb }> {
   const here = dirname(fileURLToPath(import.meta.url));
   const catalog = readFileSync(join(here, "catalog", "migrations", "0001_catalog_inventory.sql"), "utf8");
-  return freshDb([catalog]);
+  const orders = readFileSync(join(here, "orders", "migrations", "0002_orders.sql"), "utf8");
+  return freshDb([catalog, orders]);
 }
 
 /** Crea un tenant + merchant listos para tests de catálogo/inventario. */
