@@ -68,6 +68,35 @@ Postgres. Pendiente de F3: integración real de Mercado Pago (difere a conexión
 **74 tests** (72 verdes + 2 gated a Neon). Los motores reproducen los números de Fase 0:
 $1.000/pedido plataforma, $5.250/pedido comercio, break-even 500 pedidos/mes.
 
+### App Next.js (BFF sobre Vercel) ✅
+
+`apps/web` — full-stack Next.js (App Router) desplegable en Vercel. **Compila con
+`next build`.**
+
+| Ruta | Qué hace |
+|------|----------|
+| `/` | Home PWA: resuelve tenant por subdominio, branding por config, catálogo del comercio |
+| `GET /api/health` | Health + ping a la DB |
+| `GET /api/catalog` | Catálogo del tenant resuelto (con contexto RLS) |
+| `POST /api/checkout` | Crea pedido (reserva stock) + intent de pago; requiere `Idempotency-Key` |
+| `POST /api/webhooks/payments/[merchantId]` | Captura idempotente (ledger + confirma pedido) |
+| `POST /api/admin/tenants` | Provisioning White Label por plantilla (gated por `ADMIN_API_TOKEN`) |
+| `GET /api/cron/outbox`, `/api/cron/reservations` | Vercel Cron: drena outbox / barre reservas vencidas |
+
+- **Resolución de tenant en el borde**: subdominio del Host (o `x-tenant` en dev) → id →
+  `withTenant`/RLS. Nunca de un parámetro del body. Función pura testeada.
+- **Deploy**: setear `DATABASE_URL` (Neon, rol no-superusuario), `ADMIN_API_TOKEN`,
+  `CRON_SECRET`. `vercel.json` define los crons.
+
+```bash
+# correr la app en dev (necesita DATABASE_URL apuntando a un Postgres con las migraciones)
+npm run build            # compila los paquetes del monorepo (dist)
+npm run dev -w @commerce/web
+# probar con un tenant: curl -H "x-tenant: gualeguay" localhost:3000/api/catalog
+```
+
+**79 tests** en total (77 verdes + 2 gated a Neon).
+
 ## Estructura
 
 ```
