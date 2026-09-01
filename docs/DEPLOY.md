@@ -40,8 +40,12 @@ Crea un tenant `gualeguay` (plantilla Pet Shop), un comercio y 3 productos con s
 1. Importá el repo en [vercel.com/new](https://vercel.com/new).
 2. **Root Directory**: `apps/web`.
    Vercel detecta el monorepo (npm workspaces) e instala desde la raíz solo. El
-   `apps/web/vercel.json` ya define el **Build Command** (compila los paquetes y luego
-   `next build`) y los **crons**.
+   `apps/web/vercel.json` ya define `framework: nextjs`, el **Build Command**
+   (`npm --prefix ../.. run build && next build` → compila los paquetes del monorepo y
+   luego la app) y los **crons**. No hace falta tocar Output Directory: al declarar el
+   framework, Vercel usa `.next` (si ves el error *"No Output Directory named public"*,
+   es porque no se detectó el framework — asegurate de que `vercel.json` tenga
+   `"framework": "nextjs"` y no overridees el Build Command en el dashboard).
 3. **Environment Variables** (Production + Preview):
 
    | Variable | Valor |
