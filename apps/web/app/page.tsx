@@ -6,6 +6,16 @@ import Storefront, { type StoreProduct } from "./storefront";
 
 export const dynamic = "force-dynamic"; // depende del tenant resuelto por request
 
+/** Normaliza un color de config a un hex CSS válido (con fallback). Defensivo. */
+function cssColor(v: string | undefined): string {
+  const s = (v ?? "").replace(/^"+|"+$/g, "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(s) ? s : "#2563eb";
+}
+function cleanText(v: string | undefined, fallback: string): string {
+  const s = (v ?? "").replace(/^"+|"+$/g, "").trim();
+  return s.length > 0 ? s : fallback;
+}
+
 function Shell({ children }: { children: React.ReactNode }) {
   return <main style={{ maxWidth: 760, margin: "0 auto", padding: 16 }}>{children}</main>;
 }
@@ -62,7 +72,8 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
 
     const products: StoreProduct[] = catalog.map((v) => ({
       variantId: v.variantId,
-      name: v.name,
+      productName: v.productName ?? v.name,
+      variantName: v.name,
       sku: v.sku,
       priceMinor: v.price ? v.price.amountMinor.toString() : null,
       currency: v.price?.currency ?? null,
@@ -71,8 +82,8 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
     return (
       <Storefront
         tenant={tenant.slug}
-        displayName={displayName}
-        primary={primary}
+        displayName={cleanText(displayName, "Pet Shop")}
+        primary={cssColor(primary)}
         agentEnabled={agentEnabled}
         products={products}
       />

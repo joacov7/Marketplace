@@ -56,6 +56,8 @@ export async function setPrice(
 export interface VariantWithPrice {
   variantId: string;
   productId: string;
+  /** Nombre del producto (presente en listCatalog; opcional en lecturas por variante). */
+  productName?: string;
   sku: string;
   name: string;
   price: Money | null;
@@ -108,12 +110,13 @@ export async function listCatalog(
   const rows = await db.query<{
     variant_id: string;
     product_id: string;
+    product_name: string;
     sku: string;
     name: string;
     amount_minor: string | null;
     currency: CurrencyCode | null;
   }>(
-    `select v.id as variant_id, v.product_id, v.sku, v.name, p.amount_minor, p.currency
+    `select v.id as variant_id, v.product_id, pr.name as product_name, v.sku, v.name, p.amount_minor, p.currency
        from variants v
        join products pr on pr.id = v.product_id and pr.status = 'active'
        left join lateral (
@@ -122,12 +125,13 @@ export async function listCatalog(
           order by effective_from desc limit 1
        ) p on true
       where pr.merchant_id = $1
-      order by v.name`,
+      order by pr.name, v.name`,
     [merchantId, (at ?? new Date()).toISOString()],
   );
   return rows.map((row) => ({
     variantId: row.variant_id,
     productId: row.product_id,
+    productName: row.product_name,
     sku: row.sku,
     name: row.name,
     price:

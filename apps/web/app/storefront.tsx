@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 
 export interface StoreProduct {
   variantId: string;
-  name: string;
+  productName: string;
+  variantName: string;
   sku: string;
   priceMinor: string | null;
   currency: string | null;
@@ -137,13 +138,15 @@ export default function Storefront(props: {
             {props.products.map((p) => (
               <li key={p.variantId} style={cardStyle}>
                 <span>
-                  <strong>{p.name}</strong>
-                  <span style={{ color: "#999", marginLeft: 8, fontSize: 13 }}>{p.sku}</span>
+                  <strong>{p.productName}</strong>
+                  <span style={{ color: "#999", marginLeft: 8, fontSize: 13 }}>
+                    {p.variantName} · {p.sku}
+                  </span>
                 </span>
                 <span style={{ display: "flex", gap: 12, alignItems: "center" }}>
                   <b>{p.priceMinor ? money(Number(p.priceMinor), p.currency ?? "ARS") : "—"}</b>
                   {p.priceMinor && (
-                    <button onClick={() => add(p.variantId, p.name, Number(p.priceMinor))} style={btn(primary)}>
+                    <button onClick={() => add(p.variantId, `${p.productName} ${p.variantName}`, Number(p.priceMinor))} style={btn(primary)}>
                       Agregar
                     </button>
                   )}
