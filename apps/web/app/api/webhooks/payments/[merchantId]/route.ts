@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * `x-signature: valid` en desarrollo. La captura es idempotente por providerEventId.
  */
 export async function POST(req: Request, { params }: { params: { merchantId: string } }) {
-  const tenant = await resolveTenant();
+  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
   const signature = req.headers.get("x-signature");

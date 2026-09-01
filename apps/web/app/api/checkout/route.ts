@@ -16,7 +16,7 @@ interface CheckoutBody {
 }
 
 export async function POST(req: Request) {
-  const tenant = await resolveTenant();
+  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
   const idempotencyKey = req.headers.get("idempotency-key");
