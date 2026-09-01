@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      # Corre la suite completa, incluidos los invariantes críticos: aislamiento RLS
+      # (sobre Postgres en WASM), idempotencia del outbox, provisioning por plantilla.
+      # Si TEST_DATABASE_URL está configurada (secret), además valida el aislamiento
+      # contra un Postgres real vía postgres.js.
+      - run: npm test
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}

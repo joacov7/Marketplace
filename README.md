@@ -15,14 +15,17 @@ Cimiento de todo lo demás. Ya implementado y testeado:
 
 | Pieza | Qué hace | Dónde |
 |-------|----------|-------|
+| **Port de DB** | Los módulos dependen de `Db`/`TenantAwareDb`, no del driver. Adaptador postgres.js (Neon, prod) y PGlite (tests). | `packages/platform/src/db/port.ts`, `pg.ts` |
 | **Aislamiento multi-tenant (RLS)** | Postgres niega filas de otros tenants aunque el código olvide el `WHERE`. `withTenant()` setea `app.tenant_id` por transacción. **Probado sobre Postgres real.** | `packages/platform/src/db/` |
-| **Configuration Engine** | Resolución por herencia (platform→tenant→region→merchant→user), versionado, effective-dating, validación por JSON Schema | `packages/platform/src/config/` |
+| **Configuration Engine** | Resolución por herencia (platform→tenant→region→merchant→user), versionado, effective-dating, validación por JSON Schema. Registro tipado de claves + **repositorio** (persistencia). | `packages/platform/src/config/` |
+| **Provisioning de tenant** | `createTenant()` crea tenant + región y aplica una **plantilla de vertical** (Pet Shop) — todo por datos, cero código por tenant. | `packages/platform/src/tenant/` |
 | **RBAC scopeado** | Permisos verbo:recurso con contención por scope; sin cruce entre tenants; flag de MFA | `packages/platform/src/rbac/` |
 | **Money** | Aritmética en centavos (nunca float) + `allocate` que reparte sin perder centavos (PaymentAllocation) | `packages/platform/src/money/` |
 | **Outbox transaccional** | Evento en la misma tx que el cambio de estado; drenado por Cron/QStash | `packages/platform/src/outbox/` |
 | **Contracts** | Tipos canónicos sin lógica (Money, TenantContext, Config, RBAC, Event) | `packages/contracts/` |
 
-Pendiente de F1: app Next.js (BFF + route handlers), Identity/auth, provisioning de tenant.
+**37 tests** (35 verdes + 2 gated a Neon). Pendiente de F1: app **Next.js** (BFF + route
+handlers con resolución de tenant en el borde), **Identity/auth + MFA**.
 
 ## Estructura
 
