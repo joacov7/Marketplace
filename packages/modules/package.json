@@ -6,7 +6,8 @@
   "exports": {
     "./catalog": { "types": "./dist/catalog/index.d.ts", "default": "./dist/catalog/index.js" },
     "./inventory": { "types": "./dist/inventory/index.d.ts", "default": "./dist/inventory/index.js" },
-    "./orders": { "types": "./dist/orders/index.d.ts", "default": "./dist/orders/index.js" }
+    "./orders": { "types": "./dist/orders/index.d.ts", "default": "./dist/orders/index.js" },
+    "./payments": { "types": "./dist/payments/index.d.ts", "default": "./dist/payments/index.js" }
   },
   "scripts": {
     "build": "tsc --build"

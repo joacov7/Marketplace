@@ -45,8 +45,17 @@ handlers con resolución de tenant en el borde), **Identity/auth + MFA**.
 | **Máquina de estados** | Transiciones válidas del pedido (pago/global) y del seller_order (cumplimiento), con estados de compensación ([G2]) | `orders/state.ts` |
 | **createOrder / confirm / cancel** | Reserva stock atómica, enforce `maxSellersPerOrder` **por config** (V1=1; subir el flag habilita multi-seller), rollback atómico, eventos por outbox | `orders/orders.ts` |
 
-**56 tests** (54 verdes + 2 gated a Neon). Pendiente de F3: **Payments + ledger de doble
-partida** (allocations, refund parcial) y **Payment Orchestrator**.
+### F3 — Payments + Ledger ✅
+
+| Pieza | Qué hace | Dónde |
+|-------|----------|-------|
+| **Payment Orchestrator** | Abstracción `PaymentProvider` (no atarse a MP); provider fake para tests y para el flujo V1 "pago a la operación" | `payments/provider.ts` |
+| **Allocations** | Reparto exacto GMV+delivery (partición sin perder centavos); fórmula corregida de Fase 0 (comisión sobre GMV, GMV no es ingreso) | `payments/allocations.ts` |
+| **Ledger de doble partida** | Fuente de verdad del dinero; `postLedger` exige balance; saldos por cuenta para conciliación/payouts | `payments/ledger.ts` |
+| **capture / refund** | Captura idempotente por `provider_event_id` (webhook repetido no duplica); refund parcial que **preserva las demás partidas** (#9) | `payments/payments.ts` |
+
+**63 tests** (61 verdes + 2 gated a Neon). Todos los invariantes de dinero probados sobre
+Postgres. Pendiente de F3: integración real de Mercado Pago (difere a conexión de cuenta).
 
 ## Estructura
 

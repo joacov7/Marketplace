@@ -13,7 +13,8 @@ export async function freshModulesDb(): Promise<{ pg: PGlite; db: TenantAwareDb 
   const here = dirname(fileURLToPath(import.meta.url));
   const catalog = readFileSync(join(here, "catalog", "migrations", "0001_catalog_inventory.sql"), "utf8");
   const orders = readFileSync(join(here, "orders", "migrations", "0002_orders.sql"), "utf8");
-  return freshDb([catalog, orders]);
+  const payments = readFileSync(join(here, "payments", "migrations", "0003_payments.sql"), "utf8");
+  return freshDb([catalog, orders, payments]);
 }
 
 /** Crea un tenant + merchant listos para tests de catálogo/inventario. */
