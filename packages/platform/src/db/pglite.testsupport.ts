@@ -35,11 +35,15 @@ export function pgliteDb(pg: PGlite): TenantAwareDb {
   };
 }
 
-/** Crea una PGlite con la migración base aplicada, para tests. */
-export async function freshDb(): Promise<{ pg: PGlite; db: TenantAwareDb }> {
+/**
+ * Crea una PGlite con la migración base aplicada, para tests. Los módulos pasan sus
+ * propias migraciones en `extraMigrations` (SQL ya leído), que se aplican en orden luego
+ * de la base — así cada módulo es dueño de sus tablas sin que platform las conozca.
+ */
+export async function freshDb(extraMigrations: string[] = []): Promise<{ pg: PGlite; db: TenantAwareDb }> {
   const here = dirname(fileURLToPath(import.meta.url));
   const pg = await PGlite.create();
-  const migration = readFileSync(join(here, "migrations", "0000_init.sql"), "utf8");
-  await pg.exec(migration);
+  await pg.exec(readFileSync(join(here, "migrations", "0000_init.sql"), "utf8"));
+  for (const sql of extraMigrations) await pg.exec(sql);
   return { pg, db: pgliteDb(pg) };
 }

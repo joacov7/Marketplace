@@ -27,6 +27,16 @@ Cimiento de todo lo demás. Ya implementado y testeado:
 **37 tests** (35 verdes + 2 gated a Neon). Pendiente de F1: app **Next.js** (BFF + route
 handlers con resolución de tenant en el borde), **Identity/auth + MFA**.
 
+### F2 — Catálogo + Inventario ✅
+
+| Pieza | Qué hace | Dónde |
+|-------|----------|-------|
+| **Catálogo** | Productos, variantes y precios versionados (precio actual = último vigente; base para re-cotizar recompras) | `packages/modules/src/catalog/` |
+| **Inventario + reserva atómica** | Guard anti-oversell ([G1]): decremento condicional `available >= qty`; ciclo reserve(TTL)→confirm/release; barrido de vencidas por cron. **Probado.** | `packages/modules/src/inventory/` |
+
+**46 tests** en total (44 verdes + 2 gated a Neon). Los módulos de dominio viven en
+`@commerce/modules`, dueños de sus tablas (migración `0001_catalog_inventory.sql`).
+
 ## Estructura
 
 ```
