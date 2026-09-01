@@ -6,7 +6,7 @@ import {
 } from "@commerce/platform";
 import { type Result, ok, err, type CurrencyCode } from "@commerce/contracts";
 import { reserveStock, confirmReservation, releaseReservation } from "../inventory/inventory.js";
-import { canTransitionOrder } from "./state.js";
+import { canTransitionOrder, canTransitionSellerOrder, type SellerOrderStatus } from "./state.js";
 
 export interface CreateOrderInput {
   tenantId: string;
@@ -189,6 +189,84 @@ export interface OrderView {
   currency: CurrencyCode;
   totalMinor: bigint;
   sellerOrders: Array<{ id: string; merchantId: string; status: string; subtotalMinor: bigint }>;
+}
+
+export interface SellerOrderRow {
+  sellerOrderId: string;
+  orderId: string;
+  merchantId: string;
+  customerId: string | null;
+  status: SellerOrderStatus;
+  subtotalMinor: bigint;
+  currency: string;
+  itemCount: number;
+  createdAt: string;
+}
+
+/**
+ * Lista los seller_orders PAGADOS (la cola de preparación del comercio). Solo pedidos ya
+ * confirmados; los `pending_payment` no se muestran. Corre con contexto de tenant (RLS).
+ */
+export async function listSellerOrders(db: Db, opts: { limit?: number } = {}): Promise<SellerOrderRow[]> {
+  const rows = await db.query<{
+    seller_order_id: string;
+    order_id: string;
+    merchant_id: string;
+    customer_id: string | null;
+    status: SellerOrderStatus;
+    subtotal_minor: string;
+    currency: string;
+    item_count: string;
+    created_at: string;
+  }>(
+    `select so.id as seller_order_id, so.order_id, so.merchant_id, o.customer_id, so.status,
+            so.subtotal_minor, o.currency, o.created_at,
+            (select count(*) from order_items oi where oi.seller_order_id = so.id) as item_count
+       from seller_orders so
+       join orders o on o.id = so.order_id
+      where o.status in ('confirmed','completed','partially_refunded')
+      order by o.created_at desc
+      limit $1`,
+    [opts.limit ?? 100],
+  );
+  return rows.map((r) => ({
+    sellerOrderId: r.seller_order_id,
+    orderId: r.order_id,
+    merchantId: r.merchant_id,
+    customerId: r.customer_id,
+    status: r.status,
+    subtotalMinor: BigInt(r.subtotal_minor),
+    currency: r.currency,
+    itemCount: Number(r.item_count),
+    createdAt: new Date(r.created_at).toISOString(),
+  }));
+}
+
+/**
+ * Transiciona el estado de CUMPLIMIENTO de un seller_order (pending→preparing→ready→
+ * in_transit→delivered, o rejected/failed) validando la máquina de estados. Emite evento.
+ */
+export async function transitionSellerOrder(
+  db: TenantAwareDb,
+  tenantId: string,
+  sellerOrderId: string,
+  to: SellerOrderStatus,
+): Promise<Result<true, string>> {
+  try {
+    await db.withTenant(tenantId, async (tx) => {
+      const [row] = await tx.query<{ status: SellerOrderStatus }>(
+        `select status from seller_orders where id = $1`,
+        [sellerOrderId],
+      );
+      if (!row) throw new Error("seller_order_not_found");
+      if (!canTransitionSellerOrder(row.status, to)) throw new Error(`invalid_transition:${row.status}->${to}`);
+      await tx.query(`update seller_orders set status = $2 where id = $1`, [sellerOrderId, to]);
+      await enqueueEvent(tx, { tenantId, type: `seller_order.${to}`, payload: { sellerOrderId } });
+    });
+    return ok(true);
+  } catch (e) {
+    return err(e instanceof Error ? e.message : String(e));
+  }
 }
 
 export async function getOrder(db: Db, orderId: string): Promise<OrderView | null> {

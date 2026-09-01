@@ -4,7 +4,7 @@ import { type TenantAwareDb, setConfigValue } from "@commerce/platform";
 import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
 import { createProduct, addVariant } from "../catalog/catalog.js";
 import { setStock, getStock } from "../inventory/inventory.js";
-import { createOrder, confirmOrder, cancelOrder, getOrder } from "./orders.js";
+import { createOrder, confirmOrder, cancelOrder, getOrder, listSellerOrders, transitionSellerOrder } from "./orders.js";
 
 async function variantWithStock(
   db: TenantAwareDb,
@@ -142,6 +142,31 @@ describe("Orders — creación, reserva, confirmación, cancelación", () => {
     expect(cancel.ok).toBe(true);
     // el stock ya fue consumido por confirm; cancelar no lo repone (las reservas no están 'held')
     expect(await db.withTenant(tenantId, (tx) => getStock(tx, v))).toEqual({ available: 7, reserved: 0 });
+  });
+
+  it("panel del comercio: lista seller_orders pagados y avanza el cumplimiento", async () => {
+    const v = await variantWithStock(db, tenantId, merchantId, "SP", 10);
+    const created = await createOrder(db, {
+      tenantId,
+      sellers: [{ merchantId, items: [{ variantId: v, qty: 1, unitPriceMinor: 1000n }] }],
+    });
+    if (!created.ok) throw new Error("create falló");
+    // no aparece hasta que esté pagado (confirmado)
+    let list = await db.withTenant(tenantId, (tx) => listSellerOrders(tx));
+    expect(list.some((r) => r.sellerOrderId === created.value.sellerOrderIds[0])).toBe(false);
+
+    await confirmOrder(db, tenantId, created.value.orderId);
+    list = await db.withTenant(tenantId, (tx) => listSellerOrders(tx));
+    const row = list.find((r) => r.sellerOrderId === created.value.sellerOrderIds[0]);
+    expect(row?.status).toBe("pending");
+    expect(row?.itemCount).toBe(1);
+
+    const soId = created.value.sellerOrderIds[0]!;
+    expect((await transitionSellerOrder(db, tenantId, soId, "preparing")).ok).toBe(true);
+    expect((await transitionSellerOrder(db, tenantId, soId, "ready")).ok).toBe(true);
+    // transición inválida
+    const bad = await transitionSellerOrder(db, tenantId, soId, "delivered");
+    expect(bad.ok).toBe(false);
   });
 
   it("cancelar un pedido pending_payment libera el stock reservado", async () => {
