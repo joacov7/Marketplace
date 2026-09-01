@@ -145,13 +145,16 @@ export default function Storefront(props: {
   }
 
   return (
-    <main style={{ maxWidth: 820, margin: "0 auto", padding: 16 }}>
+    <div style={{ background: "#f6f7f9", minHeight: "100vh" }}>
+      <style>{STORE_CSS}</style>
+      <main style={{ maxWidth: 960, margin: "0 auto", padding: "16px 16px 40px" }}>
       <header
         style={{
           color: "white",
-          padding: "20px 16px",
-          borderRadius: 12,
-          marginBottom: 16,
+          padding: "28px 22px",
+          borderRadius: 16,
+          marginBottom: 20,
+          boxShadow: "0 8px 30px rgba(0,0,0,.10)",
           background: props.bannerImageUrl
             ? `linear-gradient(135deg, ${primary}dd, ${(props.secondary ?? primary)}cc), url("${props.bannerImageUrl}") center/cover`
             : `linear-gradient(135deg, ${primary}, ${props.secondary ?? primary})`,
@@ -163,11 +166,11 @@ export default function Storefront(props: {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={props.logoUrl} alt={props.displayName} style={{ height: 40, width: 40, objectFit: "contain", borderRadius: 8, background: "rgba(255,255,255,.9)", padding: 4 }} />
             )}
-            <h1 style={{ margin: 0, fontSize: 22 }}>{props.displayName}</h1>
+            <h1 style={{ margin: 0, fontSize: 26, letterSpacing: "-0.02em" }}>{props.displayName}</h1>
           </div>
           <AccountWidget tenant={tenant} />
         </div>
-        <p style={{ margin: "6px 0 0", opacity: 0.9 }}>{props.bannerText && props.bannerText.length > 0 ? props.bannerText : "¿Qué necesitás para tu mascota?"}</p>
+        <p style={{ margin: "10px 0 0", opacity: 0.92, fontSize: 16 }}>{props.bannerText && props.bannerText.length > 0 ? props.bannerText : "¿Qué necesitás para tu mascota?"}</p>
         {props.agentEnabled && (
           <button
             onClick={() => setAgentOpen((v) => !v)}
@@ -180,49 +183,31 @@ export default function Storefront(props: {
 
       {agentOpen && <AgentPanel tenant={tenant} primary={primary} onAdd={add} />}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 24 }}>
         <section>
-          <h2 style={{ fontSize: 16, color: "#444" }}>Productos</h2>
-          <ul
-            style={{
-              listStyle: "none",
-              padding: 0,
-              display: "grid",
-              gap: 10,
-              gridTemplateColumns: layout === "grid" ? "repeat(auto-fill, minmax(200px, 1fr))" : "1fr",
-            }}
-          >
-            {props.products.map((p) => (
-              <li
-                key={p.variantId}
-                style={
-                  layout === "grid"
-                    ? { ...cardStyle, flexDirection: "column", alignItems: "stretch", gap: 10 }
-                    : cardStyle
-                }
-              >
-                <Thumb src={p.imageUrl} alt={p.productName} layout={layout} />
-                <span>
-                  <strong>{p.productName}</strong>
-                  <span style={{ color: "#999", marginLeft: 8, fontSize: 13 }}>
-                    {p.variantName} · {p.sku}
-                  </span>
-                </span>
-                <span style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: layout === "grid" ? "space-between" : undefined }}>
-                  <b>{p.priceMinor ? money(Number(p.priceMinor), p.currency ?? "ARS") : "—"}</b>
-                  {p.priceMinor && (
-                    <button onClick={() => add(p.variantId, `${p.productName} ${p.variantName}`, Number(p.priceMinor))} style={btn(primary)}>
-                      Agregar
-                    </button>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <h2 style={sectionTitle}>Productos <span style={{ color: "#aaa", fontWeight: 500, fontSize: 14 }}>({props.products.length})</span></h2>
+          {props.products.length === 0 ? (
+            <p style={{ color: "#888" }}>Todavía no hay productos cargados.</p>
+          ) : (
+            <ul
+              style={{
+                listStyle: "none",
+                padding: 0,
+                margin: 0,
+                display: "grid",
+                gap: 14,
+                gridTemplateColumns: layout === "grid" ? "repeat(auto-fill, minmax(180px, 1fr))" : "1fr",
+              }}
+            >
+              {props.products.map((p) => (
+                <ProductCard key={p.variantId} p={p} layout={layout} primary={primary} inCart={cart[p.variantId]?.qty ?? 0} onAdd={add} onSetQty={setQty} />
+              ))}
+            </ul>
+          )}
         </section>
 
         <section>
-          <h2 style={{ fontSize: 16, color: "#444" }}>Carrito</h2>
+          <h2 style={sectionTitle}>Carrito</h2>
           {items.length === 0 ? (
             <p style={{ color: "#888" }}>Tu carrito está vacío.</p>
           ) : (
@@ -243,7 +228,7 @@ export default function Storefront(props: {
                 <span>{money(total)}</span>
               </div>
               {!order && !checkingOut && (
-                <button onClick={startCheckout} style={{ ...btn(primary), width: "100%", marginTop: 12, padding: "10px" }}>
+                <button className="pbtn" onClick={startCheckout} style={{ ...btn(primary), width: "100%", marginTop: 12, padding: "11px" }}>
                   Finalizar compra
                 </button>
               )}
@@ -273,8 +258,8 @@ export default function Storefront(props: {
               )}
 
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                <button onClick={() => setCheckingOut(false)} style={{ ...btn("#888"), flex: 1 }}>Volver</button>
-                <button onClick={pay} disabled={busy} style={{ ...btn(primary), flex: 2 }}>
+                <button className="pbtn" onClick={() => setCheckingOut(false)} style={{ ...btn("#94969c"), flex: 1 }}>Volver</button>
+                <button className="pbtn" onClick={pay} disabled={busy} style={{ ...btn(primary), flex: 2 }}>
                   {busy ? "Procesando…" : quote ? `Pagar ${money(Number(quote.totalMinor))}` : "Pagar"}
                 </button>
               </div>
@@ -305,8 +290,9 @@ export default function Storefront(props: {
         </section>
       </div>
 
-      <footer style={{ marginTop: 28, color: "#aaa", fontSize: 12, textAlign: "center" }}>{props.displayName} · Commerce OS</footer>
-    </main>
+      <footer style={{ marginTop: 32, color: "#b0b0b8", fontSize: 12, textAlign: "center" }}>{props.displayName} · Commerce OS</footer>
+      </main>
+    </div>
   );
 }
 
@@ -432,28 +418,96 @@ function AgentPanel(props: { tenant: string; primary: string; onAdd: (variantId:
 
 const cardStyle: React.CSSProperties = {
   background: "white",
-  border: "1px solid #eee",
-  borderRadius: 10,
-  padding: 12,
+  border: "1px solid #ececef",
+  borderRadius: 12,
+  padding: 14,
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
+  boxShadow: "0 1px 3px rgba(0,0,0,.04)",
 };
+
+const sectionTitle: React.CSSProperties = { fontSize: 18, color: "#1e293b", letterSpacing: "-0.01em", margin: "0 0 12px" };
+
+/** CSS mínimo para hover/transiciones (los estilos inline no soportan :hover). */
+const STORE_CSS = `
+.pcard{transition:box-shadow .18s ease, transform .18s ease;}
+.pcard:hover{box-shadow:0 8px 24px rgba(0,0,0,.10); transform:translateY(-2px);}
+.pbtn{transition:filter .15s ease, transform .05s ease;}
+.pbtn:hover{filter:brightness(1.07);}
+.pbtn:active{transform:scale(.97);}
+.pimg{transition:transform .25s ease;}
+.pcard:hover .pimg{transform:scale(1.03);}
+`;
 
 /** Miniatura/foto de producto. En grilla ocupa el ancho; en lista es un cuadrado chico. */
 function Thumb({ src, alt, layout }: { src?: string; alt: string; layout: "grid" | "list" }) {
-  const size = layout === "grid" ? { width: "100%", height: 150 } : { width: 52, height: 52, flexShrink: 0 };
-  const common: React.CSSProperties = { ...size, borderRadius: 8, objectFit: "cover", background: "#f4f4f5" };
+  const size = layout === "grid" ? { width: "100%", height: 160 } : { width: 60, height: 60, flexShrink: 0 };
+  const common: React.CSSProperties = { ...size, borderRadius: 10, objectFit: "cover", background: "#f1f1f3", display: "block" };
   if (!src) {
-    return <span style={{ ...common, display: "grid", placeItems: "center", fontSize: layout === "grid" ? 40 : 22 }}>🐾</span>;
+    return <span style={{ ...common, display: "grid", placeItems: "center", fontSize: layout === "grid" ? 44 : 26 }}>🐾</span>;
   }
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt} style={common} />;
+  return <img className="pimg" src={src} alt={alt} style={common} />;
+}
+
+/** Tarjeta de producto. Grilla = card vertical (foto, nombre, precio+acción). Lista = fila. */
+function ProductCard({
+  p, layout, primary, inCart, onAdd, onSetQty,
+}: {
+  p: StoreProduct;
+  layout: "grid" | "list";
+  primary: string;
+  inCart: number;
+  onAdd: (variantId: string, name: string, priceMinor: number) => void;
+  onSetQty: (variantId: string, qty: number) => void;
+}) {
+  const price = p.priceMinor ? money(Number(p.priceMinor), p.currency ?? "ARS") : "—";
+  const addFn = () => onAdd(p.variantId, `${p.productName} ${p.variantName}`, Number(p.priceMinor));
+  const stepper = (
+    <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <button className="pbtn" onClick={() => onSetQty(p.variantId, inCart - 1)} style={qtyBtn} aria-label="Quitar uno">−</button>
+      <span style={{ minWidth: 18, textAlign: "center", fontWeight: 600 }}>{inCart}</span>
+      <button className="pbtn" onClick={() => onSetQty(p.variantId, inCart + 1)} style={qtyBtn} aria-label="Agregar uno">+</button>
+    </span>
+  );
+
+  if (layout === "list") {
+    return (
+      <li className="pcard" style={{ ...cardStyle, gap: 14 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+          <Thumb src={p.imageUrl} alt={p.productName} layout="list" />
+          <span style={{ minWidth: 0 }}>
+            <strong style={{ display: "block" }}>{p.productName}</strong>
+            <span style={{ color: "#9aa0aa", fontSize: 13 }}>{p.variantName} · {p.sku}</span>
+          </span>
+        </span>
+        <span style={{ display: "flex", gap: 14, alignItems: "center" }}>
+          <b style={{ fontSize: 16, whiteSpace: "nowrap" }}>{price}</b>
+          {p.priceMinor && (inCart > 0 ? stepper : <button className="pbtn" onClick={addFn} style={btn(primary)}>Agregar</button>)}
+        </span>
+      </li>
+    );
+  }
+
+  return (
+    <li className="pcard" style={{ ...cardStyle, flexDirection: "column", alignItems: "stretch", gap: 10, padding: 12, overflow: "hidden" }}>
+      <span style={{ overflow: "hidden", borderRadius: 10 }}><Thumb src={p.imageUrl} alt={p.productName} layout="grid" /></span>
+      <span style={{ minHeight: 40 }}>
+        <strong style={{ display: "block", lineHeight: 1.25 }}>{p.productName}</strong>
+        <span style={{ color: "#9aa0aa", fontSize: 12 }}>{p.variantName}</span>
+      </span>
+      <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto" }}>
+        <b style={{ fontSize: 17 }}>{price}</b>
+        {p.priceMinor && (inCart > 0 ? stepper : <button className="pbtn" onClick={addFn} style={btn(primary)}>Agregar</button>)}
+      </span>
+    </li>
+  );
 }
 function btn(primary: string): React.CSSProperties {
-  return { background: primary, color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontWeight: 600, cursor: "pointer" };
+  return { background: primary, color: "white", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" };
 }
-const qtyBtn: React.CSSProperties = { width: 26, height: 26, borderRadius: 6, border: "1px solid #ddd", background: "#fafafa", cursor: "pointer" };
+const qtyBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 8, border: "1px solid #dcdce0", background: "#fafafa", cursor: "pointer", fontSize: 16, lineHeight: 1 };
 const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 6 };
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
