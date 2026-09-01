@@ -19,6 +19,7 @@ const files = [
   "packages/platform/src/db/migrations/0005_auth.sql",
   "packages/modules/src/customer/migrations/0006_customer.sql",
   "packages/modules/src/orders/migrations/0007_orders_checkout.sql",
+  "packages/modules/src/catalog/migrations/0008_product_images.sql",
 ];
 
 const sql = postgres(url, { max: 1, prepare: false, onnotice: (n) => console.log("  ·", n.message) });

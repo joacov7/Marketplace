@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import type { TenantAwareDb } from "@commerce/platform";
 import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
-import { createProduct, addVariant, setPrice, getVariantWithPrice, listCatalog, listCatalogAdmin } from "./catalog.js";
+import { createProduct, addVariant, setPrice, getVariantWithPrice, listCatalog, listCatalogAdmin, setProductImageByVariant } from "./catalog.js";
 import { setStock } from "../inventory/inventory.js";
 
 describe("Catálogo — productos, variantes, precios", () => {
@@ -60,5 +60,35 @@ describe("Catálogo — productos, variantes, precios", () => {
     expect(row?.available).toBe(7);
     expect(row?.priceMinor).toBe(500_000n);
     expect(row?.productName).toBe("Collar");
+  });
+
+  it("guarda la foto del producto al crearlo y la expone en catálogo y panel", async () => {
+    const url = "https://cdn.example.com/pipeta.jpg";
+    const variantId = await db.withTenant(tenantId, async (tx) => {
+      const { productId } = await createProduct(tx, { tenantId, merchantId, slug: "pipeta", name: "Pipeta", imageUrl: url });
+      const v = await addVariant(tx, { tenantId, productId, sku: "PIP-1", name: "Único" });
+      await setPrice(tx, { tenantId, variantId: v.variantId, amountMinor: 800_000n });
+      return v.variantId;
+    });
+    const list = await db.withTenant(tenantId, (tx) => listCatalog(tx, merchantId));
+    expect(list.find((v) => v.variantId === variantId)?.imageUrl).toBe(url);
+    const admin = await db.withTenant(tenantId, (tx) => listCatalogAdmin(tx, merchantId));
+    expect(admin.find((r) => r.variantId === variantId)?.imageUrl).toBe(url);
+  });
+
+  it("setProductImageByVariant actualiza la foto de un producto existente", async () => {
+    const variantId = await db.withTenant(tenantId, async (tx) => {
+      const { productId } = await createProduct(tx, { tenantId, merchantId, slug: "correa", name: "Correa" });
+      const v = await addVariant(tx, { tenantId, productId, sku: "COR-1", name: "Único" });
+      await setPrice(tx, { tenantId, variantId: v.variantId, amountMinor: 300_000n });
+      return v.variantId;
+    });
+    await db.withTenant(tenantId, (tx) => setProductImageByVariant(tx, { tenantId, variantId, imageUrl: "https://cdn.example.com/correa.png" }));
+    const list = await db.withTenant(tenantId, (tx) => listCatalog(tx, merchantId));
+    expect(list.find((v) => v.variantId === variantId)?.imageUrl).toBe("https://cdn.example.com/correa.png");
+    // Limpiar la foto (null).
+    await db.withTenant(tenantId, (tx) => setProductImageByVariant(tx, { tenantId, variantId, imageUrl: null }));
+    const list2 = await db.withTenant(tenantId, (tx) => listCatalog(tx, merchantId));
+    expect(list2.find((v) => v.variantId === variantId)?.imageUrl).toBeNull();
   });
 });

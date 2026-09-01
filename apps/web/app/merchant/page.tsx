@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 interface Merchant { id: string; slug: string; name: string }
 interface SellerOrder { sellerOrderId: string; orderId: string; status: string; subtotalMinor: string; currency: string; itemCount: number; createdAt: string }
-interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; priceMinor: string | null; currency: string | null; available: number; status: string }
+interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; priceMinor: string | null; currency: string | null; available: number; status: string }
 interface ReportSummary { paidOrders: number; gmvMinor: string; deliveryRevenueMinor: string; commissionMinor: string; merchantPayoutMinor: string; refundsMinor: string; avgTicketMinor: string }
 interface ReportSeries { day: string; orders: number; gmvMinor: string }
 interface ReportTop { productId: string; productName: string; unitsSold: number; revenueMinor: string }
@@ -124,7 +124,7 @@ export default function MerchantPanel() {
 
 function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | null; token: string; merchantId: string; onError: (s: string | null) => void }) {
   const [items, setItems] = useState<CatalogItem[]>([]);
-  const [f, setF] = useState({ productName: "", sku: "", price: "", stock: "" });
+  const [f, setF] = useState({ productName: "", sku: "", price: "", stock: "", imageUrl: "" });
   const auth = { authorization: `Bearer ${token}` };
 
   const load = useCallback(async () => {
@@ -142,18 +142,18 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
     onError(null);
     const res = await fetch(`/api/merchant/catalog?tenant=${encodeURIComponent(tenant ?? "")}`, {
       method: "POST", headers: { ...auth, "content-type": "application/json" },
-      body: JSON.stringify({ merchantId, productName: f.productName, sku: f.sku, priceMinor: Math.round(Number(f.price) * 100), stock: Number(f.stock || 0) }),
+      body: JSON.stringify({ merchantId, productName: f.productName, sku: f.sku, priceMinor: Math.round(Number(f.price) * 100), stock: Number(f.stock || 0), imageUrl: f.imageUrl.trim() }),
     });
     const data = await res.json();
     if (!res.ok) { onError(data.error); return; }
-    setF({ productName: "", sku: "", price: "", stock: "" });
+    setF({ productName: "", sku: "", price: "", stock: "", imageUrl: "" });
     await load();
   }
 
-  async function save(variantId: string, priceMinor: number | null, stock: number) {
+  async function save(variantId: string, priceMinor: number | null, stock: number, imageUrl?: string) {
     await fetch(`/api/merchant/catalog/${variantId}?tenant=${encodeURIComponent(tenant ?? "")}`, {
       method: "PATCH", headers: { ...auth, "content-type": "application/json" },
-      body: JSON.stringify({ ...(priceMinor !== null ? { priceMinor } : {}), stock }),
+      body: JSON.stringify({ ...(priceMinor !== null ? { priceMinor } : {}), stock, ...(imageUrl !== undefined ? { imageUrl } : {}) }),
     });
     await load();
   }
@@ -167,6 +167,7 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
           <input placeholder="SKU" value={f.sku} onChange={(e) => setF({ ...f, sku: e.target.value })} style={{ ...input, width: 110 }} />
           <input placeholder="Precio $" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} style={{ ...input, width: 110 }} />
           <input placeholder="Stock" value={f.stock} onChange={(e) => setF({ ...f, stock: e.target.value })} style={{ ...input, width: 90 }} />
+          <input placeholder="Foto (URL https://…)" value={f.imageUrl} onChange={(e) => setF({ ...f, imageUrl: e.target.value })} style={{ ...input, flex: 1, minWidth: 200 }} />
           <button onClick={addProduct} style={btn}>Agregar</button>
         </div>
       </div>
@@ -180,16 +181,24 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
   );
 }
 
-function CatalogRow({ it, onSave }: { it: CatalogItem; onSave: (variantId: string, priceMinor: number | null, stock: number) => void }) {
+function CatalogRow({ it, onSave }: { it: CatalogItem; onSave: (variantId: string, priceMinor: number | null, stock: number, imageUrl?: string) => void }) {
   const [price, setPrice] = useState(it.priceMinor ? String(Number(it.priceMinor) / 100) : "");
   const [stock, setStock] = useState(String(it.available));
+  const [imageUrl, setImageUrl] = useState(it.imageUrl ?? "");
   return (
     <li style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-      <span><strong>{it.productName}</strong> <span style={{ color: "#999", fontSize: 13 }}>{it.variantName} · {it.sku}</span></span>
-      <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {it.imageUrl
+          // eslint-disable-next-line @next/next/no-img-element
+          ? <img src={it.imageUrl} alt={it.productName} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #eee" }} />
+          : <span style={{ width: 40, height: 40, borderRadius: 6, background: "#f2f2f2", display: "grid", placeItems: "center", fontSize: 16 }}>🐾</span>}
+        <span><strong>{it.productName}</strong> <span style={{ color: "#999", fontSize: 13 }}>{it.variantName} · {it.sku}</span></span>
+      </span>
+      <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ fontSize: 12, color: "#777" }}>$ <input value={price} onChange={(e) => setPrice(e.target.value)} style={{ ...input, width: 90 }} /></label>
         <label style={{ fontSize: 12, color: "#777" }}>Stock <input value={stock} onChange={(e) => setStock(e.target.value)} style={{ ...input, width: 70 }} /></label>
-        <button onClick={() => onSave(it.variantId, price ? Math.round(Number(price) * 100) : null, Number(stock))} style={btn}>Guardar</button>
+        <input placeholder="Foto (URL)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} style={{ ...input, width: 180 }} />
+        <button onClick={() => onSave(it.variantId, price ? Math.round(Number(price) * 100) : null, Number(stock), imageUrl.trim())} style={btn}>Guardar</button>
       </span>
     </li>
   );

@@ -13,15 +13,29 @@ export interface CreateProductInput {
   slug: string;
   name: string;
   description?: string;
+  /** URL de la foto principal (http/https; ya saneada por la capa de app). */
+  imageUrl?: string;
 }
 
 export async function createProduct(db: Db, input: CreateProductInput): Promise<{ productId: string }> {
   const [row] = await db.query<{ id: string }>(
-    `insert into products (tenant_id, merchant_id, slug, name, description)
-     values ($1,$2,$3,$4,$5) returning id`,
-    [input.tenantId, input.merchantId, input.slug, input.name, input.description ?? null],
+    `insert into products (tenant_id, merchant_id, slug, name, description, image_url)
+     values ($1,$2,$3,$4,$5,$6) returning id`,
+    [input.tenantId, input.merchantId, input.slug, input.name, input.description ?? null, input.imageUrl ?? null],
   );
   return { productId: row!.id };
+}
+
+/** Actualiza la foto de un producto (por variante, para no exponer product_id en el panel). */
+export async function setProductImageByVariant(
+  db: Db,
+  input: { tenantId: string; variantId: string; imageUrl: string | null },
+): Promise<void> {
+  await db.query(
+    `update products set image_url = $2
+       where id = (select product_id from variants where id = $1)`,
+    [input.variantId, input.imageUrl],
+  );
 }
 
 export async function addVariant(
@@ -58,6 +72,8 @@ export interface VariantWithPrice {
   productId: string;
   /** Nombre del producto (presente en listCatalog; opcional en lecturas por variante). */
   productName?: string;
+  /** URL de la foto del producto (null si no tiene). */
+  imageUrl?: string | null;
   sku: string;
   name: string;
   price: Money | null;
@@ -106,6 +122,7 @@ export interface CatalogAdminRow {
   productId: string;
   productName: string;
   productStatus: string;
+  imageUrl: string | null;
   variantName: string;
   sku: string;
   priceMinor: bigint | null;
@@ -123,6 +140,7 @@ export async function listCatalogAdmin(db: Db, merchantId: string): Promise<Cata
     product_id: string;
     product_name: string;
     product_status: string;
+    image_url: string | null;
     variant_name: string;
     sku: string;
     amount_minor: string | null;
@@ -130,7 +148,7 @@ export async function listCatalogAdmin(db: Db, merchantId: string): Promise<Cata
     available: number;
   }>(
     `select v.id as variant_id, v.product_id, pr.name as product_name, pr.status as product_status,
-            v.name as variant_name, v.sku, p.amount_minor, p.currency, coalesce(inv.available,0) as available
+            pr.image_url, v.name as variant_name, v.sku, p.amount_minor, p.currency, coalesce(inv.available,0) as available
        from variants v
        join products pr on pr.id = v.product_id
        left join lateral (
@@ -147,6 +165,7 @@ export async function listCatalogAdmin(db: Db, merchantId: string): Promise<Cata
     productId: r.product_id,
     productName: r.product_name,
     productStatus: r.product_status,
+    imageUrl: r.image_url,
     variantName: r.variant_name,
     sku: r.sku,
     priceMinor: r.amount_minor !== null ? BigInt(r.amount_minor) : null,
@@ -165,12 +184,13 @@ export async function listCatalog(
     variant_id: string;
     product_id: string;
     product_name: string;
+    image_url: string | null;
     sku: string;
     name: string;
     amount_minor: string | null;
     currency: CurrencyCode | null;
   }>(
-    `select v.id as variant_id, v.product_id, pr.name as product_name, v.sku, v.name, p.amount_minor, p.currency
+    `select v.id as variant_id, v.product_id, pr.name as product_name, pr.image_url, v.sku, v.name, p.amount_minor, p.currency
        from variants v
        join products pr on pr.id = v.product_id and pr.status = 'active'
        left join lateral (
@@ -186,6 +206,7 @@ export async function listCatalog(
     variantId: row.variant_id,
     productId: row.product_id,
     productName: row.product_name,
+    imageUrl: row.image_url,
     sku: row.sku,
     name: row.name,
     price:

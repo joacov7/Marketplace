@@ -2,6 +2,7 @@ import { resolveConfigValue } from "@commerce/platform";
 import { listCatalog } from "@commerce/modules/catalog";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
+import { safeUrl } from "@/lib/sanitize";
 import Storefront, { type StoreProduct } from "./storefront";
 
 export const dynamic = "force-dynamic"; // depende del tenant resuelto por request
@@ -14,11 +15,6 @@ function cssColor(v: string | undefined, fallback = "#2563eb"): string {
 function cleanText(v: string | undefined, fallback: string): string {
   const s = (v ?? "").replace(/^"+|"+$/g, "").trim();
   return s.length > 0 ? s : fallback;
-}
-/** Sanea una URL de tema: solo http/https (evita javascript:/data: en img/css). Vacío si no. */
-function safeUrl(v: string | undefined): string {
-  const s = (v ?? "").replace(/^"+|"+$/g, "").trim();
-  return /^https?:\/\/[^\s"'<>]+$/i.test(s) ? s : "";
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -85,6 +81,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       productName: v.productName ?? v.name,
       variantName: v.name,
       sku: v.sku,
+      imageUrl: safeUrl(v.imageUrl),
       priceMinor: v.price ? v.price.amountMinor.toString() : null,
       currency: v.price?.currency ?? null,
     }));

@@ -12,6 +12,7 @@ const files = [
   ["0005_auth", "packages/platform/src/db/migrations/0005_auth.sql"],
   ["0006_customer", "packages/modules/src/customer/migrations/0006_customer.sql"],
   ["0007_orders_checkout", "packages/modules/src/orders/migrations/0007_orders_checkout.sql"],
+  ["0008_product_images", "packages/modules/src/catalog/migrations/0008_product_images.sql"],
 ];
 
 const entries = files

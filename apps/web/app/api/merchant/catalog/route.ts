@@ -4,6 +4,7 @@ import { setStock } from "@commerce/modules/inventory";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { requireServiceToken } from "@/lib/auth";
+import { safeUrl } from "@/lib/sanitize";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export async function GET(req: Request) {
       productName: r.productName,
       variantName: r.variantName,
       sku: r.sku,
+      imageUrl: r.imageUrl,
       priceMinor: r.priceMinor !== null ? r.priceMinor.toString() : null,
       currency: r.currency,
       available: r.available,
@@ -37,7 +39,7 @@ export async function POST(req: Request) {
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
-  let body: { merchantId?: string; productName?: string; variantName?: string; sku?: string; priceMinor?: string | number; stock?: number };
+  let body: { merchantId?: string; productName?: string; variantName?: string; sku?: string; priceMinor?: string | number; stock?: number; imageUrl?: string };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -46,6 +48,7 @@ export async function POST(req: Request) {
   if (!body.merchantId || !body.productName || !body.sku || body.priceMinor === undefined) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
+  const imageUrl = safeUrl(body.imageUrl);
 
   const slug =
     body.productName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + Math.random().toString(36).slice(2, 7);
@@ -57,6 +60,7 @@ export async function POST(req: Request) {
         merchantId: body.merchantId!,
         slug,
         name: body.productName!,
+        ...(imageUrl ? { imageUrl } : {}),
       });
       const { variantId } = await addVariant(tx, {
         tenantId: tenant.tenantId,

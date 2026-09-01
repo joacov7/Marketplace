@@ -7,6 +7,7 @@ export interface StoreProduct {
   productName: string;
   variantName: string;
   sku: string;
+  imageUrl?: string;
   priceMinor: string | null;
   currency: string | null;
 }
@@ -200,6 +201,7 @@ export default function Storefront(props: {
                     : cardStyle
                 }
               >
+                <Thumb src={p.imageUrl} alt={p.productName} layout={layout} />
                 <span>
                   <strong>{p.productName}</strong>
                   <span style={{ color: "#999", marginLeft: 8, fontSize: 13 }}>
@@ -437,6 +439,17 @@ const cardStyle: React.CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
 };
+
+/** Miniatura/foto de producto. En grilla ocupa el ancho; en lista es un cuadrado chico. */
+function Thumb({ src, alt, layout }: { src?: string; alt: string; layout: "grid" | "list" }) {
+  const size = layout === "grid" ? { width: "100%", height: 150 } : { width: 52, height: 52, flexShrink: 0 };
+  const common: React.CSSProperties = { ...size, borderRadius: 8, objectFit: "cover", background: "#f4f4f5" };
+  if (!src) {
+    return <span style={{ ...common, display: "grid", placeItems: "center", fontSize: layout === "grid" ? 40 : 22 }}>🐾</span>;
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt={alt} style={common} />;
+}
 function btn(primary: string): React.CSSProperties {
   return { background: primary, color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontWeight: 600, cursor: "pointer" };
 }

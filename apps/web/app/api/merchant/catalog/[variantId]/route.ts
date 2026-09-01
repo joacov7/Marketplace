@@ -1,19 +1,20 @@
 import { NextResponse } from "next/server";
-import { setPrice } from "@commerce/modules/catalog";
+import { setPrice, setProductImageByVariant } from "@commerce/modules/catalog";
 import { setStock } from "@commerce/modules/inventory";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { requireServiceToken } from "@/lib/auth";
+import { safeUrl } from "@/lib/sanitize";
 
 export const dynamic = "force-dynamic";
 
-/** Actualiza precio y/o stock de una variante. */
+/** Actualiza precio, stock y/o foto de una variante. */
 export async function PATCH(req: Request, { params }: { params: { variantId: string } }) {
   if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
-  let body: { priceMinor?: string | number; stock?: number };
+  let body: { priceMinor?: string | number; stock?: number; imageUrl?: string };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -26,6 +27,10 @@ export async function PATCH(req: Request, { params }: { params: { variantId: str
     }
     if (body.stock !== undefined) {
       await setStock(tx, { tenantId: tenant.tenantId, variantId: params.variantId, available: Number(body.stock) });
+    }
+    if (body.imageUrl !== undefined) {
+      const clean = safeUrl(body.imageUrl);
+      await setProductImageByVariant(tx, { tenantId: tenant.tenantId, variantId: params.variantId, imageUrl: clean || null });
     }
   });
   return NextResponse.json({ ok: true });
