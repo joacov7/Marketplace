@@ -23,3 +23,11 @@ function sql(): ReturnType<typeof postgres> {
 export function db(): TenantAwareDb {
   return pgDb(sql());
 }
+
+/**
+ * Ejecuta SQL crudo multi-statement (sin parámetros → protocolo simple), para correr las
+ * migraciones desde el endpoint de bootstrap. NO usar con input de usuario.
+ */
+export async function rawExec(sqlText: string): Promise<void> {
+  await sql().unsafe(sqlText);
+}
