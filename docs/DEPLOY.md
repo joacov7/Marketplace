@@ -60,7 +60,28 @@ Crea un tenant `gualeguay` (plantilla Pet Shop), un comercio y 3 productos con s
    | `CRON_SECRET` | un secreto fuerte (Vercel lo manda como `Authorization: Bearer` a los crons) |
 
 5. Deploy. Vercel corre el `prebuild` (compila los paquetes) + `next build`, y registra
-   los 2 crons (drain de outbox cada minuto, barrido de reservas cada 5 min).
+   los 2 crons.
+
+### Crons y el plan de Vercel
+
+El plan **Hobby (gratis) solo permite crons diarios**. Por eso `vercel.json` los deja en
+una vez por día (`0 6 * * *` y `30 6 * * *`) — suficiente para arrancar. Para cadencia
+real (el outbox conviene drenarlo seguido) tenés dos caminos:
+
+- **Vercel Pro**: cambiás el `schedule` a `* * * * *` (outbox) y `*/5 * * * *` (reservas).
+- **Scheduler externo (gratis)**: dejás los crons diarios (o los sacás) y programás un
+  servicio externo — [cron-job.org](https://cron-job.org), **Upstash QStash** o una
+  GitHub Action — que le pegue cada minuto a los endpoints con el header
+  `Authorization: Bearer $CRON_SECRET`:
+
+  ```bash
+  curl -H "authorization: Bearer $CRON_SECRET" https://<deploy>/api/cron/outbox
+  curl -H "authorization: Bearer $CRON_SECRET" https://<deploy>/api/cron/reservations
+  ```
+
+> En V1 el outbox solo loguea eventos (las notificaciones se cablean después) y las
+> reservas tienen TTL de 15 min, así que un barrido diario no rompe nada para una demo;
+> para operar en serio, usá cadencia frecuente por una de las dos vías de arriba.
 
 ## 5. Resolución de tenant por dominio
 

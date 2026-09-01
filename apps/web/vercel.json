@@ -3,7 +3,7 @@
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "crons": [
-    { "path": "/api/cron/outbox", "schedule": "* * * * *" },
-    { "path": "/api/cron/reservations", "schedule": "*/5 * * * *" }
+    { "path": "/api/cron/outbox", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/reservations", "schedule": "30 6 * * *" }
   ]
 }
