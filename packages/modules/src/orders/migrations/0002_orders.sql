@@ -46,9 +46,11 @@ begin
   foreach t in array array['orders','seller_orders','order_items'] loop
     execute format('alter table %I enable row level security', t);
     execute format('alter table %I force row level security', t);
-    execute format(
-      'create policy tenant_isolation on %I using (tenant_id = current_tenant_id()) with check (tenant_id = current_tenant_id())',
-      t
-    );
+    if not exists (select from pg_policies where schemaname = 'public' and tablename = t and policyname = 'tenant_isolation') then
+      execute format(
+        'create policy tenant_isolation on %I using (tenant_id = current_tenant_id()) with check (tenant_id = current_tenant_id())',
+        t
+      );
+    end if;
   end loop;
 end $$;

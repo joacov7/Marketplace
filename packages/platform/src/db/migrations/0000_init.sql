@@ -73,13 +73,20 @@ create index if not exists outbox_pending on outbox_events (status, occurred_at)
 -- BYPASSean RLS). Conecta como `commerce_app`, que al no ser owner de las tablas queda
 -- siempre sujeto a las políticas. En Neon: crear el rol de la app y darle estos grants.
 do $$ begin
-  if not exists (select from pg_roles where rolname = 'commerce_app') then
-    create role commerce_app;
-  end if;
+  begin
+    if not exists (select from pg_roles where rolname = 'commerce_app') then
+      create role commerce_app;
+    end if;
+    grant usage on schema public to commerce_app;
+    grant select, insert, update, delete on all tables in schema public to commerce_app;
+    alter default privileges in schema public grant select, insert, update, delete on tables to commerce_app;
+  exception when insufficient_privilege then
+    -- En Neon el rol de la app es el OWNER (no superusuario), así que FORCE ROW LEVEL
+    -- SECURITY ya lo constriñe y no hace falta commerce_app. Si no hay privilegio para
+    -- crearlo, seguimos: el aislamiento igual aplica.
+    raise notice 'commerce_app no creado (sin privilegio); el rol owner + FORCE RLS alcanza';
+  end;
 end $$;
-grant usage on schema public to commerce_app;
-grant select, insert, update, delete on all tables in schema public to commerce_app;
-alter default privileges in schema public grant select, insert, update, delete on tables to commerce_app;
 
 -- Helper: tenant actual desde la variable de sesión. NULL si no está seteada → deniega
 -- todo (falla cerrado).
@@ -94,9 +101,11 @@ begin
   foreach t in array array['regions','merchants'] loop
     execute format('alter table %I enable row level security', t);
     execute format('alter table %I force row level security', t);
-    execute format(
-      'create policy tenant_isolation on %I using (tenant_id = current_tenant_id()) with check (tenant_id = current_tenant_id())',
-      t
-    );
+    if not exists (select from pg_policies where schemaname = 'public' and tablename = t and policyname = 'tenant_isolation') then
+      execute format(
+        'create policy tenant_isolation on %I using (tenant_id = current_tenant_id()) with check (tenant_id = current_tenant_id())',
+        t
+      );
+    end if;
   end loop;
 end $$;

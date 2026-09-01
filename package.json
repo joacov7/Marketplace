@@ -18,7 +18,9 @@
     "clean": "tsc --build --clean",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "echo \"(lint boundaries pendiente F1)\" && exit 0"
+    "lint": "echo \"(lint boundaries pendiente F1)\" && exit 0",
+    "migrate": "node scripts/migrate.mjs",
+    "seed": "node scripts/seed-demo.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",

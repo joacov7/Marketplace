@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cd ../.. && npm run build && cd apps/web && next build",
   "crons": [
     { "path": "/api/cron/outbox", "schedule": "* * * * *" },
     { "path": "/api/cron/reservations", "schedule": "*/5 * * * *" }
