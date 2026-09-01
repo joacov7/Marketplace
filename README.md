@@ -57,6 +57,17 @@ handlers con resolución de tenant en el borde), **Identity/auth + MFA**.
 **63 tests** (61 verdes + 2 gated a Neon). Todos los invariantes de dinero probados sobre
 Postgres. Pendiente de F3: integración real de Mercado Pago (difere a conexión de cuenta).
 
+### F4 — Delivery + Profitability + Simulador ✅
+
+| Pieza | Qué hace | Dónde |
+|-------|----------|-------|
+| **Delivery** | Costeo por zona (`delivery_rates`) o config, gratis sobre umbral, subsidio con fuente explícita; ciclo pending→…→delivered con eventos; `routes` listo para consolidación V4 | `modules/src/delivery/` |
+| **Profitability Engine** | Fórmula **corregida** de Fase 0: contribución de plataforma y de comercio separadas (GMV no es sumando) | `modules/src/profitability/engine.ts` |
+| **Simulador** | 3 escenarios (sin/con plataforma/con plataforma+Agent) + break-even; uplift del agente como supuesto editable | `modules/src/profitability/simulator.ts` |
+
+**74 tests** (72 verdes + 2 gated a Neon). Los motores reproducen los números de Fase 0:
+$1.000/pedido plataforma, $5.250/pedido comercio, break-even 500 pedidos/mes.
+
 ## Estructura
 
 ```

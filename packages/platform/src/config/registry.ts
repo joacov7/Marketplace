@@ -33,6 +33,14 @@ export const CONFIG_KEYS = {
     sensitive: true,
     description: "Umbral de compra por sobre el cual el delivery es gratis, en centavos.",
   },
+  "delivery.cadeteCostMinor": {
+    key: "delivery.cadeteCostMinor",
+    jsonSchema: { type: "integer", minimum: 0 },
+    defaultValue: 250000, // $2.500 (costo real de una entrega, L4)
+    category: "money",
+    sensitive: true,
+    description: "Costo real de una entrega (lo que cobra el cadete), en centavos.",
+  },
   "delivery.subsidySource": {
     key: "delivery.subsidySource",
     jsonSchema: { type: "string", enum: ["platform", "merchant", "promo", "none"] },
