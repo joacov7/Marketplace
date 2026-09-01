@@ -55,6 +55,7 @@ export default function MerchantPanel() {
   const [merchantId, setMerchantId] = useState<string>("");
   const [tab, setTab] = useState<"catalogo" | "pedidos" | "reportes" | "diseno">("catalogo");
   const [error, setError] = useState<string | null>(null);
+  const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
     setTenant(new URLSearchParams(window.location.search).get("tenant"));
@@ -92,6 +93,20 @@ export default function MerchantPanel() {
   function saveToken() { try { localStorage.setItem("merchantToken", tokenInput); } catch { /* */ } setToken(tokenInput); }
   function logout() { try { localStorage.removeItem("merchantToken"); } catch { /* */ } setToken(""); }
 
+  /** Corre las migraciones pendientes en la base (idempotente). Útil tras un deploy con
+   *  cambios de esquema, para no depender de curl. Gated por el mismo token del panel. */
+  async function runMigrate() {
+    setError(null);
+    setMigrating(true);
+    try {
+      const res = await fetch(`/api/admin/migrate`, { method: "POST", headers: auth });
+      const data = await res.json();
+      if (!res.ok) { setError(`migración: ${data.error ?? "error"}`); return; }
+      await loadMerchants();
+      setError(`✓ Base actualizada (${(data.applied ?? []).length} migraciones). Recargá la tienda.`);
+    } catch (e) { setError(String(e)); } finally { setMigrating(false); }
+  }
+
   if (!token) {
     return (
       <div style={{ background: "#f6f7f9", minHeight: "100vh", display: "grid", placeItems: "center", padding: 16 }}>
@@ -124,7 +139,12 @@ export default function MerchantPanel() {
           </div>
           <button onClick={newMerchant} className="mbtn" style={btnGhost}>+ Nuevo comercio</button>
         </div>
-        <button onClick={logout} className="mbtn" style={btnGhost}>Salir</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={runMigrate} disabled={migrating} className="mbtn" style={btnGhost} title="Aplica migraciones pendientes tras un deploy con cambios de esquema">
+            {migrating ? "Migrando…" : "Migrar base"}
+          </button>
+          <button onClick={logout} className="mbtn" style={btnGhost}>Salir</button>
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#eef0f3", padding: 4, borderRadius: 12, width: "fit-content", maxWidth: "100%", flexWrap: "wrap" }}>
@@ -135,7 +155,11 @@ export default function MerchantPanel() {
         ))}
       </div>
 
-      {error && <p style={{ color: "#c00" }}>Error: {error}</p>}
+      {error && (
+        error.startsWith("✓")
+          ? <p style={{ color: "#2e7d32", fontWeight: 600 }}>{error}</p>
+          : <p style={{ color: "#c00" }}>Error: {error}</p>
+      )}
 
       {tab === "catalogo" ? <CatalogTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
         : tab === "pedidos" ? <OrdersTab tenant={tenant} token={token} onError={setError} />
