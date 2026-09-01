@@ -26,11 +26,11 @@ function Notice({ title, children }: { title: string; children: React.ReactNode 
   );
 }
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: { tenant?: string } }) {
   // La home degrada con un diagnóstico en vez de tirar un 500 si la base no está lista.
   let tenant;
   try {
-    tenant = await resolveTenant();
+    tenant = await resolveTenant(searchParams?.tenant ?? null);
   } catch (e) {
     console.error("[home] error resolviendo tenant/DB:", e);
     return (

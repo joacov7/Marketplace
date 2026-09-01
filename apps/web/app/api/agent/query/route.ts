@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * otro cliente del mismo tenant.
  */
 export async function POST(req: Request) {
-  const tenant = await resolveTenant();
+  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
   let body: { message?: string; budgetMinor?: string | number };

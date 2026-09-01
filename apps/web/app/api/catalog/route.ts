@@ -5,8 +5,8 @@ import { resolveTenant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const tenant = await resolveTenant();
+export async function GET(req: Request) {
+  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
   const items = await db().withTenant(tenant.tenantId, async (tx) => {
