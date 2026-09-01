@@ -97,6 +97,21 @@ npm run dev -w @commerce/web
 
 **79 tests** en total (77 verdes + 2 gated a Neon).
 
+### F5 — Customer Shopping Agent (propose-only) ✅
+
+| Pieza | Qué hace | Dónde |
+|-------|----------|-------|
+| **Enforcement** | Garantía **estructural** propose-only: registro de tools solo read/prepare; tools de dinero prohibidas; presupuesto de IA por tenant (falla cerrado) | `modules/src/agent/enforcement.ts` |
+| **Tools** | buscar_producto, recomendar, comparar, detectar_recompra, estimar_presupuesto, armar_carrito (prepara, no compra) | `modules/src/agent/tools.ts` |
+| **runCustomerAgent** | Busca, detecta recompra del historial, prepara carrito dentro de presupuesto; responder determinista (reemplazable por LLM) | `modules/src/agent/agent.ts` |
+| **`POST /api/agent/query`** | Devuelve un carrito **propuesto** que el humano confirma por `/api/checkout` | `apps/web` |
+
+El agente **no importa** la capa de pedidos/pagos: no puede cobrar. Espeja el modelo de
+agent-core (autonomía + intercepción de tools de escritura + presupuesto) **sin tocar ese
+repo**. Un LLM/agent-core real se enchufa inyectando el responder.
+
+**90 tests** (88 verdes + 2 gated a Neon).
+
 ## Estructura
 
 ```
