@@ -38,15 +38,20 @@ Crea un tenant `gualeguay` (plantilla Pet Shop), un comercio y 3 productos con s
 ## 4. Deploy en Vercel
 
 1. Importá el repo en [vercel.com/new](https://vercel.com/new).
-2. **Root Directory**: `apps/web`.
-   Vercel detecta el monorepo (npm workspaces) e instala desde la raíz solo. El
-   `apps/web/vercel.json` ya define `framework: nextjs`, el **Build Command**
-   (`npm --prefix ../.. run build && next build` → compila los paquetes del monorepo y
-   luego la app) y los **crons**. No hace falta tocar Output Directory: al declarar el
-   framework, Vercel usa `.next` (si ves el error *"No Output Directory named public"*,
-   es porque no se detectó el framework — asegurate de que `vercel.json` tenga
-   `"framework": "nextjs"` y no overridees el Build Command en el dashboard).
-3. **Environment Variables** (Production + Preview):
+2. **Root Directory** (CRÍTICO): `apps/web`.
+   Settings → General → **Root Directory** = `apps/web`. Vercel lee `vercel.json` **solo**
+   desde el Root Directory; si queda en la raíz del repo, `apps/web/vercel.json` se ignora,
+   Next NO se detecta y verás *"No Output Directory named public"*. El `prebuild` de
+   `apps/web` compila los paquetes del monorepo antes de `next build`.
+3. **Framework Preset**: Settings → Build & Development → **Next.js** (no "Other"). El
+   dashboard puede pisar el `framework` de `vercel.json`, así que confirmá que diga
+   Next.js. Dejá el **Build Command** sin override (usa el de `vercel.json`: `npm run
+   build`).
+
+> Si el error *"No Output Directory named public"* persiste: es SIEMPRE detección de
+> framework. Revisá (a) Root Directory = `apps/web`, (b) Framework Preset = Next.js. No es
+> un problema del código.
+4. **Environment Variables** (Production + Preview):
 
    | Variable | Valor |
    |----------|-------|
@@ -54,8 +59,8 @@ Crea un tenant `gualeguay` (plantilla Pet Shop), un comercio y 3 productos con s
    | `ADMIN_API_TOKEN` | un secreto fuerte (para provisioning de tenants) |
    | `CRON_SECRET` | un secreto fuerte (Vercel lo manda como `Authorization: Bearer` a los crons) |
 
-4. Deploy. Vercel corre `apps/web/vercel.json` → build de paquetes + `next build`, y
-   registra los 2 crons (drain de outbox cada minuto, barrido de reservas cada 5 min).
+5. Deploy. Vercel corre el `prebuild` (compila los paquetes) + `next build`, y registra
+   los 2 crons (drain de outbox cada minuto, barrido de reservas cada 5 min).
 
 ## 5. Resolución de tenant por dominio
 
