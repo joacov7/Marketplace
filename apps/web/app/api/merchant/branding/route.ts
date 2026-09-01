@@ -15,6 +15,8 @@ const THEME_KEYS = [
   "branding.bannerText",
   "branding.bannerImageUrl",
   "branding.layout",
+  "branding.font",
+  "branding.buttonShape",
 ] as const;
 type ThemeKey = (typeof THEME_KEYS)[number];
 

@@ -18,7 +18,16 @@ interface Theme {
   "branding.bannerText": string;
   "branding.bannerImageUrl": string;
   "branding.layout": string;
+  "branding.font": string;
+  "branding.buttonShape": string;
 }
+const FONT_STACKS: Record<string, string> = {
+  system: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+  serif: "Georgia, 'Times New Roman', serif",
+  rounded: "'Nunito', 'Quicksand', 'Segoe UI', sans-serif",
+  mono: "'JetBrains Mono', Menlo, Consolas, monospace",
+};
+const BUTTON_RADIUS: Record<string, string> = { rounded: "10px", pill: "999px", square: "4px" };
 
 const NEXT: Record<string, string[]> = {
   pending: ["preparing", "rejected"], preparing: ["ready"], ready: ["in_transit"],
@@ -355,6 +364,8 @@ const DEFAULT_THEME: Theme = {
   "branding.bannerText": "",
   "branding.bannerImageUrl": "",
   "branding.layout": "grid",
+  "branding.font": "system",
+  "branding.buttonShape": "rounded",
 };
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
@@ -438,13 +449,32 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
             <option value="list">Lista</option>
           </select>
         </Field>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Field label="Tipografía">
+            <select value={theme["branding.font"]} onChange={(e) => set("branding.font", e.target.value)} style={{ ...input, width: "100%" }}>
+              <option value="system">Sistema</option>
+              <option value="serif">Serif (elegante)</option>
+              <option value="rounded">Redondeada</option>
+              <option value="mono">Monoespaciada</option>
+            </select>
+          </Field>
+          <Field label="Forma de botones">
+            <select value={theme["branding.buttonShape"]} onChange={(e) => set("branding.buttonShape", e.target.value)} style={{ ...input, width: "100%" }}>
+              <option value="rounded">Redondeados</option>
+              <option value="pill">Píldora</option>
+              <option value="square">Rectos</option>
+            </select>
+          </Field>
+        </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
           <button onClick={save} disabled={saving} style={btn}>{saving ? "Guardando…" : "Guardar diseño"}</button>
           {saved && <span style={{ color: "#2e7d32", fontSize: 13 }}>✓ Guardado. Recargá la tienda para verlo.</span>}
         </div>
       </div>
 
-      <div style={card}>
+      <div style={{ ...card, fontFamily: FONT_STACKS[theme["branding.font"]] ?? FONT_STACKS.system }}>
+        {theme["branding.font"] === "rounded" && <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" />}
+        {theme["branding.font"] === "mono" && <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" />}
         <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>Vista previa</h3>
         <div
           style={{
@@ -467,7 +497,7 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
           {["Alimento premium", "Juguete"].map((n) => (
             <div key={n} style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, display: "flex", flexDirection: theme["branding.layout"] === "list" ? "row" : "column", justifyContent: "space-between", gap: 8 }}>
               <span style={{ fontSize: 14 }}>{n}</span>
-              <button style={{ ...btn, background: primary, alignSelf: theme["branding.layout"] === "list" ? "center" : "stretch" }}>Agregar</button>
+              <button style={{ ...btn, background: primary, borderRadius: BUTTON_RADIUS[theme["branding.buttonShape"]] ?? "10px", alignSelf: theme["branding.layout"] === "list" ? "center" : "stretch" }}>Agregar</button>
             </div>
           ))}
         </div>

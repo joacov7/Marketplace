@@ -32,11 +32,15 @@ export default function Storefront(props: {
   bannerText?: string;
   bannerImageUrl?: string;
   layout?: "grid" | "list";
+  font?: "system" | "serif" | "rounded" | "mono";
+  buttonShape?: "rounded" | "pill" | "square";
   agentEnabled: boolean;
   products: StoreProduct[];
 }) {
   const { tenant, primary } = props;
   const layout = props.layout ?? "grid";
+  const fontFamily = FONT_STACKS[props.font ?? "system"];
+  const btnRadius = BUTTON_RADIUS[props.buttonShape ?? "rounded"];
   const [cart, setCart] = useState<Cart>({});
   const [agentOpen, setAgentOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -145,8 +149,10 @@ export default function Storefront(props: {
   }
 
   return (
-    <div style={{ background: "#f6f7f9", minHeight: "100vh" }}>
+    <div style={{ background: "#f6f7f9", minHeight: "100vh", fontFamily, ["--btn-radius" as string]: btnRadius } as React.CSSProperties}>
       <style>{STORE_CSS}</style>
+      {props.font === "rounded" && <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" />}
+      {props.font === "mono" && <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" />}
       <main style={{ maxWidth: 960, margin: "0 auto", padding: "16px 16px 40px" }}>
       <header
         style={{
@@ -504,8 +510,18 @@ function ProductCard({
     </li>
   );
 }
+/** Familias tipográficas configurables (branding.font). Fallbacks siempre presentes. */
+const FONT_STACKS: Record<string, string> = {
+  system: "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+  serif: "Georgia, 'Times New Roman', 'Noto Serif', serif",
+  rounded: "'Nunito', 'Quicksand', 'Segoe UI', system-ui, sans-serif",
+  mono: "'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace",
+};
+/** Radio de los botones según branding.buttonShape. */
+const BUTTON_RADIUS: Record<string, string> = { rounded: "10px", pill: "999px", square: "4px" };
+
 function btn(primary: string): React.CSSProperties {
-  return { background: primary, color: "white", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" };
+  return { background: primary, color: "white", border: "none", borderRadius: "var(--btn-radius, 10px)", padding: "8px 14px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" };
 }
 const qtyBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 8, border: "1px solid #dcdce0", background: "#fafafa", cursor: "pointer", fontSize: 16, lineHeight: 1 };
 const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 6 };

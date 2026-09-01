@@ -129,6 +129,22 @@ export const CONFIG_KEYS = {
     sensitive: false,
     description: "Disposición del catálogo en la tienda: grilla o lista.",
   },
+  "branding.font": {
+    key: "branding.font",
+    jsonSchema: { type: "string", enum: ["system", "serif", "rounded", "mono"] },
+    defaultValue: "system",
+    category: "branding",
+    sensitive: false,
+    description: "Familia tipográfica de la tienda (system/serif/rounded/mono).",
+  },
+  "branding.buttonShape": {
+    key: "branding.buttonShape",
+    jsonSchema: { type: "string", enum: ["rounded", "pill", "square"] },
+    defaultValue: "rounded",
+    category: "branding",
+    sensitive: false,
+    description: "Forma de los botones de la tienda (rounded/pill/square).",
+  },
   "tenant.vertical": {
     key: "tenant.vertical",
     jsonSchema: { type: "string", minLength: 1 },
