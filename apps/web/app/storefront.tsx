@@ -117,7 +117,10 @@ export default function Storefront(props: {
   return (
     <main style={{ maxWidth: 820, margin: "0 auto", padding: 16 }}>
       <header style={{ background: primary, color: "white", padding: "20px 16px", borderRadius: 12, marginBottom: 16 }}>
-        <h1 style={{ margin: 0, fontSize: 22 }}>{props.displayName}</h1>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <h1 style={{ margin: 0, fontSize: 22 }}>{props.displayName}</h1>
+          <AccountWidget tenant={tenant} />
+        </div>
         <p style={{ margin: "6px 0 0", opacity: 0.9 }}>¿Qué necesitás para tu mascota?</p>
         {props.agentEnabled && (
           <button
@@ -211,6 +214,66 @@ export default function Storefront(props: {
 
       <footer style={{ marginTop: 28, color: "#aaa", fontSize: 12, textAlign: "center" }}>{props.displayName} · Commerce OS</footer>
     </main>
+  );
+}
+
+function AccountWidget({ tenant }: { tenant: string }) {
+  const [email, setEmail] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me").then((r) => r.json()).then((d) => setEmail(d.user?.email ?? null)).catch(() => {});
+  }, []);
+
+  async function submit() {
+    setErr(null);
+    const path = mode === "login" ? "login" : "register";
+    const res = await fetch(`/api/auth/${path}?tenant=${encodeURIComponent(tenant)}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form),
+    });
+    const d = await res.json();
+    if (!res.ok) { setErr(d.error ?? "error"); return; }
+    setEmail(d.email); setOpen(false); setForm({ email: "", password: "" });
+  }
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setEmail(null);
+  }
+
+  if (email) {
+    return (
+      <span style={{ fontSize: 13, textAlign: "right" }}>
+        {email}<br />
+        <button onClick={logout} style={{ background: "rgba(255,255,255,.25)", color: "white", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12, marginTop: 4 }}>Salir</button>
+      </span>
+    );
+  }
+  return (
+    <span style={{ position: "relative" }}>
+      <button onClick={() => setOpen((v) => !v)} style={{ background: "rgba(255,255,255,.25)", color: "white", border: "none", borderRadius: 999, padding: "6px 12px", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+        Ingresar
+      </button>
+      {open && (
+        <div style={{ position: "absolute", right: 0, top: 40, background: "white", color: "#111", border: "1px solid #ddd", borderRadius: 10, padding: 12, width: 230, zIndex: 10, boxShadow: "0 6px 24px rgba(0,0,0,.12)" }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            {(["login", "register"] as const).map((m) => (
+              <button key={m} onClick={() => setMode(m)} style={{ flex: 1, border: "none", borderRadius: 6, padding: "5px", cursor: "pointer", background: mode === m ? "#2563eb" : "#eee", color: mode === m ? "white" : "#333", fontSize: 12, fontWeight: 600 }}>
+                {m === "login" ? "Ingresar" : "Registrarse"}
+              </button>
+            ))}
+          </div>
+          <input placeholder="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={{ width: "100%", boxSizing: "border-box", padding: "7px", borderRadius: 6, border: "1px solid #ccc", marginBottom: 6 }} />
+          <input placeholder="contraseña" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} style={{ width: "100%", boxSizing: "border-box", padding: "7px", borderRadius: 6, border: "1px solid #ccc" }} />
+          {err && <p style={{ color: "#c00", fontSize: 12, margin: "6px 0 0" }}>{err}</p>}
+          <button onClick={submit} style={{ width: "100%", marginTop: 8, background: "#2563eb", color: "white", border: "none", borderRadius: 8, padding: "8px", fontWeight: 600, cursor: "pointer" }}>
+            {mode === "login" ? "Ingresar" : "Crear cuenta"}
+          </button>
+        </div>
+      )}
+    </span>
   );
 }
 

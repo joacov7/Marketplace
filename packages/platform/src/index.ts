@@ -7,6 +7,10 @@ export * from "./config/registry.js";
 export * from "./config/repository.js";
 // RBAC
 export * from "./rbac/check.js";
+// Auth
+export * from "./auth/password.js";
+export * from "./auth/session.js";
+export * from "./auth/users.js";
 // DB port + driver de producción (postgres.js). El adaptador PGlite es solo para tests.
 export * from "./db/port.js";
 export * from "./db/pg.js";

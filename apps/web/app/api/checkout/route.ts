@@ -4,6 +4,7 @@ import { createOrder } from "@commerce/modules/orders";
 import { createPaymentIntent, FakePaymentProvider } from "@commerce/modules/payments";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
+import { readSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -46,8 +47,10 @@ export async function POST(req: Request) {
   });
   if (!priced) return NextResponse.json({ error: "invalid_items_or_no_merchant" }, { status: 400 });
 
+  const session = readSession();
   const order = await createOrder(db(), {
     tenantId: tenant.tenantId,
+    ...(session?.userId ? { customerId: session.userId } : {}),
     sellers: [{ merchantId: priced.merchantId, items: priced.items }],
   });
   if (!order.ok) return NextResponse.json({ error: order.error }, { status: 409 });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { runCustomerAgent } from "@commerce/modules/agent";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
+import { readSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "missing_message" }, { status: 400 });
   }
 
-  const customerId = req.headers.get("x-customer-id") ?? undefined;
+  // La identidad del cliente sale de la SESIÓN (no falsificable). El header queda solo
+  // como fallback de desarrollo cuando no hay sesión.
+  const session = readSession();
+  const customerId = session?.userId ?? req.headers.get("x-customer-id") ?? undefined;
 
   const r = await runCustomerAgent(db(), {
     tenantId: tenant.tenantId,

@@ -16,6 +16,7 @@ const files = [
   "packages/modules/src/orders/migrations/0002_orders.sql",
   "packages/modules/src/payments/migrations/0003_payments.sql",
   "packages/modules/src/delivery/migrations/0004_delivery.sql",
+  "packages/platform/src/db/migrations/0005_auth.sql",
 ];
 
 const sql = postgres(url, { max: 1, prepare: false, onnotice: (n) => console.log("  ·", n.message) });

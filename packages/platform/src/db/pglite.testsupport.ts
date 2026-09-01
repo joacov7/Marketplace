@@ -44,6 +44,7 @@ export async function freshDb(extraMigrations: string[] = []): Promise<{ pg: PGl
   const here = dirname(fileURLToPath(import.meta.url));
   const pg = await PGlite.create();
   await pg.exec(readFileSync(join(here, "migrations", "0000_init.sql"), "utf8"));
+  await pg.exec(readFileSync(join(here, "migrations", "0005_auth.sql"), "utf8"));
   for (const sql of extraMigrations) await pg.exec(sql);
   return { pg, db: pgliteDb(pg) };
 }

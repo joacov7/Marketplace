@@ -7,3 +7,8 @@ dist/
 .next/
 .vercel/
 coverage/
+
+# Artefactos compilados que nunca deben vivir en src
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.map
