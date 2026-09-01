@@ -5,6 +5,11 @@ import { useCallback, useEffect, useState } from "react";
 interface Merchant { id: string; slug: string; name: string }
 interface SellerOrder { sellerOrderId: string; orderId: string; status: string; subtotalMinor: string; currency: string; itemCount: number; createdAt: string }
 interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; priceMinor: string | null; currency: string | null; available: number; status: string }
+interface ReportSummary { paidOrders: number; gmvMinor: string; deliveryRevenueMinor: string; commissionMinor: string; merchantPayoutMinor: string; refundsMinor: string; avgTicketMinor: string }
+interface ReportSeries { day: string; orders: number; gmvMinor: string }
+interface ReportTop { productId: string; productName: string; unitsSold: number; revenueMinor: string }
+interface ReportAlert { variantId: string; productName: string; variantName: string; available: number; reserved: number }
+interface ReportData { summary: ReportSummary; series: ReportSeries[]; top: ReportTop[]; alerts: ReportAlert[] }
 
 const NEXT: Record<string, string[]> = {
   pending: ["preparing", "rejected"], preparing: ["ready"], ready: ["in_transit"],
@@ -25,7 +30,7 @@ export default function MerchantPanel() {
   const [tokenInput, setTokenInput] = useState("");
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [merchantId, setMerchantId] = useState<string>("");
-  const [tab, setTab] = useState<"catalogo" | "pedidos">("catalogo");
+  const [tab, setTab] = useState<"catalogo" | "pedidos" | "reportes">("catalogo");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,18 +96,18 @@ export default function MerchantPanel() {
       </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 14, borderBottom: "1px solid #eee" }}>
-        {(["catalogo", "pedidos"] as const).map((t) => (
+        {(["catalogo", "pedidos", "reportes"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} style={{ ...btnGhost, background: tab === t ? "#2563eb" : "#eee", color: tab === t ? "white" : "#333", borderRadius: "8px 8px 0 0" }}>
-            {t === "catalogo" ? "Catálogo" : "Pedidos"}
+            {t === "catalogo" ? "Catálogo" : t === "pedidos" ? "Pedidos" : "Reportes"}
           </button>
         ))}
       </div>
 
       {error && <p style={{ color: "#c00" }}>Error: {error}</p>}
 
-      {tab === "catalogo"
-        ? <CatalogTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
-        : <OrdersTab tenant={tenant} token={token} onError={setError} />}
+      {tab === "catalogo" ? <CatalogTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
+        : tab === "pedidos" ? <OrdersTab tenant={tenant} token={token} onError={setError} />
+        : <ReportsTab tenant={tenant} token={token} onError={setError} />}
     </main>
   );
 }
@@ -226,6 +231,99 @@ function OrdersTab({ tenant, token, onError }: { tenant: string | null; token: s
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function Metric({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: string }) {
+  return (
+    <div style={{ ...card, minWidth: 150, flex: 1 }}>
+      <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: accent ?? "#111" }}>{value}</div>
+      {hint && <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{hint}</div>}
+    </div>
+  );
+}
+
+function ReportsTab({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const [data, setData] = useState<ReportData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const auth = { authorization: `Bearer ${token}` };
+
+  const load = useCallback(async () => {
+    if (!tenant) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/merchant/reports?tenant=${encodeURIComponent(tenant)}&days=14`, { headers: auth });
+      const d = await res.json();
+      setLoading(false);
+      if (!res.ok) { onError(d.error); return; }
+      setData(d);
+    } catch (e) { setLoading(false); onError(String(e)); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token]);
+  useEffect(() => { void load(); }, [load]);
+
+  if (!data) return <p style={{ color: "#888" }}>{loading ? "Cargando reportes…" : "Sin datos."}</p>;
+  const s = data.summary;
+  const maxGmv = Math.max(1, ...data.series.map((r) => Number(r.gmvMinor)));
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <button onClick={load} style={{ ...btnGhost, justifySelf: "start" }}>{loading ? "…" : "Actualizar"}</button>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <Metric label="Pedidos pagados" value={String(s.paidOrders)} />
+        <Metric label="GMV (ventas)" value={money(s.gmvMinor)} hint="valor de mercadería vendida" />
+        <Metric label="Comisión plataforma" value={money(s.commissionMinor)} accent="#2563eb" hint="contribución" />
+        <Metric label="A pagar a comercios" value={money(s.merchantPayoutMinor)} accent="#2e7d32" hint="payout" />
+        <Metric label="Envíos cobrados" value={money(s.deliveryRevenueMinor)} />
+        <Metric label="Ticket promedio" value={money(s.avgTicketMinor)} />
+        {Number(s.refundsMinor) > 0 && <Metric label="Devoluciones" value={money(s.refundsMinor)} accent="#c62828" />}
+      </div>
+
+      <div style={card}>
+        <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Ventas últimos 14 días</h3>
+        {data.series.length === 0 ? <p style={{ color: "#aaa", margin: 0 }}>Todavía no hay ventas.</p> : (
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120 }}>
+            {data.series.map((r) => (
+              <div key={r.day} title={`${r.day}: ${money(r.gmvMinor)} · ${r.orders} pedido(s)`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                <div style={{ width: "100%", background: "#2563eb", borderRadius: "4px 4px 0 0", height: `${Math.max(4, (Number(r.gmvMinor) / maxGmv) * 100)}%` }} />
+                <span style={{ fontSize: 9, color: "#aaa" }}>{r.day.slice(5)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+        <div style={card}>
+          <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Top productos</h3>
+          {data.top.length === 0 ? <p style={{ color: "#aaa", margin: 0 }}>Sin ventas.</p> : (
+            <ol style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 6 }}>
+              {data.top.map((t) => (
+                <li key={t.productId} style={{ fontSize: 14 }}>
+                  <strong>{t.productName}</strong> <span style={{ color: "#999" }}>· {t.unitsSold} u · {money(t.revenueMinor)}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+
+        <div style={card}>
+          <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Alertas de stock <span style={{ fontSize: 12, color: "#aaa" }}>(≤ 5)</span></h3>
+          {data.alerts.length === 0 ? <p style={{ color: "#2e7d32", margin: 0 }}>Sin alertas: stock OK.</p> : (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 }}>
+              {data.alerts.map((a) => (
+                <li key={a.variantId} style={{ fontSize: 14, display: "flex", justifyContent: "space-between" }}>
+                  <span>{a.productName} <span style={{ color: "#999", fontSize: 12 }}>{a.variantName}</span></span>
+                  <span style={{ color: a.available === 0 ? "#c62828" : "#b26a00", fontWeight: 600 }}>{a.available} disp.</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
