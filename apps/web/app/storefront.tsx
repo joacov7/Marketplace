@@ -36,6 +36,10 @@ export default function Storefront(props: {
   const [order, setOrder] = useState<{ orderId: string; providerRef: string; totalMinor: string } | null>(null);
   const [paid, setPaid] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [quote, setQuote] = useState<{ gmvMinor: string; deliveryChargeMinor: string; totalMinor: string } | null>(null);
+  const [addr, setAddr] = useState({ street: "", city: "", zone: "", notes: "" });
+  const [win, setWin] = useState("Hoy 14–18 h");
 
   const storageKey = `cart:${tenant}`;
   useEffect(() => {
@@ -72,18 +76,37 @@ export default function Storefront(props: {
     });
   }
 
-  async function checkout() {
+  async function startCheckout() {
+    setError(null);
+    setCheckingOut(true);
+    setQuote(null);
+    try {
+      const res = await fetch(`/api/checkout/quote?tenant=${encodeURIComponent(tenant)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ items: items.map(([variantId, i]) => ({ variantId, qty: i.qty })) }),
+      });
+      const data = await res.json();
+      if (!res.ok) setError(data.error ?? "error");
+      else setQuote(data);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function pay() {
+    if (!addr.street.trim()) { setError("Ingresá una dirección de entrega"); return; }
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(`/api/checkout?tenant=${encodeURIComponent(tenant)}`, {
         method: "POST",
         headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
-        body: JSON.stringify({ items: items.map(([variantId, i]) => ({ variantId, qty: i.qty })) }),
+        body: JSON.stringify({ items: items.map(([variantId, i]) => ({ variantId, qty: i.qty })), address: addr, deliveryWindow: win }),
       });
       const data = await res.json();
       if (!res.ok) setError(data.error ?? "error en el checkout");
-      else setOrder({ orderId: data.orderId, providerRef: data.providerRef, totalMinor: data.totalMinor });
+      else { setOrder({ orderId: data.orderId, providerRef: data.providerRef, totalMinor: data.totalMinor }); setCheckingOut(false); }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -180,11 +203,42 @@ export default function Storefront(props: {
                 <span>Total</span>
                 <span>{money(total)}</span>
               </div>
-              {!order && (
-                <button onClick={checkout} disabled={busy} style={{ ...btn(primary), width: "100%", marginTop: 12, padding: "10px" }}>
-                  {busy ? "Procesando…" : "Finalizar compra"}
+              {!order && !checkingOut && (
+                <button onClick={startCheckout} style={{ ...btn(primary), width: "100%", marginTop: 12, padding: "10px" }}>
+                  Finalizar compra
                 </button>
               )}
+            </div>
+          )}
+
+          {checkingOut && !order && (
+            <div style={{ ...cardStyle, display: "block", marginTop: 10 }}>
+              <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Datos de entrega</h3>
+              <input placeholder="Dirección (calle y número)" value={addr.street} onChange={(e) => setAddr({ ...addr, street: e.target.value })} style={inp} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <input placeholder="Ciudad" value={addr.city} onChange={(e) => setAddr({ ...addr, city: e.target.value })} style={{ ...inp, flex: 1 }} />
+                <input placeholder="Zona/barrio" value={addr.zone} onChange={(e) => setAddr({ ...addr, zone: e.target.value })} style={{ ...inp, flex: 1 }} />
+              </div>
+              <input placeholder="Notas (timbre, referencia…)" value={addr.notes} onChange={(e) => setAddr({ ...addr, notes: e.target.value })} style={inp} />
+              <label style={{ display: "block", fontSize: 13, color: "#555", margin: "6px 0 2px" }}>Ventana de entrega</label>
+              <select value={win} onChange={(e) => setWin(e.target.value)} style={inp}>
+                {["Hoy 14–18 h", "Hoy 18–21 h", "Mañana 10–14 h", "Mañana 14–18 h"].map((w) => <option key={w}>{w}</option>)}
+              </select>
+
+              {quote && (
+                <div style={{ marginTop: 10, borderTop: "1px solid #eee", paddingTop: 8, fontSize: 14 }}>
+                  <Row label="Subtotal" value={money(Number(quote.gmvMinor))} />
+                  <Row label="Envío" value={Number(quote.deliveryChargeMinor) === 0 ? "Gratis" : money(Number(quote.deliveryChargeMinor))} />
+                  <Row label="Total" value={money(Number(quote.totalMinor))} bold />
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <button onClick={() => setCheckingOut(false)} style={{ ...btn("#888"), flex: 1 }}>Volver</button>
+                <button onClick={pay} disabled={busy} style={{ ...btn(primary), flex: 2 }}>
+                  {busy ? "Procesando…" : quote ? `Pagar ${money(Number(quote.totalMinor))}` : "Pagar"}
+                </button>
+              </div>
             </div>
           )}
 
@@ -350,3 +404,12 @@ function btn(primary: string): React.CSSProperties {
   return { background: primary, color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontWeight: 600, cursor: "pointer" };
 }
 const qtyBtn: React.CSSProperties = { width: 26, height: 26, borderRadius: 6, border: "1px solid #ddd", background: "#fafafa", cursor: "pointer" };
+const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 6 };
+function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", fontWeight: bold ? 700 : 400 }}>
+      <span>{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+}

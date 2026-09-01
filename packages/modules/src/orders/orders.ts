@@ -12,6 +12,10 @@ export interface CreateOrderInput {
   tenantId: string;
   customerId?: string;
   currency?: CurrencyCode;
+  /** Datos de entrega capturados en el checkout (opcionales). */
+  shippingAddress?: Record<string, unknown>;
+  deliveryWindow?: string;
+  deliveryChargeMinor?: bigint;
   sellers: ReadonlyArray<{
     merchantId: string;
     items: ReadonlyArray<{ variantId: string; qty: number; unitPriceMinor: bigint }>;
@@ -48,9 +52,16 @@ export async function createOrder(
       if (input.sellers.length === 0) throw new Error("empty_order");
 
       const [order] = await tx.query<{ id: string }>(
-        `insert into orders (tenant_id, customer_id, status, currency, total_minor)
-         values ($1,$2,'pending_payment',$3,0) returning id`,
-        [input.tenantId, input.customerId ?? null, currency],
+        `insert into orders (tenant_id, customer_id, status, currency, total_minor, shipping_address, delivery_window, delivery_charge_minor)
+         values ($1,$2,'pending_payment',$3,0,$4,$5,$6) returning id`,
+        [
+          input.tenantId,
+          input.customerId ?? null,
+          currency,
+          input.shippingAddress ? JSON.stringify(input.shippingAddress) : null,
+          input.deliveryWindow ?? null,
+          (input.deliveryChargeMinor ?? 0n).toString(),
+        ],
       );
       const orderId = order!.id;
 
