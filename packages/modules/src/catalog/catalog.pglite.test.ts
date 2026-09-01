@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import type { TenantAwareDb } from "@commerce/platform";
 import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
-import { createProduct, addVariant, setPrice, getVariantWithPrice, listCatalog } from "./catalog.js";
+import { createProduct, addVariant, setPrice, getVariantWithPrice, listCatalog, listCatalogAdmin } from "./catalog.js";
+import { setStock } from "../inventory/inventory.js";
 
 describe("Catálogo — productos, variantes, precios", () => {
   let pg: PGlite;
@@ -44,5 +45,20 @@ describe("Catálogo — productos, variantes, precios", () => {
     const list = await db.withTenant(tenantId, (tx) => listCatalog(tx, merchantId));
     expect(list.length).toBeGreaterThanOrEqual(2);
     expect(list.every((v) => v.sku.length > 0)).toBe(true);
+  });
+
+  it("listCatalogAdmin incluye stock y precio para el panel del comercio", async () => {
+    const variantId = await db.withTenant(tenantId, async (tx) => {
+      const { productId } = await createProduct(tx, { tenantId, merchantId, slug: "collar", name: "Collar" });
+      const v = await addVariant(tx, { tenantId, productId, sku: "COL-1", name: "M" });
+      await setPrice(tx, { tenantId, variantId: v.variantId, amountMinor: 500_000n });
+      await setStock(tx, { tenantId, variantId: v.variantId, available: 7 });
+      return v.variantId;
+    });
+    const admin = await db.withTenant(tenantId, (tx) => listCatalogAdmin(tx, merchantId));
+    const row = admin.find((r) => r.variantId === variantId);
+    expect(row?.available).toBe(7);
+    expect(row?.priceMinor).toBe(500_000n);
+    expect(row?.productName).toBe("Collar");
   });
 });

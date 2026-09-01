@@ -15,3 +15,4 @@ export * from "./outbox/outbox.js";
 // Tenant provisioning
 export * from "./tenant/templates.js";
 export * from "./tenant/provisioning.js";
+export * from "./tenant/merchants.js";

@@ -4,6 +4,7 @@ import { freshDb } from "../db/pglite.testsupport.js";
 import type { TenantAwareDb } from "../db/port.js";
 import { createTenant } from "./provisioning.js";
 import { PET_SHOP_TEMPLATE } from "./templates.js";
+import { createMerchant, listMerchants } from "./merchants.js";
 import { resolveConfigValue } from "../config/repository.js";
 
 /**
@@ -70,6 +71,23 @@ describe("Provisioning de tenant por plantilla (White Label, F1)", () => {
 
     const b2 = await resolveConfigValue<string>(db, "branding.displayName", { tenantId: t2.value.tenantId });
     expect(b2.value).toBe("Tienda Dos");
+  });
+
+  it("alta de comercios dentro de un tenant (marketplace) — aislados por tenant", async () => {
+    const t = await createTenant(db, { slug: "mkt", name: "Mkt", template: PET_SHOP_TEMPLATE, region: { slug: "r", name: "R" }, actor: "s" });
+    if (!t.ok) throw new Error(t.error);
+    const tenantId = t.value.tenantId;
+
+    const m1 = await createMerchant(db, { tenantId, slug: "petshop", name: "Pet Shop" });
+    const m2 = await createMerchant(db, { tenantId, slug: "veterinaria", name: "Veterinaria" });
+    expect(m1.ok && m2.ok).toBe(true);
+
+    const merchants = await db.withTenant(tenantId, (tx) => listMerchants(tx));
+    expect(merchants.map((m) => m.slug).sort()).toEqual(["petshop", "veterinaria"]);
+
+    // slug duplicado dentro del tenant → error
+    const dup = await createMerchant(db, { tenantId, slug: "petshop", name: "Otro" });
+    expect(dup.ok).toBe(false);
   });
 
   it("rollback atómico: slug duplicado no deja tenant a medias", async () => {
