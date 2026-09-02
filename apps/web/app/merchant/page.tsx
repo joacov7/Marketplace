@@ -537,6 +537,9 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
   const [perksText, setPerksText] = useState("");
   const [benefitsText, setBenefitsText] = useState("");
+  const [adoptionsTitle, setAdoptionsTitle] = useState("Adopciones");
+  const [flags, setFlags] = useState({ "features.adoptions": true, "features.foodCalculator": true, "features.foodComparator": true });
+  const toggle = (k: keyof typeof flags) => { setFlags((s) => ({ ...s, [k]: !s[k] })); setSaved(false); };
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -554,6 +557,12 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
       setTheme({ ...DEFAULT_THEME, ...d.theme });
       setPerksText(pairsToText(d.theme?.["storefront.perks"]));
       setBenefitsText(pairsToText(d.theme?.["storefront.benefits"]));
+      if (typeof d.theme?.["storefront.adoptionsTitle"] === "string") setAdoptionsTitle(d.theme["storefront.adoptionsTitle"]);
+      setFlags({
+        "features.adoptions": d.theme?.["features.adoptions"] !== false,
+        "features.foodCalculator": d.theme?.["features.foodCalculator"] !== false,
+        "features.foodComparator": d.theme?.["features.foodComparator"] !== false,
+      });
     } catch (e) { setLoading(false); onError(String(e)); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant, token]);
@@ -563,7 +572,7 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
     onError(null);
     setSaving(true);
     try {
-      const body = { ...theme, "storefront.perks": textToPairs(perksText), "storefront.benefits": textToPairs(benefitsText) };
+      const body = { ...theme, "storefront.perks": textToPairs(perksText), "storefront.benefits": textToPairs(benefitsText), "storefront.adoptionsTitle": adoptionsTitle, ...flags };
       const res = await fetch(`/api/merchant/branding?tenant=${encodeURIComponent(tenant ?? "")}`, {
         method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(body),
       });
@@ -654,6 +663,18 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
         </Field>
         <Field label="Texto del footer">
           <input value={theme["storefront.footerBlurb"]} onChange={(e) => set("storefront.footerBlurb", e.target.value)} style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        </Field>
+
+        <div style={{ borderTop: "1px solid #eee", margin: "6px 0 12px" }} />
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#556", marginBottom: 8 }}>Funciones de la tienda</div>
+        {([["features.foodCalculator", "Calculadora de consumo + Mis mascotas"], ["features.foodComparator", "Comparador de alimentos (costo por día)"], ["features.adoptions", "Sección de Adopciones / callejeritos"]] as const).map(([k, label]) => (
+          <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, padding: "4px 0", cursor: "pointer" }}>
+            <input type="checkbox" checked={flags[k]} onChange={() => toggle(k)} style={{ width: 16, height: 16 }} />
+            {label}
+          </label>
+        ))}
+        <Field label="Nombre de la sección de adopciones" hint="Ej: Adopciones, Callejeritos">
+          <input value={adoptionsTitle} onChange={(e) => { setAdoptionsTitle(e.target.value); setSaved(false); }} style={{ ...input, width: "100%", boxSizing: "border-box" }} />
         </Field>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>

@@ -203,6 +203,14 @@ export const CONFIG_KEYS = {
     sensitive: false,
     description: "Habilita la calculadora de consumo de alimento y perfiles de mascota.",
   },
+  "features.foodComparator": {
+    key: "features.foodComparator",
+    jsonSchema: { type: "boolean" },
+    defaultValue: true,
+    category: "features",
+    sensitive: false,
+    description: "Habilita el comparador de alimentos (costo por día / conveniencia).",
+  },
   "nutrition.factors": {
     key: "nutrition.factors",
     jsonSchema: {

@@ -26,6 +26,10 @@ const THEME_KEYS = [
   "storefront.footerBlurb",
   "storefront.perks",
   "storefront.benefits",
+  "storefront.adoptionsTitle",
+  "features.adoptions",
+  "features.foodCalculator",
+  "features.foodComparator",
 ] as const;
 type ThemeKey = (typeof THEME_KEYS)[number];
 

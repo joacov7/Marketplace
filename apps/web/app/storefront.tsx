@@ -51,6 +51,7 @@ export interface StoreConfig {
   featuredCount: number;
   listColumns: 2 | 3 | 4;
   foodCalculator: boolean;
+  foodComparator: boolean;
   nutritionFactors: Record<string, number>;
 }
 
@@ -99,7 +100,7 @@ function consumption(weightKg: number, factor: number, kcalPerKg: number): { mer
   return { mer: Math.round(mer), gramsPerDay: Math.round(g), kgPerMonth: Math.round((g * 30) / 100) / 10 };
 }
 
-type View = "home" | "list" | "detail" | "checkout" | "done" | "adopciones";
+type View = "home" | "list" | "detail" | "checkout" | "done" | "adopciones" | "comparar";
 type CartLine = { name: string; sub: string; priceMinor: number; qty: number };
 type Cart = Record<string, CartLine>; // key = variantId
 
@@ -170,6 +171,11 @@ export default function Storefront(props: {
   }, [products, props.categories]);
 
   const defaultVariant = (p: StoreProduct) => p.variants[p.variants.length - 1]!;
+  // Alimentos con datos suficientes para comparar (kcal/kg + al menos una bolsa con peso).
+  const foodProducts = useMemo(
+    () => products.filter((p) => p.kcalPerKg && p.kcalPerKg > 0 && p.variants.some((v) => v.netWeightKg && v.netWeightKg > 0)),
+    [products],
+  );
 
   // ── Cálculos de dinero (client-side, desde config; el charge real lo hace /api/checkout) ──
   const items = Object.entries(cart);
@@ -272,10 +278,12 @@ export default function Storefront(props: {
         cartCount={items.reduce((a, [, l]) => a + l.qty, 0)} subtotal={subtotal}
         showPets={config.foodCalculator} factors={config.nutritionFactors}
         adoptionsLabel={props.adoptions.length > 0 ? props.adoptionsTitle : ""} adoptionsActive={view === "adopciones"}
+        comparatorLabel={config.foodComparator && foodProducts.length >= 2 ? "Comparar alimentos" : ""} comparatorActive={view === "comparar"}
         onHome={() => { setQuery(""); setCategory(""); go("home"); }}
         onCategory={(c) => { setCategory(c); setQuery(""); go("list"); }}
         onSearch={(q) => { setQuery(q); if (q) { setCategory(""); go("list"); } else go("home"); }}
         onAdoptions={() => go("adopciones")}
+        onComparar={() => go("comparar")}
         onCart={() => setCartOpen(true)}
         waLink={waLink()}
       />
@@ -329,6 +337,10 @@ export default function Storefront(props: {
 
         {view === "adopciones" && (
           <AdoptionsView G={G} title={props.adoptionsTitle} adoptions={props.adoptions} storeWhatsapp={props.whatsapp} />
+        )}
+
+        {view === "comparar" && (
+          <ComparatorView G={G} foods={foodProducts} factors={config.nutritionFactors} onOpen={(p) => { setSelId(p.productId); setSizeVariant(null); setQty(1); go("detail"); }} />
         )}
       </main>
 
@@ -413,7 +425,8 @@ function Header(props: {
   cartCount: number; subtotal: number;
   showPets: boolean; factors: Record<string, number>;
   adoptionsLabel: string; adoptionsActive: boolean;
-  onHome: () => void; onCategory: (c: string) => void; onSearch: (q: string) => void; onAdoptions: () => void; onCart: () => void; waLink: string | null;
+  comparatorLabel: string; comparatorActive: boolean;
+  onHome: () => void; onCategory: (c: string) => void; onSearch: (q: string) => void; onAdoptions: () => void; onComparar: () => void; onCart: () => void; waLink: string | null;
 }) {
   const { G } = props;
   return (
@@ -440,6 +453,7 @@ function Header(props: {
         {props.categories.map((c) => (
           <NavItem key={c.name} label={c.name} active={props.activeCat === c.name} onClick={() => props.onCategory(c.name)} G={G} />
         ))}
+        {props.comparatorLabel && <NavItem label={props.comparatorLabel} active={props.comparatorActive} onClick={props.onComparar} G={G} />}
         {props.adoptionsLabel && <NavItem label={props.adoptionsLabel} active={props.adoptionsActive} onClick={props.onAdoptions} G={G} />}
         {props.waLink && <a href={props.waLink} target="_blank" rel="noopener noreferrer" style={{ color: C.nav, fontWeight: 500, textDecoration: "none", borderBottom: "2px solid transparent", paddingBottom: 3 }}>Contacto</a>}
       </nav>
@@ -849,6 +863,102 @@ function CartDrawer(props: {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Comparador de alimentos (costo por día / conveniencia) ────────────────────────
+function ComparatorView({ G, foods, factors, onOpen }: { G: string; foods: StoreProduct[]; factors: Record<string, number>; onOpen: (p: StoreProduct) => void }) {
+  const [weight, setWeight] = useState("");
+  const [activity, setActivity] = useState("adulto_normal");
+  const [pets, setPets] = useState<CalcPet[]>([]);
+
+  useEffect(() => { fetch("/api/account/pets").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.pets) setPets(d.pets); }).catch(() => {}); }, []);
+
+  const w = Number(weight);
+  const factor = factors[activity] ?? DEFAULT_FACTORS[activity] ?? 1.4;
+
+  // Para cada alimento: elegimos la bolsa más grande con peso (mejor $/kg) y calculamos.
+  const rows = foods.map((p) => {
+    const withKg = p.variants.filter((v) => v.netWeightKg && v.netWeightKg > 0);
+    const v = withKg.reduce((a, b) => (b.netWeightKg! > (a?.netWeightKg ?? 0) ? b : a), withKg[0]!);
+    const pricePesos = Number(v.priceMinor) / 100;
+    const c = w > 0 ? consumption(w, factor, p.kcalPerKg!) : null;
+    const costPerDay = c && c.gramsPerDay > 0 ? (c.gramsPerDay / 1000) * (pricePesos / v.netWeightKg!) : 0;
+    const days = c && c.gramsPerDay > 0 ? Math.floor((v.netWeightKg! * 1000) / c.gramsPerDay) : 0;
+    return { p, v, pricePesos, protein: p.proteinPct, gramsPerDay: c?.gramsPerDay ?? 0, costPerDay, costPerMonth: costPerDay * 30, days };
+  }).filter((r) => r.costPerDay > 0).sort((a, b) => a.costPerDay - b.costPerDay);
+
+  const cheapest = rows[0]?.costPerDay ?? 0;
+  const bestQuality = rows.reduce((a, b) => ((b.protein ?? 0) > (a?.protein ?? 0) ? b : a), rows[0]);
+
+  return (
+    <>
+      <div style={{ fontSize: 12.5, color: C.mute, marginBottom: 14 }}>Inicio / Comparar alimentos</div>
+      <h1 style={{ margin: 0, fontSize: 32, fontWeight: 700, letterSpacing: "-.02em" }}>Comparar alimentos</h1>
+      <p style={{ fontSize: 15, color: C.text2, lineHeight: 1.6, marginTop: 6, maxWidth: 680 }}>
+        El precio por kilo engaña: un alimento más concentrado rinde más y tu mascota come menos. Compará por <b>costo por día</b> — muchas veces el premium sale más barato.
+      </p>
+
+      <div style={{ marginTop: 16, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, background: C.surf }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: C.mute, marginBottom: 8 }}>Datos de tu mascota</div>
+        {pets.length > 0 && (
+          <select onChange={(e) => { const p = pets.find((x) => x.id === e.target.value); if (p) { if (p.weightKg) setWeight(String(p.weightKg)); setActivity(p.activity); } }} defaultValue="" style={{ ...input, marginBottom: 8 }}>
+            <option value="" disabled>Usar una de mis mascotas…</option>
+            {pets.map((p) => <option key={p.id} value={p.id}>{p.name}{p.weightKg ? ` (${p.weightKg} kg)` : ""}</option>)}
+          </select>
+        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input value={weight} onChange={(e) => setWeight(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="Peso (kg)" inputMode="decimal" style={{ ...input, width: 120 }} />
+          <select value={activity} onChange={(e) => setActivity(e.target.value)} style={{ ...input, flex: 1, minWidth: 180 }}>
+            {Object.keys({ ...DEFAULT_FACTORS, ...factors }).map((k) => <option key={k} value={k}>{ACTIVITY_LABEL[k] ?? k}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {w > 0 ? (
+        <div style={{ overflowX: "auto", marginTop: 18 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, minWidth: 620 }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: C.mute, fontSize: 12.5 }}>
+                <th style={{ padding: "8px 10px" }}>Alimento</th>
+                <th style={{ padding: "8px 10px" }}>Proteína</th>
+                <th style={{ padding: "8px 10px" }}>Come/día</th>
+                <th style={{ padding: "8px 10px" }}>Bolsa</th>
+                <th style={{ padding: "8px 10px", color: G }}>$/día</th>
+                <th style={{ padding: "8px 10px" }}>$/mes</th>
+                <th style={{ padding: "8px 10px" }}>Dura</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const isCheapest = r.costPerDay === cheapest;
+                const isBest = bestQuality && r.p.productId === bestQuality.p.productId;
+                return (
+                  <tr key={r.p.productId} className="sf-a" onClick={() => onOpen(r.p)} style={{ borderTop: `1px solid ${C.border}`, background: isCheapest ? C.tint : "transparent" }}>
+                    <td style={{ padding: "10px" }}>
+                      <div style={{ fontWeight: 600 }}>{r.p.name}</div>
+                      <div style={{ display: "flex", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
+                        {isCheapest && <span style={{ fontSize: 10.5, fontWeight: 700, color: "white", background: G, borderRadius: 999, padding: "2px 8px" }}>MÁS CONVENIENTE</span>}
+                        {isBest && !isCheapest && <span style={{ fontSize: 10.5, fontWeight: 700, color: G, border: `1px solid ${G}`, borderRadius: 999, padding: "2px 8px" }}>MEJOR CALIDAD</span>}
+                      </div>
+                    </td>
+                    <td style={{ padding: "10px" }}>{r.protein ? `${r.protein}%` : "—"}</td>
+                    <td style={{ padding: "10px" }}>{r.gramsPerDay} g</td>
+                    <td style={{ padding: "10px" }}>{r.v.netWeightKg} kg</td>
+                    <td style={{ padding: "10px", fontWeight: 700, color: G }}>${Math.round(r.costPerDay).toLocaleString("es-AR")}</td>
+                    <td style={{ padding: "10px" }}>${Math.round(r.costPerMonth).toLocaleString("es-AR")}</td>
+                    <td style={{ padding: "10px" }}>{r.days} días</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p style={{ fontSize: 11.5, color: C.mute, marginTop: 10 }}>Estimación según el consumo de tu mascota (fórmula RER/MER) y la bolsa más conveniente de cada alimento. Ante la duda, consultá con tu veterinario.</p>
+        </div>
+      ) : (
+        <p style={{ color: C.mute, marginTop: 18 }}>Ingresá el peso de tu mascota para ver la comparación.</p>
+      )}
+    </>
   );
 }
 
