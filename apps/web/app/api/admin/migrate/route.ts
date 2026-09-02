@@ -136,18 +136,32 @@ async function seedTenant(slug: string) {
         "select id, category_id from products where merchant_id = $1 and slug = $2",
         [merchantId, p.slug],
       );
+      const kcalP = (p as { kcal?: number }).kcal ?? null;
+      const proteinP = (p as { protein?: number }).protein ?? null;
       if (ex[0]) {
-        // Backfill: si el producto existe sin categoría, se la asignamos.
+        // Backfill de lo que falte: categoría, descripción y nutrición (sin pisar ediciones).
         if (!ex[0].category_id && categoryId) {
-          await tx.query("update products set category_id = $2, description = coalesce(description,$3) where id = $1", [ex[0].id, categoryId, p.desc]);
+          await tx.query("update products set category_id = $2 where id = $1", [ex[0].id, categoryId]);
+        }
+        await tx.query("update products set description = coalesce(description,$2) where id = $1", [ex[0].id, p.desc]);
+        if (kcalP !== null) {
+          await tx.query("update products set kcal_per_kg = coalesce(kcal_per_kg,$2), protein_pct = coalesce(protein_pct,$3) where id = $1", [ex[0].id, kcalP, proteinP]);
+        }
+        // Peso neto por variante (match por el label del talle), solo si falta.
+        for (const s of p.sizes) {
+          const m = /([\d.]+)\s*kg/i.exec(s.v);
+          if (m) {
+            await tx.query(
+              "update variants set net_weight_kg = coalesce(net_weight_kg,$3) where product_id = $1 and name = $2",
+              [ex[0].id, s.v, Number(m[1])],
+            );
+          }
         }
         continue;
       }
       const { productId } = await createProduct(tx, { tenantId, merchantId, slug: p.slug, name: p.name, description: p.desc, ...(categoryId ? { categoryId } : {}) });
-      const kcal = (p as { kcal?: number }).kcal ?? null;
-      const protein = (p as { protein?: number }).protein ?? null;
-      if (kcal !== null) {
-        await tx.query("update products set kcal_per_kg = $2, protein_pct = $3 where id = $1", [productId, kcal, protein]);
+      if (kcalP !== null) {
+        await tx.query("update products set kcal_per_kg = $2, protein_pct = $3 where id = $1", [productId, kcalP, proteinP]);
       }
       let idx = 0;
       for (const s of p.sizes) {
