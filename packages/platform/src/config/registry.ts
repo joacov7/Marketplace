@@ -195,6 +195,25 @@ export const CONFIG_KEYS = {
     sensitive: false,
     description: "Nombre de la sección de adopciones (nav y título).",
   },
+  "features.foodCalculator": {
+    key: "features.foodCalculator",
+    jsonSchema: { type: "boolean" },
+    defaultValue: true,
+    category: "features",
+    sensitive: false,
+    description: "Habilita la calculadora de consumo de alimento y perfiles de mascota.",
+  },
+  "nutrition.factors": {
+    key: "nutrition.factors",
+    jsonSchema: {
+      type: "object",
+      additionalProperties: { type: "number", minimum: 0.5, maximum: 4 },
+    },
+    defaultValue: { cachorro: 2.0, adulto_bajo: 1.2, adulto_normal: 1.4, adulto_activo: 1.6, senior: 1.2 },
+    category: "rules",
+    sensitive: false,
+    description: "Factores de mantenimiento (× RER) por etapa/actividad para la calculadora de consumo.",
+  },
   "features.loyalty": {
     key: "features.loyalty",
     jsonSchema: { type: "boolean" },

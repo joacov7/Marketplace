@@ -26,15 +26,15 @@ const DEMO_CATEGORIES = [
 // Catálogo demo categorizado, con talles/pesos (variantes) y descripción. Precios en centavos.
 const DEMO_PRODUCTS = [
   { slug: "proplan", name: "Pro Plan Adulto", category: "Alimentos para Perros", desc: "Alimento completo y balanceado para perros adultos de razas medianas y grandes. Con OPTIHEALTH para una digestión saludable.",
-    sizes: [{ v: "3 kg", price: 1_890_000n }, { v: "7.5 kg", price: 4_190_000n }, { v: "15 kg", price: 7_290_000n }] },
+    kcal: 3800, protein: 26, sizes: [{ v: "3 kg", price: 1_890_000n }, { v: "7.5 kg", price: 4_190_000n }, { v: "15 kg", price: 7_290_000n }] },
   { slug: "dogo", name: "Dogo Premium", category: "Alimentos para Perros", desc: "Alimento premium argentino para perros adultos. Buena relación precio-calidad para el día a día.",
-    sizes: [{ v: "8 kg", price: 2_590_000n }, { v: "15 kg", price: 4_580_000n }, { v: "22 kg", price: 6_390_000n }] },
+    kcal: 3500, protein: 23, sizes: [{ v: "8 kg", price: 2_590_000n }, { v: "15 kg", price: 4_580_000n }, { v: "22 kg", price: 6_390_000n }] },
   { slug: "raza", name: "Raza Adultos", category: "Alimentos para Perros", desc: "Alimento estándar para perros adultos de todas las razas. Disponible también fraccionado por kilo.",
-    sizes: [{ v: "10 kg", price: 2_690_000n }, { v: "15 kg", price: 3_850_000n }, { v: "20 kg", price: 4_990_000n }] },
+    kcal: 3300, protein: 21, sizes: [{ v: "10 kg", price: 2_690_000n }, { v: "15 kg", price: 3_850_000n }, { v: "20 kg", price: 4_990_000n }] },
   { slug: "pedigree", name: "Pedigree Vital", category: "Alimentos para Perros", desc: "Alimento con Vital Protection para el cuidado diario de la piel, el pelaje y las defensas.",
-    sizes: [{ v: "8 kg", price: 2_290_000n }, { v: "15 kg", price: 3_990_000n }, { v: "21 kg", price: 5_290_000n }] },
+    kcal: 3400, protein: 22, sizes: [{ v: "8 kg", price: 2_290_000n }, { v: "15 kg", price: 3_990_000n }, { v: "21 kg", price: 5_290_000n }] },
   { slug: "whiskas", name: "Whiskas Adulto", category: "Alimentos para Gatos", desc: "Alimento balanceado para gatos adultos, con nutrientes esenciales y sabor a carne.",
-    sizes: [{ v: "1.5 kg", price: 690_000n }, { v: "3 kg", price: 1_290_000n }, { v: "10 kg", price: 3_450_000n }] },
+    kcal: 3900, protein: 30, sizes: [{ v: "1.5 kg", price: 690_000n }, { v: "3 kg", price: 1_290_000n }, { v: "10 kg", price: 3_450_000n }] },
   { slug: "piedras", name: "Piedras Sanitarias", category: "Piedras Sanitarias", desc: "Piedras aglomerantes de alto poder absorbente. Controlan el olor y facilitan la limpieza diaria.",
     sizes: [{ v: "4 kg", price: 890_000n }, { v: "10 kg", price: 1_850_000n }] },
   { slug: "snack-dental", name: "Snack Dental", category: "Snacks y Golosinas", desc: "Snack dental de textura especial que ayuda a reducir la formación de sarro hasta un 80%.",
@@ -144,11 +144,19 @@ async function seedTenant(slug: string) {
         continue;
       }
       const { productId } = await createProduct(tx, { tenantId, merchantId, slug: p.slug, name: p.name, description: p.desc, ...(categoryId ? { categoryId } : {}) });
+      const kcal = (p as { kcal?: number }).kcal ?? null;
+      const protein = (p as { protein?: number }).protein ?? null;
+      if (kcal !== null) {
+        await tx.query("update products set kcal_per_kg = $2, protein_pct = $3 where id = $1", [productId, kcal, protein]);
+      }
       let idx = 0;
       for (const s of p.sizes) {
         const { variantId } = await addVariant(tx, { tenantId, productId, sku: `${p.slug}-${idx++}`, name: s.v });
         await setPrice(tx, { tenantId, variantId, amountMinor: s.price });
         await setStock(tx, { tenantId, variantId, available: 25 });
+        // Peso neto de la bolsa (para la calculadora): del label "15 kg" → 15.
+        const m = /([\d.]+)\s*kg/i.exec(s.v);
+        if (m) await tx.query("update variants set net_weight_kg = $2 where id = $1", [variantId, Number(m[1])]);
       }
       created.push(p.name);
     }

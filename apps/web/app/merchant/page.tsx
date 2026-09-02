@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 interface Merchant { id: string; slug: string; name: string }
 interface SellerOrder { sellerOrderId: string; orderId: string; status: string; subtotalMinor: string; currency: string; itemCount: number; createdAt: string }
-interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; categoryId: string | null; categoryName: string | null; description: string | null; priceMinor: string | null; currency: string | null; available: number; status: string }
+interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; categoryId: string | null; categoryName: string | null; description: string | null; kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null; priceMinor: string | null; currency: string | null; available: number; status: string }
 interface Category { id: string; slug: string; name: string; imageUrl: string | null; position: number }
 interface AdoptionItem { id: string; name: string; species: string; age: string | null; description: string | null; imageUrl: string | null; contactWhatsapp: string | null; status: string; createdAt: string }
 interface ReportSummary { paidOrders: number; gmvMinor: string; deliveryRevenueMinor: string; commissionMinor: string; merchantPayoutMinor: string; refundsMinor: string; avgTicketMinor: string }
@@ -251,10 +251,10 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
     await load();
   }
 
-  async function save(variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string) {
+  async function save(variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string, food: { kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null }) {
     await fetch(`/api/merchant/catalog/${variantId}?tenant=${encodeURIComponent(tenant ?? "")}`, {
       method: "PATCH", headers: { ...auth, "content-type": "application/json" },
-      body: JSON.stringify({ ...(priceMinor !== null ? { priceMinor } : {}), stock, imageUrl, categoryId, description }),
+      body: JSON.stringify({ ...(priceMinor !== null ? { priceMinor } : {}), stock, imageUrl, categoryId, description, ...food }),
     });
     await load();
   }
@@ -307,13 +307,18 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
   );
 }
 
-function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; onSave: (variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string) => void }) {
+function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; onSave: (variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string, food: { kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null }) => void }) {
   const [price, setPrice] = useState(it.priceMinor ? String(Number(it.priceMinor) / 100) : "");
   const [stock, setStock] = useState(String(it.available));
   const [imageUrl, setImageUrl] = useState(it.imageUrl ?? "");
   const [categoryId, setCategoryId] = useState(it.categoryId ?? "");
   const [description, setDescription] = useState(it.description ?? "");
+  const [kcal, setKcal] = useState(it.kcalPerKg != null ? String(it.kcalPerKg) : "");
+  const [protein, setProtein] = useState(it.proteinPct != null ? String(it.proteinPct) : "");
+  const [netKg, setNetKg] = useState(it.netWeightKg != null ? String(it.netWeightKg) : "");
   const [openDesc, setOpenDesc] = useState(false);
+  const numN = (s: string): number | null => { const n = Number(s); return Number.isFinite(n) && n > 0 ? n : null; };
+  const doSave = () => onSave(it.variantId, price ? Math.round(Number(price) * 100) : null, Number(stock), imageUrl.trim(), categoryId, description.trim(), { kcalPerKg: numN(kcal), proteinPct: numN(protein), netWeightKg: numN(netKg) });
   return (
     <li style={{ ...card, display: "grid", gap: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
@@ -332,12 +337,20 @@ function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; o
             {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <input placeholder="Foto (URL)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} style={{ ...input, width: 160 }} />
-          <button onClick={() => setOpenDesc((v) => !v)} className="mbtn" style={btnGhost} title="Descripción">{openDesc ? "▲ Desc." : "▼ Desc."}</button>
-          <button onClick={() => onSave(it.variantId, price ? Math.round(Number(price) * 100) : null, Number(stock), imageUrl.trim(), categoryId, description.trim())} className="mbtn" style={btn}>Guardar</button>
+          <button onClick={() => setOpenDesc((v) => !v)} className="mbtn" style={btnGhost} title="Descripción y datos de alimento">{openDesc ? "▲ Más" : "▼ Más"}</button>
+          <button onClick={doSave} className="mbtn" style={btn}>Guardar</button>
         </span>
       </div>
       {openDesc && (
-        <textarea placeholder="Descripción del producto" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} style={{ ...input, width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
+        <div style={{ display: "grid", gap: 8 }}>
+          <textarea placeholder="Descripción del producto" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} style={{ ...input, width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, color: "#777" }}>🍖 Alimento:</span>
+            <label style={{ fontSize: 12, color: "#777" }}>kcal/kg <input value={kcal} onChange={(e) => setKcal(e.target.value.replace(/[^0-9]/g, ""))} placeholder="3600" style={{ ...input, width: 90 }} /></label>
+            <label style={{ fontSize: 12, color: "#777" }}>Proteína % <input value={protein} onChange={(e) => setProtein(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="26" style={{ ...input, width: 70 }} /></label>
+            <label style={{ fontSize: 12, color: "#777" }}>kg del paquete <input value={netKg} onChange={(e) => setNetKg(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="15" style={{ ...input, width: 70 }} /></label>
+          </div>
+        </div>
       )}
     </li>
   );

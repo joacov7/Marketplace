@@ -15,6 +15,8 @@ const files = [
   ["0008_product_images", "packages/modules/src/catalog/migrations/0008_product_images.sql"],
   ["0009_categories", "packages/modules/src/catalog/migrations/0009_categories.sql"],
   ["0010_adoptions", "packages/modules/src/adoptions/migrations/0010_adoptions.sql"],
+  ["0011_food_nutrition", "packages/modules/src/catalog/migrations/0011_food_nutrition.sql"],
+  ["0012_pets", "packages/modules/src/pets/migrations/0012_pets.sql"],
 ];
 
 const entries = files

@@ -22,6 +22,8 @@ const files = [
   "packages/modules/src/catalog/migrations/0008_product_images.sql",
   "packages/modules/src/catalog/migrations/0009_categories.sql",
   "packages/modules/src/adoptions/migrations/0010_adoptions.sql",
+  "packages/modules/src/catalog/migrations/0011_food_nutrition.sql",
+  "packages/modules/src/pets/migrations/0012_pets.sql",
 ];
 
 const sql = postgres(url, { max: 1, prepare: false, onnotice: (n) => console.log("  ·", n.message) });

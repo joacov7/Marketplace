@@ -8,6 +8,7 @@ export interface StoreVariant {
   size: string; // nombre de la variante = talle/peso
   priceMinor: string;
   currency: string;
+  netWeightKg: number | null; // peso neto de la bolsa (alimentos)
 }
 export interface StoreProduct {
   productId: string;
@@ -15,6 +16,8 @@ export interface StoreProduct {
   category: string;
   description: string;
   imageUrl: string;
+  kcalPerKg: number | null; // densidad energética (alimentos)
+  proteinPct: number | null;
   variants: StoreVariant[];
 }
 export interface StoreCategory {
@@ -47,6 +50,8 @@ export interface StoreConfig {
   auxilioEnabled: boolean;
   featuredCount: number;
   listColumns: 2 | 3 | 4;
+  foodCalculator: boolean;
+  nutritionFactors: Record<string, number>;
 }
 
 // ── Design tokens (handoff) ────────────────────────────────────────────────────
@@ -76,6 +81,23 @@ const PH_BG = "repeating-linear-gradient(45deg,#F0ECE0 0 9px,#F7F4EB 9px 18px)";
 
 const pesos = (minor: number | string) => Math.round(Number(minor) / 100);
 const money = (minor: number | string) => "$" + pesos(minor).toLocaleString("es-AR");
+
+// ── Nutrición: fórmula RER/MER (misma que el módulo pets, replicada para el cliente) ──
+const ACTIVITY_LABEL: Record<string, string> = {
+  cachorro: "Cachorro",
+  adulto_bajo: "Adulto poco activo / castrado",
+  adulto_normal: "Adulto normal",
+  adulto_activo: "Adulto activo",
+  senior: "Senior",
+};
+const DEFAULT_FACTORS: Record<string, number> = { cachorro: 2.0, adulto_bajo: 1.2, adulto_normal: 1.4, adulto_activo: 1.6, senior: 1.2 };
+function rer(weightKg: number): number { return weightKg > 0 ? 70 * Math.pow(weightKg, 0.75) : 0; }
+function consumption(weightKg: number, factor: number, kcalPerKg: number): { mer: number; gramsPerDay: number; kgPerMonth: number } {
+  const mer = factor * rer(weightKg);
+  const kpg = kcalPerKg > 0 ? kcalPerKg / 1000 : 0;
+  const g = kpg > 0 ? mer / kpg : 0;
+  return { mer: Math.round(mer), gramsPerDay: Math.round(g), kgPerMonth: Math.round((g * 30) / 100) / 10 };
+}
 
 type View = "home" | "list" | "detail" | "checkout" | "done" | "adopciones";
 type CartLine = { name: string; sub: string; priceMinor: number; qty: number };
@@ -245,9 +267,10 @@ export default function Storefront(props: {
       )}
 
       <Header
-        G={G} logoUrl={props.logoUrl} displayName={props.displayName}
+        G={G} tenant={tenant} logoUrl={props.logoUrl} displayName={props.displayName}
         categories={categories} activeCat={view === "list" ? category : ""} query={query}
         cartCount={items.reduce((a, [, l]) => a + l.qty, 0)} subtotal={subtotal}
+        showPets={config.foodCalculator} factors={config.nutritionFactors}
         adoptionsLabel={props.adoptions.length > 0 ? props.adoptionsTitle : ""} adoptionsActive={view === "adopciones"}
         onHome={() => { setQuery(""); setCategory(""); go("home"); }}
         onCategory={(c) => { setCategory(c); setQuery(""); go("list"); }}
@@ -283,6 +306,7 @@ export default function Storefront(props: {
             G={G} p={sel} category={sel.category}
             sizeVariant={sizeVariant ?? defaultVariant(sel).variantId} setSizeVariant={setSizeVariant}
             qty={qty} setQty={setQty}
+            showCalculator={config.foodCalculator} factors={config.nutritionFactors}
             waLink={waLink(`¡Hola! Quiero consultar por ${sel.name}.`)}
             onBackCat={() => { setCategory(sel.category); go("list"); }}
             onAdd={(variantId) => addToCart(sel, variantId, qty)}
@@ -384,9 +408,10 @@ const input: React.CSSProperties = { padding: "12px 14px", border: `1.5px solid 
 
 // ── Header ───────────────────────────────────────────────────────────────────────
 function Header(props: {
-  G: string; logoUrl: string; displayName: string;
+  G: string; tenant: string; logoUrl: string; displayName: string;
   categories: { name: string; count: number }[]; activeCat: string; query: string;
   cartCount: number; subtotal: number;
+  showPets: boolean; factors: Record<string, number>;
   adoptionsLabel: string; adoptionsActive: boolean;
   onHome: () => void; onCategory: (c: string) => void; onSearch: (q: string) => void; onAdoptions: () => void; onCart: () => void; waLink: string | null;
 }) {
@@ -425,7 +450,7 @@ function Header(props: {
           <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={C.mute} strokeWidth={2} aria-hidden><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeLinecap="round" /></svg>
           <input value={props.query} onChange={(e) => props.onSearch(e.target.value)} placeholder="Buscar productos" style={{ border: "none", outline: "none", background: "transparent", fontSize: 13, width: 150, fontFamily: FONT, color: C.text }} />
         </div>
-        <svg width={21} height={21} viewBox="0 0 24 24" fill="none" stroke={C.nav} strokeWidth={1.8} aria-hidden><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" strokeLinecap="round" /></svg>
+        <AccountMenu G={G} tenant={props.tenant} showPets={props.showPets} factors={props.factors} />
         <button className="sf-btn" onClick={props.onCart} style={{ background: G, color: C.white, border: "none", borderRadius: 999, padding: "8px 16px", display: "inline-flex", alignItems: "center", gap: 9, cursor: "pointer", fontFamily: FONT }}>
           <CartIcon size={18} /><span style={{ fontSize: 14, fontWeight: 600 }}>{money(props.subtotal)}</span>
         </button>
@@ -616,10 +641,12 @@ function ListView(props: {
 // ── Detalle ─────────────────────────────────────────────────────────────────────
 function DetailView(props: {
   G: string; p: StoreProduct; category: string; sizeVariant: string; setSizeVariant: (v: string) => void;
-  qty: number; setQty: (n: number) => void; waLink: string | null; onBackCat: () => void; onAdd: (variantId: string) => void;
+  qty: number; setQty: (n: number) => void; showCalculator: boolean; factors: Record<string, number>;
+  waLink: string | null; onBackCat: () => void; onAdd: (variantId: string) => void;
 }) {
   const { G, p } = props;
   const variant = p.variants.find((v) => v.variantId === props.sizeVariant) ?? p.variants[p.variants.length - 1]!;
+  const isFood = !!(p.kcalPerKg && p.kcalPerKg > 0);
   return (
     <>
       <div style={{ fontSize: 12.5, color: C.mute, marginBottom: 14 }}>
@@ -633,6 +660,12 @@ function DetailView(props: {
           <div style={{ fontSize: 14.5, color: C.mute, marginTop: 4 }}>{variant.size}</div>
           <div style={{ fontSize: 38, fontWeight: 700, color: G, marginTop: 22 }}>{money(variant.priceMinor)}</div>
           <div style={{ fontSize: 13, fontWeight: 600, color: C.lightGreen, marginTop: 2 }}>En stock</div>
+          {isFood && (
+            <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 12.5, color: C.text2 }}>
+              {p.proteinPct ? <span>🥩 Proteína <b>{p.proteinPct}%</b></span> : null}
+              {p.kcalPerKg ? <span>⚡ <b>{p.kcalPerKg}</b> kcal/kg</span> : null}
+            </div>
+          )}
           {p.description && <p style={{ fontSize: 14.5, color: C.text2, lineHeight: 1.65, maxWidth: 460, marginTop: 14 }}>{p.description}</p>}
 
           {p.variants.length > 1 && (
@@ -660,6 +693,8 @@ function DetailView(props: {
             <button className="sf-btn" onClick={() => props.onAdd(variant.variantId)} style={{ ...primaryBtn(G), padding: 15 }}><CartIcon size={17} />AGREGAR AL CARRITO</button>
             {props.waLink && <a className="sf-btn" href={props.waLink} target="_blank" rel="noopener noreferrer" style={{ ...outlineBtn(G), padding: 15 }}><WaIcon size={17} />COMPRAR POR WHATSAPP</a>}
           </div>
+
+          {props.showCalculator && isFood && <FoodCalculator G={G} kcalPerKg={p.kcalPerKg!} netWeightKg={variant.netWeightKg} factors={props.factors} />}
         </div>
       </div>
     </>
@@ -817,6 +852,55 @@ function CartDrawer(props: {
   );
 }
 
+// ── Calculadora de consumo (en el detalle de un alimento) ─────────────────────────
+interface CalcPet { id: string; name: string; weightKg: number | null; activity: string }
+
+function FoodCalculator({ G, kcalPerKg, netWeightKg, factors }: { G: string; kcalPerKg: number; netWeightKg: number | null; factors: Record<string, number> }) {
+  const [weight, setWeight] = useState("");
+  const [activity, setActivity] = useState("adulto_normal");
+  const [pets, setPets] = useState<CalcPet[]>([]);
+
+  useEffect(() => {
+    fetch("/api/account/pets").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.pets) setPets(d.pets); }).catch(() => {});
+  }, []);
+
+  const w = Number(weight);
+  const factor = factors[activity] ?? DEFAULT_FACTORS[activity] ?? 1.4;
+  const c = w > 0 ? consumption(w, factor, kcalPerKg) : null;
+  const days = c && netWeightKg && netWeightKg > 0 ? Math.floor((netWeightKg * 1000) / c.gramsPerDay) : 0;
+
+  function pickPet(id: string) {
+    const p = pets.find((x) => x.id === id);
+    if (p) { if (p.weightKg) setWeight(String(p.weightKg)); setActivity(p.activity); }
+  }
+
+  return (
+    <div style={{ marginTop: 24, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, background: C.surf }}>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>🍖 ¿Cuánto le dura?</div>
+      <div style={{ fontSize: 12.5, color: C.mute, marginBottom: 10 }}>Calculamos el consumo según el peso y la etapa de tu mascota.</div>
+      {pets.length > 0 && (
+        <select onChange={(e) => pickPet(e.target.value)} defaultValue="" style={{ ...input, marginBottom: 8 }}>
+          <option value="" disabled>Usar una de mis mascotas…</option>
+          {pets.map((p) => <option key={p.id} value={p.id}>{p.name}{p.weightKg ? ` (${p.weightKg} kg)` : ""}</option>)}
+        </select>
+      )}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input value={weight} onChange={(e) => setWeight(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="Peso (kg)" inputMode="decimal" style={{ ...input, width: 110 }} />
+        <select value={activity} onChange={(e) => setActivity(e.target.value)} style={{ ...input, flex: 1, minWidth: 160 }}>
+          {Object.keys({ ...DEFAULT_FACTORS, ...factors }).map((k) => <option key={k} value={k}>{ACTIVITY_LABEL[k] ?? k}</option>)}
+        </select>
+      </div>
+      {c && (
+        <div style={{ marginTop: 12, display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13.5 }}>
+          <span><b style={{ color: G, fontSize: 18 }}>{c.gramsPerDay} g</b><br /><span style={{ color: C.mute }}>por día</span></span>
+          <span><b style={{ color: G, fontSize: 18 }}>{c.kgPerMonth} kg</b><br /><span style={{ color: C.mute }}>por mes</span></span>
+          {days > 0 && <span><b style={{ color: G, fontSize: 18 }}>≈ {days} días</b><br /><span style={{ color: C.mute }}>dura este paquete</span></span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Adopciones / callejeritos ────────────────────────────────────────────────────
 const SPECIES_LABEL: Record<string, string> = { perro: "🐶 Perro", gato: "🐱 Gato", otro: "🐾 Mascota" };
 
@@ -858,6 +942,190 @@ function AdoptionsView({ G, title, adoptions, storeWhatsapp }: { G: string; titl
         </div>
       )}
     </>
+  );
+}
+
+// ── Cuenta: login/registro + Mis pedidos + Mis mascotas ──────────────────────────
+function AccountMenu({ G, tenant, showPets, factors }: { G: string; tenant: string; showPets: boolean; factors: Record<string, number> }) {
+  const [email, setEmail] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [err, setErr] = useState<string | null>(null);
+  const [modal, setModal] = useState<"" | "orders" | "pets">("");
+
+  useEffect(() => { fetch("/api/auth/me").then((r) => r.json()).then((d) => setEmail(d.user?.email ?? null)).catch(() => {}); }, []);
+
+  async function submit() {
+    setErr(null);
+    const res = await fetch(`/api/auth/${mode}?tenant=${encodeURIComponent(tenant)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form) });
+    const d = await res.json();
+    if (!res.ok) { setErr(d.error ?? "error"); return; }
+    setEmail(d.email); setOpen(false); setForm({ email: "", password: "" });
+  }
+  async function logout() { await fetch("/api/auth/logout", { method: "POST" }); setEmail(null); setOpen(false); }
+
+  return (
+    <span style={{ position: "relative" }}>
+      <button onClick={() => setOpen((v) => !v)} aria-label="Cuenta" style={{ border: "none", background: "transparent", cursor: "pointer", padding: 0, display: "grid", placeItems: "center" }}>
+        <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={C.nav} strokeWidth={1.8} aria-hidden><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" strokeLinecap="round" /></svg>
+      </button>
+      {open && (
+        <div style={{ position: "absolute", right: 0, top: 34, background: "white", color: C.text, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12, width: 240, zIndex: 45, boxShadow: "0 10px 30px rgba(0,0,0,.14)" }}>
+          {email ? (
+            <>
+              <div style={{ fontSize: 13, color: C.mute, marginBottom: 8, wordBreak: "break-all" }}>{email}</div>
+              <button onClick={() => { setModal("orders"); setOpen(false); }} style={{ ...primaryBtn(G), width: "100%", padding: 10, marginBottom: 6 }}>Mis pedidos</button>
+              {showPets && <button onClick={() => { setModal("pets"); setOpen(false); }} style={{ ...outlineBtn(G), width: "100%", padding: 10, marginBottom: 6 }}>🐾 Mis mascotas</button>}
+              <button onClick={logout} style={{ border: "none", background: "transparent", color: C.mute, cursor: "pointer", fontSize: 13, width: "100%", padding: 6 }}>Cerrar sesión</button>
+            </>
+          ) : (
+            <>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                {(["login", "register"] as const).map((m) => (
+                  <button key={m} onClick={() => setMode(m)} style={{ flex: 1, border: "none", borderRadius: 7, padding: 6, cursor: "pointer", background: mode === m ? G : "#eee", color: mode === m ? "white" : "#333", fontSize: 12, fontWeight: 600, fontFamily: FONT }}>{m === "login" ? "Ingresar" : "Registrarme"}</button>
+                ))}
+              </div>
+              <input placeholder="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={{ ...input, marginBottom: 6 }} />
+              <input placeholder="contraseña" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} onKeyDown={(e) => e.key === "Enter" && submit()} style={input} />
+              {err && <p style={{ color: "#c62828", fontSize: 12, margin: "6px 0 0" }}>{err}</p>}
+              <button onClick={submit} style={{ ...primaryBtn(G), width: "100%", padding: 10, marginTop: 8 }}>{mode === "login" ? "Ingresar" : "Crear cuenta"}</button>
+            </>
+          )}
+        </div>
+      )}
+      {modal === "orders" && <MyOrdersModal onClose={() => setModal("")} />}
+      {modal === "pets" && <MyPetsModal G={G} factors={factors} onClose={() => setModal("")} />}
+    </span>
+  );
+}
+
+interface CustomerOrder { orderId: string; status: string; fulfillment: string | null; currency: string; totalMinor: string; itemCount: number; createdAt: string }
+function orderLabel(status: string, fulfillment: string | null): { label: string; color: string } {
+  if (status === "cancelled") return { label: "Cancelado", color: "#c62828" };
+  if (status === "refunded" || status === "partially_refunded") return { label: "Reembolsado", color: "#777" };
+  if (status === "pending_payment") return { label: "Pendiente de pago", color: "#b26a00" };
+  switch (fulfillment) {
+    case "delivered": return { label: "Entregado", color: "#2e7d32" };
+    case "in_transit": return { label: "En camino", color: "#00796b" };
+    case "ready": return { label: "Listo", color: "#8e24aa" };
+    case "preparing": return { label: "En preparación", color: "#1a73e8" };
+    default: return { label: "En proceso", color: "#1a73e8" };
+  }
+}
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", display: "grid", placeItems: "center", padding: 16, zIndex: 70 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "white", color: C.text, borderRadius: 16, maxWidth: 520, width: "100%", maxHeight: "88vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)", textAlign: "left" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, background: "white" }}>
+          <strong style={{ fontSize: 17 }}>{title}</strong>
+          <button onClick={onClose} aria-label="Cerrar" style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 22 }}>×</button>
+        </div>
+        <div style={{ padding: 16 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function MyOrdersModal({ onClose }: { onClose: () => void }) {
+  const [orders, setOrders] = useState<CustomerOrder[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { fetch("/api/account/orders").then((r) => r.json()).then((d) => { if (d.orders) setOrders(d.orders); else setError(d.error ?? "error"); }).catch((e) => setError(String(e))); }, []);
+  return (
+    <Modal title="Mis pedidos" onClose={onClose}>
+      {error && <p style={{ color: "#c00" }}>Error: {error}</p>}
+      {!orders && !error && <p style={{ color: C.mute }}>Cargando…</p>}
+      {orders && orders.length === 0 && <p style={{ color: C.mute }}>Todavía no tenés pedidos.</p>}
+      {orders && orders.length > 0 && (
+        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 10 }}>
+          {orders.map((o) => { const s = orderLabel(o.status, o.fulfillment); return (
+            <li key={o.orderId} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span><strong>#{o.orderId.slice(0, 8)}</strong> <span style={{ color: C.mute, fontSize: 13 }}>· {o.itemCount} ítem(s)</span></span>
+                <span style={{ background: s.color, color: "white", borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>{s.label}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 13, color: "#555" }}>
+                <span>{new Date(o.createdAt).toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                <b>{money(o.totalMinor)}</b>
+              </div>
+            </li>
+          ); })}
+        </ul>
+      )}
+    </Modal>
+  );
+}
+
+interface MyPet { id: string; name: string; species: string; breed: string | null; weightKg: number | null; activity: string }
+interface Replenish { pet: { name: string; weightKg: number } | null; items: Array<{ orderId: string; productName: string; runOutAt: string; daysLeft: number; totalDays: number }> }
+function MyPetsModal({ G, factors, onClose }: { G: string; factors: Record<string, number>; onClose: () => void }) {
+  const [pets, setPets] = useState<MyPet[]>([]);
+  const [rep, setRep] = useState<Replenish | null>(null);
+  const [f, setF] = useState({ name: "", species: "perro", breed: "", weightKg: "", activity: "adulto_normal" });
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => {
+    fetch("/api/account/pets").then((r) => r.json()).then((d) => { if (d.pets) setPets(d.pets); }).catch(() => {});
+    fetch("/api/account/replenishment").then((r) => r.json()).then((d) => setRep(d)).catch(() => {});
+  };
+  useEffect(load, []);
+
+  async function add() {
+    if (!f.name.trim()) { setError("Poné un nombre"); return; }
+    setError(null);
+    const res = await fetch("/api/account/pets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...f, weightKg: Number(f.weightKg) }) });
+    if (!res.ok) { const d = await res.json(); setError(d.error ?? "error"); return; }
+    setF({ name: "", species: f.species, breed: "", weightKg: "", activity: "adulto_normal" });
+    load();
+  }
+  async function del(id: string) { await fetch(`/api/account/pets/${id}`, { method: "DELETE" }); load(); }
+
+  return (
+    <Modal title="Mis mascotas" onClose={onClose}>
+      {pets.length > 0 && (
+        <ul style={{ listStyle: "none", margin: "0 0 14px", padding: 0, display: "grid", gap: 8 }}>
+          {pets.map((p) => (
+            <li key={p.id} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span><strong>{p.name}</strong> <span style={{ color: C.mute, fontSize: 13 }}>{p.species}{p.weightKg ? ` · ${p.weightKg} kg` : ""} · {ACTIVITY_LABEL[p.activity] ?? p.activity}</span></span>
+              <button onClick={() => del(p.id)} style={{ border: "none", background: "transparent", color: "#c62828", cursor: "pointer", fontSize: 13 }}>Borrar</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Agregar mascota</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input placeholder="Nombre" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} style={{ ...input, flex: 1, minWidth: 120 }} />
+          <select value={f.species} onChange={(e) => setF({ ...f, species: e.target.value })} style={{ ...input, width: 100 }}><option value="perro">Perro</option><option value="gato">Gato</option><option value="otro">Otro</option></select>
+          <input placeholder="Peso (kg)" value={f.weightKg} onChange={(e) => setF({ ...f, weightKg: e.target.value.replace(/[^0-9.]/g, "") })} inputMode="decimal" style={{ ...input, width: 100 }} />
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+          <input placeholder="Raza (opcional)" value={f.breed} onChange={(e) => setF({ ...f, breed: e.target.value })} style={{ ...input, flex: 1, minWidth: 120 }} />
+          <select value={f.activity} onChange={(e) => setF({ ...f, activity: e.target.value })} style={{ ...input, flex: 1, minWidth: 160 }}>
+            {Object.keys({ ...DEFAULT_FACTORS, ...factors }).map((k) => <option key={k} value={k}>{ACTIVITY_LABEL[k] ?? k}</option>)}
+          </select>
+        </div>
+        {error && <p style={{ color: "#c62828", fontSize: 12.5, margin: "8px 0 0" }}>{error}</p>}
+        <button onClick={add} style={{ ...primaryBtn(G), padding: 10, marginTop: 10 }}>Agregar</button>
+      </div>
+
+      {rep && rep.items.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>🔔 Reposición estimada <span style={{ fontSize: 12, color: C.mute, fontWeight: 400 }}>(para {rep.pet?.name})</span></div>
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+            {rep.items.map((it, i) => (
+              <li key={i} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 13.5 }}><strong>{it.productName}</strong></span>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: it.daysLeft <= 5 ? "#c62828" : it.daysLeft <= 12 ? "#b26a00" : "#2e7d32" }}>
+                  {it.daysLeft <= 0 ? "Reponer ya" : `Te quedan ≈ ${it.daysLeft} días`}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p style={{ fontSize: 11.5, color: C.mute, marginTop: 6 }}>Estimación según el consumo de tu mascota. Ante la duda, consultá con tu veterinario.</p>
+        </div>
+      )}
+    </Modal>
   );
 }
 

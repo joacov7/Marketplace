@@ -75,6 +75,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       featuredCount, listColumns,
       promoText, heroTitle, heroHighlight, heroSubtitle, footerBlurb, perks, benefits,
       adoptionsEnabled, adoptionsTitle,
+      foodCalculator, nutritionFactors,
       catalog0,
     ] = await Promise.all([
       cfg<string>("branding.primaryColor"),
@@ -98,6 +99,8 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<Array<{ t: string; s: string }>>("storefront.benefits"),
       cfg<boolean>("features.adoptions"),
       cfg<string>("storefront.adoptionsTitle"),
+      cfg<boolean>("features.foodCalculator"),
+      cfg<Record<string, number>>("nutrition.factors"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
         const adoptions = await listAdoptions(tx);
@@ -120,11 +123,13 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
           category: cleanText(v.categoryName ?? "", ""),
           description: cleanText(v.description ?? "", ""),
           imageUrl: safeUrl(v.imageUrl),
+          kcalPerKg: v.kcalPerKg ?? null,
+          proteinPct: v.proteinPct ?? null,
           variants: [],
         };
         byProduct.set(v.productId, p);
       }
-      p.variants.push({ variantId: v.variantId, size: v.name, priceMinor: v.price.amountMinor.toString(), currency: v.price.currency });
+      p.variants.push({ variantId: v.variantId, size: v.name, priceMinor: v.price.amountMinor.toString(), currency: v.price.currency, netWeightKg: v.netWeightKg ?? null });
     }
     const products = [...byProduct.values()].filter((p) => p.variants.length > 0);
 
@@ -163,6 +168,8 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       auxilioEnabled: auxilioEnabled !== false,
       featuredCount: num(featuredCount, 4),
       listColumns: [2, 3, 4].includes(num(listColumns, 3)) ? (num(listColumns, 3) as 2 | 3 | 4) : 3,
+      foodCalculator: foodCalculator !== false,
+      nutritionFactors: (nutritionFactors && typeof nutritionFactors === "object" ? nutritionFactors : {}) as Record<string, number>,
     };
 
     return (

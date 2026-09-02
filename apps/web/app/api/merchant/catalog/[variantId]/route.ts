@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { setPrice, setProductImageByVariant, setProductCategoryByVariant, setProductDescriptionByVariant } from "@commerce/modules/catalog";
+import { setPrice, setProductImageByVariant, setProductCategoryByVariant, setProductDescriptionByVariant, setFoodNutritionByVariant, setVariantNetWeight } from "@commerce/modules/catalog";
 import { setStock } from "@commerce/modules/inventory";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
@@ -14,12 +14,13 @@ export async function PATCH(req: Request, { params }: { params: { variantId: str
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
-  let body: { priceMinor?: string | number; stock?: number; imageUrl?: string; categoryId?: string | null; description?: string };
+  let body: { priceMinor?: string | number; stock?: number; imageUrl?: string; categoryId?: string | null; description?: string; kcalPerKg?: number | null; proteinPct?: number | null; netWeightKg?: number | null };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
+  const numOrNull = (v: unknown): number | null => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null; };
 
   await db().withTenant(tenant.tenantId, async (tx) => {
     if (body.priceMinor !== undefined) {
@@ -37,6 +38,12 @@ export async function PATCH(req: Request, { params }: { params: { variantId: str
     }
     if (body.description !== undefined) {
       await setProductDescriptionByVariant(tx, { tenantId: tenant.tenantId, variantId: params.variantId, description: body.description.trim() || null });
+    }
+    if (body.kcalPerKg !== undefined || body.proteinPct !== undefined) {
+      await setFoodNutritionByVariant(tx, { tenantId: tenant.tenantId, variantId: params.variantId, kcalPerKg: numOrNull(body.kcalPerKg), proteinPct: numOrNull(body.proteinPct) });
+    }
+    if (body.netWeightKg !== undefined) {
+      await setVariantNetWeight(tx, { tenantId: tenant.tenantId, variantId: params.variantId, netWeightKg: numOrNull(body.netWeightKg) });
     }
   });
   return NextResponse.json({ ok: true });
