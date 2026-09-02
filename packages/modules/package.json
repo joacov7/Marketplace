@@ -12,7 +12,8 @@
     "./profitability": { "types": "./dist/profitability/index.d.ts", "default": "./dist/profitability/index.js" },
     "./agent": { "types": "./dist/agent/index.d.ts", "default": "./dist/agent/index.js" },
     "./customer": { "types": "./dist/customer/index.d.ts", "default": "./dist/customer/index.js" },
-    "./reports": { "types": "./dist/reports/index.d.ts", "default": "./dist/reports/index.js" }
+    "./reports": { "types": "./dist/reports/index.d.ts", "default": "./dist/reports/index.js" },
+    "./adoptions": { "types": "./dist/adoptions/index.d.ts", "default": "./dist/adoptions/index.js" }
   },
   "scripts": {
     "build": "tsc --build"

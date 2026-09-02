@@ -14,6 +14,7 @@ const files = [
   ["0007_orders_checkout", "packages/modules/src/orders/migrations/0007_orders_checkout.sql"],
   ["0008_product_images", "packages/modules/src/catalog/migrations/0008_product_images.sql"],
   ["0009_categories", "packages/modules/src/catalog/migrations/0009_categories.sql"],
+  ["0010_adoptions", "packages/modules/src/adoptions/migrations/0010_adoptions.sql"],
 ];
 
 const entries = files

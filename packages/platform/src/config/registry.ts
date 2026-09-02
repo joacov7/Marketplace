@@ -179,6 +179,22 @@ export const CONFIG_KEYS = {
     sensitive: false,
     description: "Habilita el Customer Shopping Agent.",
   },
+  "features.adoptions": {
+    key: "features.adoptions",
+    jsonSchema: { type: "boolean" },
+    defaultValue: true,
+    category: "features",
+    sensitive: false,
+    description: "Habilita la sección de Adopciones / callejeritos en la tienda.",
+  },
+  "storefront.adoptionsTitle": {
+    key: "storefront.adoptionsTitle",
+    jsonSchema: { type: "string", maxLength: 60 },
+    defaultValue: "Adopciones",
+    category: "text",
+    sensitive: false,
+    description: "Nombre de la sección de adopciones (nav y título).",
+  },
   "features.loyalty": {
     key: "features.loyalty",
     jsonSchema: { type: "boolean" },

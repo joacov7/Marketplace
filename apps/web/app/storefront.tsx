@@ -21,6 +21,15 @@ export interface StoreCategory {
   name: string;
   position: number;
 }
+export interface StoreAdoption {
+  id: string;
+  name: string;
+  species: "perro" | "gato" | "otro";
+  age: string;
+  description: string;
+  imageUrl: string;
+  contactWhatsapp: string;
+}
 export interface StoreContent {
   promoText: string;
   heroTitle: string;
@@ -68,7 +77,7 @@ const PH_BG = "repeating-linear-gradient(45deg,#F0ECE0 0 9px,#F7F4EB 9px 18px)";
 const pesos = (minor: number | string) => Math.round(Number(minor) / 100);
 const money = (minor: number | string) => "$" + pesos(minor).toLocaleString("es-AR");
 
-type View = "home" | "list" | "detail" | "checkout" | "done";
+type View = "home" | "list" | "detail" | "checkout" | "done" | "adopciones";
 type CartLine = { name: string; sub: string; priceMinor: number; qty: number };
 type Cart = Record<string, CartLine>; // key = variantId
 
@@ -91,6 +100,8 @@ export default function Storefront(props: {
   categories: StoreCategory[];
   content: StoreContent;
   config: StoreConfig;
+  adoptions: StoreAdoption[];
+  adoptionsTitle: string;
 }) {
   const { tenant, primary, products, config } = props;
   const G = primary; // verde de marca (config)
@@ -237,9 +248,11 @@ export default function Storefront(props: {
         G={G} logoUrl={props.logoUrl} displayName={props.displayName}
         categories={categories} activeCat={view === "list" ? category : ""} query={query}
         cartCount={items.reduce((a, [, l]) => a + l.qty, 0)} subtotal={subtotal}
+        adoptionsLabel={props.adoptions.length > 0 ? props.adoptionsTitle : ""} adoptionsActive={view === "adopciones"}
         onHome={() => { setQuery(""); setCategory(""); go("home"); }}
         onCategory={(c) => { setCategory(c); setQuery(""); go("list"); }}
         onSearch={(q) => { setQuery(q); if (q) { setCategory(""); go("list"); } else go("home"); }}
+        onAdoptions={() => go("adopciones")}
         onCart={() => setCartOpen(true)}
         waLink={waLink()}
       />
@@ -288,6 +301,10 @@ export default function Storefront(props: {
 
         {view === "done" && done && (
           <DoneView G={G} orderId={done.orderId} totalMinor={done.totalMinor} onHome={() => { setCategory(""); setQuery(""); go("home"); }} />
+        )}
+
+        {view === "adopciones" && (
+          <AdoptionsView G={G} title={props.adoptionsTitle} adoptions={props.adoptions} storeWhatsapp={props.whatsapp} />
         )}
       </main>
 
@@ -370,21 +387,26 @@ function Header(props: {
   G: string; logoUrl: string; displayName: string;
   categories: { name: string; count: number }[]; activeCat: string; query: string;
   cartCount: number; subtotal: number;
-  onHome: () => void; onCategory: (c: string) => void; onSearch: (q: string) => void; onCart: () => void; waLink: string | null;
+  adoptionsLabel: string; adoptionsActive: boolean;
+  onHome: () => void; onCategory: (c: string) => void; onSearch: (q: string) => void; onAdoptions: () => void; onCart: () => void; waLink: string | null;
 }) {
   const { G } = props;
   return (
     <header style={{ position: "sticky", top: 0, zIndex: 40, background: C.white, borderBottom: `1px solid ${C.border}`, padding: "14px 24px", display: "flex", gap: 32, alignItems: "center" }}>
       {/* Logo */}
       <div className="sf-a" onClick={props.onHome} style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        {props.logoUrl
+        {props.logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          ? <img src={props.logoUrl} alt={props.displayName} style={{ width: 42, height: 42, borderRadius: "50%", objectFit: "contain" }} />
-          : <span style={{ width: 42, height: 42, borderRadius: "50%", border: `2px solid ${G}`, display: "grid", placeItems: "center", flexShrink: 0 }}><span style={{ width: 16, height: 16, borderRadius: "50%", background: G, display: "block" }} /></span>}
-        <span style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
-          <span style={{ fontSize: 19, fontWeight: 700, color: G, letterSpacing: ".02em" }}>{props.displayName.replace(/gualeguay/i, "").trim().toUpperCase() || "PET SHOP"}</span>
-          <span style={{ fontSize: 9, fontWeight: 500, color: C.mute, letterSpacing: ".34em", marginTop: 3 }}>{/gualeguay/i.test(props.displayName) ? "GUALEGUAY" : ""}</span>
-        </span>
+          <img src={props.logoUrl} alt={props.displayName} style={{ height: 44, width: "auto", maxWidth: 180, objectFit: "contain", display: "block" }} />
+        ) : (
+          <>
+            <span style={{ width: 42, height: 42, borderRadius: "50%", border: `2px solid ${G}`, display: "grid", placeItems: "center", flexShrink: 0 }}><span style={{ width: 16, height: 16, borderRadius: "50%", background: G, display: "block" }} /></span>
+            <span style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
+              <span style={{ fontSize: 19, fontWeight: 700, color: G, letterSpacing: ".02em" }}>{props.displayName.replace(/gualeguay/i, "").trim().toUpperCase() || "PET SHOP"}</span>
+              <span style={{ fontSize: 9, fontWeight: 500, color: C.mute, letterSpacing: ".34em", marginTop: 3 }}>{/gualeguay/i.test(props.displayName) ? "GUALEGUAY" : ""}</span>
+            </span>
+          </>
+        )}
       </div>
 
       {/* Nav */}
@@ -393,6 +415,7 @@ function Header(props: {
         {props.categories.map((c) => (
           <NavItem key={c.name} label={c.name} active={props.activeCat === c.name} onClick={() => props.onCategory(c.name)} G={G} />
         ))}
+        {props.adoptionsLabel && <NavItem label={props.adoptionsLabel} active={props.adoptionsActive} onClick={props.onAdoptions} G={G} />}
         {props.waLink && <a href={props.waLink} target="_blank" rel="noopener noreferrer" style={{ color: C.nav, fontWeight: 500, textDecoration: "none", borderBottom: "2px solid transparent", paddingBottom: 3 }}>Contacto</a>}
       </nav>
 
@@ -791,6 +814,50 @@ function CartDrawer(props: {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Adopciones / callejeritos ────────────────────────────────────────────────────
+const SPECIES_LABEL: Record<string, string> = { perro: "🐶 Perro", gato: "🐱 Gato", otro: "🐾 Mascota" };
+
+function AdoptionsView({ G, title, adoptions, storeWhatsapp }: { G: string; title: string; adoptions: StoreAdoption[]; storeWhatsapp: string }) {
+  return (
+    <>
+      <div style={{ fontSize: 12.5, color: C.mute, marginBottom: 14 }}>Inicio / {title}</div>
+      <h1 style={{ margin: 0, fontSize: 32, fontWeight: 700, letterSpacing: "-.02em" }}>{title}</h1>
+      <p style={{ fontSize: 15, color: C.text2, lineHeight: 1.6, marginTop: 6, maxWidth: 640 }}>
+        Mascotas que buscan un hogar. Si te querés contactar por alguna, escribinos por WhatsApp. 💚
+      </p>
+      {adoptions.length === 0 ? (
+        <p style={{ color: C.mute, marginTop: 24 }}>Por ahora no hay publicaciones. Volvé pronto.</p>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 18, marginTop: 24 }}>
+          {adoptions.map((a) => {
+            const wa = (a.contactWhatsapp || storeWhatsapp)
+              ? `https://wa.me/${a.contactWhatsapp || storeWhatsapp}?text=${encodeURIComponent(`¡Hola! Me interesa dar en adopción / adoptar a ${a.name}.`)}`
+              : null;
+            return (
+              <div key={a.id} className="sf-card" style={{ border: `1px solid ${C.border}`, borderRadius: 16, background: C.white, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <Img src={a.imageUrl} alt={a.name} ratio="1" radius={0} label="foto mascota" />
+                <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <strong style={{ fontSize: 17 }}>{a.name}</strong>
+                    <span style={{ fontSize: 12, color: C.mute }}>{SPECIES_LABEL[a.species] ?? a.species}</span>
+                  </div>
+                  {a.age && <span style={{ fontSize: 12.5, color: C.mute }}>{a.age}</span>}
+                  {a.description && <p style={{ fontSize: 13.5, color: C.text2, lineHeight: 1.5, margin: 0 }}>{a.description}</p>}
+                  {wa && (
+                    <a href={wa} target="_blank" rel="noopener noreferrer" className="sf-btn" style={{ marginTop: "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, background: C.wa, color: C.white, textDecoration: "none", borderRadius: 9, padding: "10px", fontWeight: 700, fontSize: 13 }}>
+                      <WaIcon size={16} /> Consultar
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
 

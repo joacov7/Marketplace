@@ -1,5 +1,6 @@
 import { resolveConfigValue } from "@commerce/platform";
 import { listCatalog, listCategories } from "@commerce/modules/catalog";
+import { listAdoptions, type Adoption } from "@commerce/modules/adoptions";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { safeUrl } from "@/lib/sanitize";
@@ -73,6 +74,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       thresholdMinor, standardCostMinor, auxilioCostMinor, transferPct, auxilioEnabled,
       featuredCount, listColumns,
       promoText, heroTitle, heroHighlight, heroSubtitle, footerBlurb, perks, benefits,
+      adoptionsEnabled, adoptionsTitle,
       catalog0,
     ] = await Promise.all([
       cfg<string>("branding.primaryColor"),
@@ -94,14 +96,17 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<string>("storefront.footerBlurb"),
       cfg<Array<{ t: string; s: string }>>("storefront.perks"),
       cfg<Array<{ t: string; s: string }>>("storefront.benefits"),
+      cfg<boolean>("features.adoptions"),
+      cfg<string>("storefront.adoptionsTitle"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
-        if (!merchants[0]) return { catalog: [], categories: [] };
+        const adoptions = await listAdoptions(tx);
+        if (!merchants[0]) return { catalog: [], categories: [], adoptions };
         const [catalog, categories] = await Promise.all([listCatalog(tx, merchants[0].id), listCategories(tx, merchants[0].id)]);
-        return { catalog, categories };
+        return { catalog, categories, adoptions };
       }),
     ]);
-    const { catalog, categories: catRows } = catalog0;
+    const { catalog, categories: catRows, adoptions: adoptionRows } = catalog0;
 
     // Agrupa las variantes por producto: cada producto tiene 1..n talles/pesos con su precio.
     const byProduct = new Map<string, StoreProduct>();
@@ -129,6 +134,16 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
 
     const cleanPairs = (v: unknown): Array<{ t: string; s: string }> =>
       Array.isArray(v) ? v.map((x) => ({ t: cleanText((x as { t?: string }).t, ""), s: cleanText((x as { s?: string }).s, "") })).filter((x) => x.t) : [];
+
+    const adoptions = (adoptionsEnabled !== false ? adoptionRows : []).map((a: Adoption) => ({
+      id: a.id,
+      name: a.name,
+      species: a.species,
+      age: cleanText(a.age ?? "", ""),
+      description: cleanText(a.description ?? "", ""),
+      imageUrl: safeUrl(a.imageUrl ?? ""),
+      contactWhatsapp: (a.contactWhatsapp ?? "").replace(/[^0-9]/g, ""),
+    }));
 
     const content: StoreContent = {
       promoText: cleanText(promoText, ""),
@@ -162,6 +177,8 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
         categories={storeCategories}
         content={content}
         config={config}
+        adoptions={adoptions}
+        adoptionsTitle={cleanText(adoptionsTitle, "Adopciones")}
       />
     );
   } catch (e) {

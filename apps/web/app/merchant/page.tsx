@@ -6,6 +6,7 @@ interface Merchant { id: string; slug: string; name: string }
 interface SellerOrder { sellerOrderId: string; orderId: string; status: string; subtotalMinor: string; currency: string; itemCount: number; createdAt: string }
 interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; categoryId: string | null; categoryName: string | null; description: string | null; priceMinor: string | null; currency: string | null; available: number; status: string }
 interface Category { id: string; slug: string; name: string; imageUrl: string | null; position: number }
+interface AdoptionItem { id: string; name: string; species: string; age: string | null; description: string | null; imageUrl: string | null; contactWhatsapp: string | null; status: string; createdAt: string }
 interface ReportSummary { paidOrders: number; gmvMinor: string; deliveryRevenueMinor: string; commissionMinor: string; merchantPayoutMinor: string; refundsMinor: string; avgTicketMinor: string }
 interface ReportSeries { day: string; orders: number; gmvMinor: string }
 interface ReportTop { productId: string; productName: string; unitsSold: number; revenueMinor: string }
@@ -61,7 +62,7 @@ export default function MerchantPanel() {
   const [tokenInput, setTokenInput] = useState("");
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [merchantId, setMerchantId] = useState<string>("");
-  const [tab, setTab] = useState<"catalogo" | "pedidos" | "reportes" | "diseno">("catalogo");
+  const [tab, setTab] = useState<"catalogo" | "pedidos" | "reportes" | "diseno" | "adopciones">("catalogo");
   const [error, setError] = useState<string | null>(null);
   const [migrating, setMigrating] = useState(false);
 
@@ -159,9 +160,9 @@ export default function MerchantPanel() {
       </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#eef0f3", padding: 4, borderRadius: 12, width: "fit-content", maxWidth: "100%", flexWrap: "wrap" }}>
-        {(["catalogo", "pedidos", "reportes", "diseno"] as const).map((t) => (
+        {(["catalogo", "pedidos", "reportes", "diseno", "adopciones"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} className="mbtn" style={{ border: "none", cursor: "pointer", fontWeight: 600, fontSize: 14, padding: "8px 16px", borderRadius: 9, background: tab === t ? "white" : "transparent", color: tab === t ? "#2563eb" : "#5b6270", boxShadow: tab === t ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>
-            {t === "catalogo" ? "Catálogo" : t === "pedidos" ? "Pedidos" : t === "reportes" ? "Reportes" : "Diseño"}
+            {t === "catalogo" ? "Catálogo" : t === "pedidos" ? "Pedidos" : t === "reportes" ? "Reportes" : t === "diseno" ? "Diseño" : "Adopciones"}
           </button>
         ))}
       </div>
@@ -175,7 +176,8 @@ export default function MerchantPanel() {
       {tab === "catalogo" ? <CatalogTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
         : tab === "pedidos" ? <OrdersTab tenant={tenant} token={token} onError={setError} />
         : tab === "reportes" ? <ReportsTab tenant={tenant} token={token} onError={setError} />
-        : <DesignTab tenant={tenant} token={token} onError={setError} />}
+        : tab === "diseno" ? <DesignTab tenant={tenant} token={token} onError={setError} />
+        : <AdoptionsTab tenant={tenant} token={token} onError={setError} />}
       </main>
     </div>
   );
@@ -677,6 +679,94 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function AdoptionsTab({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const [items, setItems] = useState<AdoptionItem[]>([]);
+  const [f, setF] = useState({ name: "", species: "perro", age: "", description: "", imageUrl: "", contactWhatsapp: "" });
+  const auth = { authorization: `Bearer ${token}` };
+
+  const load = useCallback(async () => {
+    if (!tenant) return;
+    const res = await fetch(`/api/merchant/adoptions?tenant=${encodeURIComponent(tenant)}`, { headers: auth });
+    const d = await res.json();
+    if (!res.ok) { onError(d.error); return; }
+    setItems(d.adoptions);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function publish() {
+    if (!f.name.trim()) { onError("Poné un nombre"); return; }
+    onError(null);
+    const res = await fetch(`/api/merchant/adoptions?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "POST", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(f),
+    });
+    const d = await res.json();
+    if (!res.ok) { onError(d.error); return; }
+    setF({ name: "", species: f.species, age: "", description: "", imageUrl: "", contactWhatsapp: "" });
+    await load();
+  }
+
+  async function patch(id: string, body: Record<string, unknown>) {
+    const res = await fetch(`/api/merchant/adoptions/${id}?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!res.ok) { const d = await res.json(); onError(d.error); return; }
+    await load();
+  }
+  async function remove(id: string, name: string) {
+    if (!confirm(`¿Borrar la publicación de "${name}"?`)) return;
+    const res = await fetch(`/api/merchant/adoptions/${id}?tenant=${encodeURIComponent(tenant ?? "")}`, { method: "DELETE", headers: auth });
+    if (!res.ok) { const d = await res.json(); onError(d.error); return; }
+    await load();
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <div style={card}>
+        <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Publicar mascota en adopción</h3>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input placeholder="Nombre (ej: Rocky)" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} style={{ ...input, flex: 1, minWidth: 150 }} />
+          <select value={f.species} onChange={(e) => setF({ ...f, species: e.target.value })} style={{ ...input, width: 110 }}>
+            <option value="perro">Perro</option>
+            <option value="gato">Gato</option>
+            <option value="otro">Otro</option>
+          </select>
+          <input placeholder="Edad / detalle (ej: 2 años)" value={f.age} onChange={(e) => setF({ ...f, age: e.target.value })} style={{ ...input, width: 160 }} />
+          <input placeholder="WhatsApp de contacto (opcional)" value={f.contactWhatsapp} onChange={(e) => setF({ ...f, contactWhatsapp: e.target.value.replace(/[^0-9]/g, "") })} inputMode="numeric" style={{ ...input, width: 190 }} />
+          <input placeholder="Foto (URL https://…)" value={f.imageUrl} onChange={(e) => setF({ ...f, imageUrl: e.target.value })} style={{ ...input, flex: 1, minWidth: 200 }} />
+        </div>
+        <textarea placeholder="Descripción (temperamento, castrado, vacunas…)" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} rows={2} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 8, resize: "vertical", fontFamily: "inherit" }} />
+        <div style={{ marginTop: 8 }}><button onClick={publish} className="mbtn" style={btn}>Publicar</button></div>
+      </div>
+
+      {items.length === 0 ? <p style={{ color: "#888" }}>No hay publicaciones. Cargá la primera arriba.</p> : (
+        <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 8 }}>
+          {items.map((a) => (
+            <li key={a.id} style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, opacity: a.status === "adopted" ? 0.6 : 1 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {a.imageUrl
+                  // eslint-disable-next-line @next/next/no-img-element
+                  ? <img src={a.imageUrl} alt={a.name} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, border: "1px solid #eee" }} />
+                  : <span style={{ width: 44, height: 44, borderRadius: 8, background: "#f2f2f2", display: "grid", placeItems: "center", fontSize: 18 }}>🐾</span>}
+                <span>
+                  <strong>{a.name}</strong> <span style={{ color: "#999", fontSize: 13 }}>{a.species}{a.age ? ` · ${a.age}` : ""}</span>
+                  {a.status === "adopted" && <span style={{ marginLeft: 8, background: "#e6f4ea", color: "#2e7d32", borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 600 }}>Adoptado</span>}
+                </span>
+              </span>
+              <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                {a.status === "available"
+                  ? <button onClick={() => patch(a.id, { status: "adopted" })} className="mbtn" style={btnGhost}>Marcar adoptado</button>
+                  : <button onClick={() => patch(a.id, { status: "available" })} className="mbtn" style={btnGhost}>Reactivar</button>}
+                <button onClick={() => remove(a.id, a.name)} className="mbtn" style={{ ...btnGhost, color: "#c62828" }}>Borrar</button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
