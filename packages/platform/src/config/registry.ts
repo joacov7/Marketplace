@@ -33,6 +33,46 @@ export const CONFIG_KEYS = {
     sensitive: true,
     description: "Umbral de compra por sobre el cual el delivery es gratis, en centavos.",
   },
+  "delivery.auxilioCostMinor": {
+    key: "delivery.auxilioCostMinor",
+    jsonSchema: { type: "integer", minimum: 0 },
+    defaultValue: 200000, // $2.000 (envío de auxilio nocturno)
+    category: "money",
+    sensitive: true,
+    description: "Costo del Envío de Auxilio (nocturno/urgente) al cliente, en centavos.",
+  },
+  "features.auxilioDelivery": {
+    key: "features.auxilioDelivery",
+    jsonSchema: { type: "boolean" },
+    defaultValue: true,
+    category: "features",
+    sensitive: false,
+    description: "Habilita el Envío de Auxilio como método de entrega en el checkout.",
+  },
+  "payments.transferDiscountPercent": {
+    key: "payments.transferDiscountPercent",
+    jsonSchema: { type: "integer", minimum: 0, maximum: 90 },
+    defaultValue: 10, // 10% off por pago con transferencia
+    category: "money",
+    sensitive: true,
+    description: "Descuento por pago con transferencia bancaria, en porcentaje entero (10 = 10%).",
+  },
+  "storefront.featuredCount": {
+    key: "storefront.featuredCount",
+    jsonSchema: { type: "integer", minimum: 2, maximum: 12 },
+    defaultValue: 4,
+    category: "branding",
+    sensitive: false,
+    description: "Cantidad de productos destacados en la home.",
+  },
+  "storefront.listColumns": {
+    key: "storefront.listColumns",
+    jsonSchema: { type: "integer", enum: [2, 3, 4] },
+    defaultValue: 3,
+    category: "branding",
+    sensitive: false,
+    description: "Columnas de la grilla del listado de productos (2, 3 o 4).",
+  },
   "delivery.cadeteCostMinor": {
     key: "delivery.cadeteCostMinor",
     jsonSchema: { type: "integer", minimum: 0 },

@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { getVariantWithPrice } from "@commerce/modules/catalog";
 import { createOrder } from "@commerce/modules/orders";
 import { createPaymentIntent, FakePaymentProvider } from "@commerce/modules/payments";
-import { quoteDelivery } from "@commerce/modules/delivery";
 import { addAddress } from "@commerce/modules/customer";
+import { resolveConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { readSession } from "@/lib/session";
@@ -14,8 +14,19 @@ export const dynamic = "force-dynamic";
 // tocar este handler (Payment Orchestrator).
 const provider = new FakePaymentProvider();
 
-interface Addr { street?: string; city?: string; zone?: string; notes?: string; label?: string }
-interface CheckoutBody { items: Array<{ variantId: string; qty: number }>; address?: Addr; deliveryWindow?: string }
+interface Addr { street?: string; city?: string; zone?: string; phone?: string; notes?: string; label?: string }
+interface CheckoutBody {
+  items: Array<{ variantId: string; qty: number }>;
+  address?: Addr;
+  deliveryWindow?: string;
+  delivery?: "estandar" | "auxilio";
+  payment?: "transferencia" | "mercadopago" | "efectivo";
+}
+
+const DELIVERY_LABEL: Record<string, string> = {
+  estandar: "Envío estándar (13:00–20:00)",
+  auxilio: "Envío de Auxilio (20:00–23:00)",
+};
 
 export async function POST(req: Request) {
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
@@ -34,7 +45,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "empty_cart" }, { status: 400 });
   }
 
-  // Precios actuales + merchant + cotización de envío (una lectura con contexto de tenant).
+  const chain = { tenantId: tenant.tenantId };
+  const [threshold, standardCost, auxilioCost] = await Promise.all([
+    resolveConfigValue<number>(db(), "delivery.freeOverOrderTotalMinor", chain).then((r) => BigInt(r.value)),
+    resolveConfigValue<number>(db(), "delivery.customerChargeMinor", chain).then((r) => BigInt(r.value)),
+    resolveConfigValue<number>(db(), "delivery.auxilioCostMinor", chain).then((r) => BigInt(r.value)),
+  ]);
+  const deliveryMethod = body.delivery === "auxilio" ? "auxilio" : "estandar";
+
+  // Precios actuales + merchant + envío desde config (una lectura con contexto de tenant).
   const priced = await db().withTenant(tenant.tenantId, async (tx) => {
     const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
     if (!merchants[0]) return null;
@@ -46,18 +65,20 @@ export async function POST(req: Request) {
       items.push({ variantId: it.variantId, qty: it.qty, unitPriceMinor: v.price.amountMinor });
       gmv += v.price.amountMinor * BigInt(it.qty);
     }
-    const dq = await quoteDelivery(tx, { tenantId: tenant.tenantId, orderTotalMinor: gmv });
-    return { merchantId: merchants[0].id, items, gmv, deliveryChargeMinor: dq.customerChargeMinor };
+    const deliveryChargeMinor = deliveryMethod === "auxilio" ? auxilioCost : gmv >= threshold ? 0n : standardCost;
+    return { merchantId: merchants[0].id, items, gmv, deliveryChargeMinor };
   });
   if (!priced) return NextResponse.json({ error: "invalid_items_or_no_merchant" }, { status: 400 });
 
   const session = readSession();
 
+  const deliveryWindow = body.deliveryWindow || DELIVERY_LABEL[deliveryMethod];
+
   const order = await createOrder(db(), {
     tenantId: tenant.tenantId,
     ...(session?.userId ? { customerId: session.userId } : {}),
-    ...(body.address ? { shippingAddress: body.address as Record<string, unknown> } : {}),
-    ...(body.deliveryWindow ? { deliveryWindow: body.deliveryWindow } : {}),
+    ...(body.address ? { shippingAddress: { ...body.address, paymentMethod: body.payment ?? null } as Record<string, unknown> } : {}),
+    deliveryWindow,
     deliveryChargeMinor: priced.deliveryChargeMinor,
     sellers: [{ merchantId: priced.merchantId, items: priced.items }],
   });

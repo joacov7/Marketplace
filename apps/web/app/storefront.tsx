@@ -1,763 +1,811 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-export interface StoreProduct {
+// ── Tipos que provee el server component (page.tsx) ────────────────────────────
+export interface StoreVariant {
   variantId: string;
-  productName: string;
-  variantName: string;
-  sku: string;
-  imageUrl?: string;
-  category?: string;
-  description?: string;
-  priceMinor: string | null;
-  currency: string | null;
+  size: string; // nombre de la variante = talle/peso
+  priceMinor: string;
+  currency: string;
 }
-
-interface CartItem {
+export interface StoreProduct {
+  productId: string;
   name: string;
-  priceMinor: number;
-  qty: number;
+  category: string;
+  description: string;
+  imageUrl: string;
+  variants: StoreVariant[];
 }
-type Cart = Record<string, CartItem>;
+export interface StoreConfig {
+  freeShippingThresholdMinor: string;
+  standardCostMinor: string;
+  auxilioCostMinor: string;
+  transferDiscountPercent: number;
+  auxilioEnabled: boolean;
+  featuredCount: number;
+  listColumns: 2 | 3 | 4;
+}
 
-function money(minor: number, currency = "ARS"): string {
-  return (minor / 100).toLocaleString("es-AR", { style: "currency", currency });
+// ── Design tokens (handoff) ────────────────────────────────────────────────────
+const C = {
+  greenD: "#256428",
+  lightGreen: "#66BB6A",
+  beige: "#F5F1E8",
+  surf: "#F7F6F2",
+  tint: "#F3F8F1",
+  iconBg: "#E8F0E4",
+  text: "#222222",
+  text2: "#5A594F",
+  nav: "#4A4A44",
+  mute: "#8A8878",
+  ph: "#A19E8E",
+  border: "#ECEAE3",
+  borderBeige: "#E4E1D8",
+  borderCart: "#F2F0E9",
+  radioOff: "#C9C7BC",
+  wa: "#25D366",
+  white: "#FFFFFF",
+};
+const FONT = "'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+
+// Placeholder rayado para imágenes ausentes (mientras no haya foto real).
+const PH_BG = "repeating-linear-gradient(45deg,#F0ECE0 0 9px,#F7F4EB 9px 18px)";
+
+const pesos = (minor: number | string) => Math.round(Number(minor) / 100);
+const money = (minor: number | string) => "$" + pesos(minor).toLocaleString("es-AR");
+
+type View = "home" | "list" | "detail" | "checkout" | "done";
+type CartLine = { name: string; sub: string; priceMinor: number; qty: number };
+type Cart = Record<string, CartLine>; // key = variantId
+
+interface Quote {
+  gmvMinor: string;
+  deliveryChargeMinor: string;
+  discountMinor: string;
+  totalMinor: string;
+  missingForFreeMinor: string;
 }
 
 export default function Storefront(props: {
   tenant: string;
   displayName: string;
   primary: string;
-  secondary?: string;
-  logoUrl?: string;
-  bannerText?: string;
-  bannerImageUrl?: string;
-  layout?: "grid" | "list";
-  font?: "system" | "serif" | "rounded" | "mono";
-  buttonShape?: "rounded" | "pill" | "square";
-  whatsapp?: string;
-  whatsappMessage?: string;
-  agentEnabled: boolean;
+  logoUrl: string;
+  whatsapp: string;
+  whatsappMessage: string;
   products: StoreProduct[];
+  config: StoreConfig;
 }) {
-  const { tenant, primary } = props;
-  const layout = props.layout ?? "grid";
-  const fontFamily = FONT_STACKS[props.font ?? "system"];
-  const btnRadius = BUTTON_RADIUS[props.buttonShape ?? "rounded"];
-  const waLink = props.whatsapp
-    ? `https://wa.me/${props.whatsapp}?text=${encodeURIComponent(props.whatsappMessage ?? "¡Hola! Quiero hacer un pedido.")}`
-    : null;
+  const { tenant, primary, products, config } = props;
+  const G = primary; // verde de marca (config)
+
+  const [view, setView] = useState<View>("home");
   const [cart, setCart] = useState<Cart>({});
-  const [agentOpen, setAgentOpen] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [category, setCategory] = useState<string>("");
+  const [query, setQuery] = useState("");
+  const [selId, setSelId] = useState<string>("");
+  const [sizeVariant, setSizeVariant] = useState<string | null>(null);
+  const [qty, setQty] = useState(1);
+  const [sort, setSort] = useState<"relevancia" | "menor" | "mayor">("relevancia");
+  const [delivery, setDelivery] = useState<"estandar" | "auxilio">("estandar");
+  const [payment, setPayment] = useState<"transferencia" | "mercadopago" | "efectivo">("transferencia");
+  const [form, setForm] = useState({ street: "", zone: "", phone: "", notes: "" });
+  const [quote, setQuote] = useState<Quote | null>(null);
   const [busy, setBusy] = useState(false);
-  const [order, setOrder] = useState<{ orderId: string; providerRef: string; totalMinor: string } | null>(null);
-  const [paid, setPaid] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [checkingOut, setCheckingOut] = useState(false);
-  const [quote, setQuote] = useState<{ gmvMinor: string; deliveryChargeMinor: string; totalMinor: string } | null>(null);
-  const [addr, setAddr] = useState({ street: "", city: "", zone: "", notes: "" });
-  const [win, setWin] = useState("Hoy 14–18 h");
-  const [activeCat, setActiveCat] = useState<string>("");
-  const [detail, setDetail] = useState<StoreProduct | null>(null);
+  const [done, setDone] = useState<{ orderId: string; totalMinor: string } | null>(null);
 
-  // Categorías presentes en el catálogo (para la barra de filtro), en orden de aparición.
-  const categories = Array.from(new Set(props.products.map((p) => p.category).filter((c): c is string => !!c)));
-  const visibleProducts = activeCat ? props.products.filter((p) => p.category === activeCat) : props.products;
-
+  // Carrito persistente por tenant.
   const storageKey = `cart:${tenant}`;
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) setCart(JSON.parse(raw) as Cart);
-    } catch {
-      /* ignore */
-    }
+    try { const raw = localStorage.getItem(storageKey); if (raw) setCart(JSON.parse(raw) as Cart); } catch { /* */ }
   }, [storageKey]);
   useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(cart));
-    } catch {
-      /* ignore */
-    }
+    try { localStorage.setItem(storageKey, JSON.stringify(cart)); } catch { /* */ }
   }, [cart, storageKey]);
 
-  const items = Object.entries(cart);
-  const total = items.reduce((a, [, i]) => a + i.priceMinor * i.qty, 0);
+  const go = useCallback((v: View) => { setView(v); if (typeof window !== "undefined") window.scrollTo(0, 0); }, []);
 
-  function add(variantId: string, name: string, priceMinor: number) {
-    setOrder(null);
-    setPaid(false);
-    setCart((c) => ({ ...c, [variantId]: { name, priceMinor, qty: (c[variantId]?.qty ?? 0) + 1 } }));
+  // ── Categorías (derivadas del catálogo real) ─────────────────────────────────
+  const categories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of products) if (p.category) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+    return [...counts.entries()].map(([name, count]) => ({ name, count }));
+  }, [products]);
+
+  const defaultVariant = (p: StoreProduct) => p.variants[p.variants.length - 1]!;
+
+  // ── Cálculos de dinero (client-side, desde config; el charge real lo hace /api/checkout) ──
+  const items = Object.entries(cart);
+  const subtotal = items.reduce((a, [, l]) => a + l.priceMinor * l.qty, 0);
+  const threshold = Number(config.freeShippingThresholdMinor);
+  const shippingFor = (d: "estandar" | "auxilio") =>
+    d === "auxilio" ? Number(config.auxilioCostMinor) : subtotal === 0 || subtotal >= threshold ? 0 : Number(config.standardCostMinor);
+  const discountFor = (pm: string) => (pm === "transferencia" ? Math.round(subtotal * (config.transferDiscountPercent / 100)) : 0);
+  const missingForFree = Math.max(0, threshold - subtotal);
+  const freeShipMsg = subtotal === 0 ? "" : missingForFree > 0 ? `Te faltan ${money(missingForFree)} para el envío gratis` : "¡Envío gratis conseguido!";
+
+  const waLink = (msg?: string) =>
+    props.whatsapp ? `https://wa.me/${props.whatsapp}?text=${encodeURIComponent(msg ?? props.whatsappMessage)}` : null;
+
+  // ── Acciones de carrito ──────────────────────────────────────────────────────
+  function addToCart(p: StoreProduct, variantId: string, n = 1) {
+    const v = p.variants.find((x) => x.variantId === variantId) ?? defaultVariant(p);
+    setCart((c) => ({
+      ...c,
+      [v.variantId]: { name: p.name, sub: `${v.size} · ${p.category || "Producto"}`, priceMinor: Number(v.priceMinor), qty: (c[v.variantId]?.qty ?? 0) + n },
+    }));
+    setDone(null);
+    setCartOpen(true);
   }
-  function setQty(variantId: string, qty: number) {
+  function setLineQty(variantId: string, q: number) {
     setCart((c) => {
-      if (qty <= 0) {
-        const { [variantId]: _drop, ...rest } = c;
-        return rest;
-      }
-      return { ...c, [variantId]: { ...c[variantId]!, qty } };
+      if (q <= 0) { const { [variantId]: _d, ...rest } = c; return rest; }
+      return { ...c, [variantId]: { ...c[variantId]!, qty: q } };
     });
   }
 
-  async function startCheckout() {
-    setError(null);
-    setCheckingOut(true);
-    setQuote(null);
+  // ── Quote del servidor (al entrar al checkout y al cambiar entrega/pago) ──────
+  const fetchQuote = useCallback(async () => {
+    if (items.length === 0) { setQuote(null); return; }
     try {
       const res = await fetch(`/api/checkout/quote?tenant=${encodeURIComponent(tenant)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ items: items.map(([variantId, i]) => ({ variantId, qty: i.qty })) }),
+        body: JSON.stringify({ items: items.map(([variantId, l]) => ({ variantId, qty: l.qty })), delivery, payment }),
       });
-      const data = await res.json();
-      if (!res.ok) setError(data.error ?? "error");
-      else setQuote(data);
-    } catch (e) {
-      setError(String(e));
-    }
-  }
+      const d = await res.json();
+      if (res.ok) setQuote(d); else setError(d.error ?? "error");
+    } catch (e) { setError(String(e)); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, delivery, payment, JSON.stringify(cart)]);
 
-  async function pay() {
-    if (!addr.street.trim()) { setError("Ingresá una dirección de entrega"); return; }
+  useEffect(() => { if (view === "checkout") void fetchQuote(); }, [view, fetchQuote]);
+
+  async function confirmOrder() {
+    if (!form.street.trim()) { setError("Ingresá la calle y número de entrega."); return; }
+    if (items.length === 0) return;
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(`/api/checkout?tenant=${encodeURIComponent(tenant)}`, {
         method: "POST",
         headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
-        body: JSON.stringify({ items: items.map(([variantId, i]) => ({ variantId, qty: i.qty })), address: addr, deliveryWindow: win }),
+        body: JSON.stringify({
+          items: items.map(([variantId, l]) => ({ variantId, qty: l.qty })),
+          address: { street: form.street, zone: form.zone, phone: form.phone, notes: form.notes },
+          delivery,
+          payment,
+        }),
       });
-      const data = await res.json();
-      if (!res.ok) setError(data.error ?? "error en el checkout");
-      else { setOrder({ orderId: data.orderId, providerRef: data.providerRef, totalMinor: data.totalMinor }); setCheckingOut(false); }
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
+      const d = await res.json();
+      if (!res.ok) { setError(d.error ?? "error en el checkout"); return; }
+      // Mostramos el total cotizado (con descuento) que el cliente confirmó.
+      const shownTotal = quote?.totalMinor ?? d.totalMinor;
+      setDone({ orderId: d.orderId, totalMinor: shownTotal });
+      setCart({});
+      go("done");
+    } catch (e) { setError(String(e)); } finally { setBusy(false); }
   }
 
-  async function simulatePay() {
-    if (!order) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/webhooks/payments/sim?tenant=${encodeURIComponent(tenant)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-signature": "valid" },
-        body: JSON.stringify({ providerEventId: crypto.randomUUID(), providerRef: order.providerRef, type: "payment.approved" }),
-      });
-      const data = await res.json();
-      if (!res.ok) setError(data.error ?? "error confirmando el pago");
-      else {
-        setPaid(true);
-        setCart({});
-      }
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+  // ── Sub-render por vista ─────────────────────────────────────────────────────
+  const sel = products.find((p) => p.productId === selId) ?? products[0] ?? null;
 
   return (
-    <div style={{ background: "#f6f7f9", minHeight: "100vh", fontFamily, ["--btn-radius" as string]: btnRadius } as React.CSSProperties}>
-      <style>{STORE_CSS}</style>
-      {props.font === "rounded" && <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" />}
-      {props.font === "mono" && <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" />}
-      <main style={{ maxWidth: 960, margin: "0 auto", padding: "16px 16px 40px" }}>
-      <header
-        style={{
-          color: "white",
-          padding: "28px 22px",
-          borderRadius: 16,
-          marginBottom: 20,
-          boxShadow: "0 8px 30px rgba(0,0,0,.10)",
-          background: props.bannerImageUrl
-            ? `linear-gradient(135deg, ${primary}dd, ${(props.secondary ?? primary)}cc), url("${props.bannerImageUrl}") center/cover`
-            : `linear-gradient(135deg, ${primary}, ${props.secondary ?? primary})`,
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {props.logoUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={props.logoUrl} alt={props.displayName} style={{ height: 40, width: 40, objectFit: "contain", borderRadius: 8, background: "rgba(255,255,255,.9)", padding: 4 }} />
-            )}
-            <h1 style={{ margin: 0, fontSize: 26, letterSpacing: "-0.02em" }}>{props.displayName}</h1>
-          </div>
-          <AccountWidget tenant={tenant} />
-        </div>
-        <p style={{ margin: "10px 0 0", opacity: 0.92, fontSize: 16 }}>{props.bannerText && props.bannerText.length > 0 ? props.bannerText : "¿Qué necesitás para tu mascota?"}</p>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
-          {waLink && (
-            <a href={waLink} target="_blank" rel="noopener noreferrer" className="pbtn" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "white", textDecoration: "none", borderRadius: 999, padding: "9px 18px", fontWeight: 700 }}>
-              <WhatsAppIcon size={18} /> Hacé tu pedido por WhatsApp
-            </a>
-          )}
-          {props.agentEnabled && (
-            <button
-              onClick={() => setAgentOpen((v) => !v)}
-              className="pbtn"
-              style={{ background: "white", color: primary, border: "none", borderRadius: 999, padding: "9px 16px", fontWeight: 600, cursor: "pointer" }}
-            >
-              🐾 {agentOpen ? "Cerrar asistente" : "Preguntar al agente"}
-            </button>
-          )}
-        </div>
-      </header>
+    <div style={{ fontFamily: FONT, color: C.text, background: C.white, minHeight: "100vh" }}>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" />
+      <style>{`
+        .sf-card{transition:box-shadow .18s ease;}
+        .sf-card:hover{box-shadow:0 10px 30px rgba(0,0,0,.07);}
+        .sf-btn{transition:background .18s ease, filter .15s ease;}
+        .sf-btn:active{transform:translateY(1px);}
+        .sf-a{cursor:pointer;}
+        *{box-sizing:border-box;}
+      `}</style>
 
-      {agentOpen && <AgentPanel tenant={tenant} primary={primary} onAdd={add} />}
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 24 }}>
-        <section>
-          <h2 style={sectionTitle}>Productos <span style={{ color: "#aaa", fontWeight: 500, fontSize: 14 }}>({visibleProducts.length})</span></h2>
-
-          {categories.length > 0 && (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-              <CatChip label="Todo" active={activeCat === ""} primary={primary} onClick={() => setActiveCat("")} />
-              {categories.map((c) => (
-                <CatChip key={c} label={c} active={activeCat === c} primary={primary} onClick={() => setActiveCat(c)} />
-              ))}
-            </div>
-          )}
-
-          {props.products.length === 0 ? (
-            <p style={{ color: "#888" }}>Todavía no hay productos cargados.</p>
-          ) : (
-            <ul
-              style={{
-                listStyle: "none",
-                padding: 0,
-                margin: 0,
-                display: "grid",
-                gap: 14,
-                gridTemplateColumns: layout === "grid" ? "repeat(auto-fill, minmax(180px, 1fr))" : "1fr",
-              }}
-            >
-              {visibleProducts.map((p) => (
-                <ProductCard key={p.variantId} p={p} layout={layout} primary={primary} inCart={cart[p.variantId]?.qty ?? 0} onAdd={add} onSetQty={setQty} onOpen={() => setDetail(p)} />
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section>
-          <h2 style={sectionTitle}>Carrito</h2>
-          {items.length === 0 ? (
-            <p style={{ color: "#888" }}>Tu carrito está vacío.</p>
-          ) : (
-            <div style={{ ...cardStyle, display: "block" }}>
-              {items.map(([variantId, i]) => (
-                <div key={variantId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
-                  <span>{i.name}</span>
-                  <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <button onClick={() => setQty(variantId, i.qty - 1)} style={qtyBtn}>−</button>
-                    <span style={{ minWidth: 20, textAlign: "center" }}>{i.qty}</span>
-                    <button onClick={() => setQty(variantId, i.qty + 1)} style={qtyBtn}>+</button>
-                    <b style={{ minWidth: 90, textAlign: "right" }}>{money(i.priceMinor * i.qty)}</b>
-                  </span>
-                </div>
-              ))}
-              <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #eee", marginTop: 8, paddingTop: 8, fontWeight: 700 }}>
-                <span>Total</span>
-                <span>{money(total)}</span>
-              </div>
-              {!order && !checkingOut && (
-                <button className="pbtn" onClick={startCheckout} style={{ ...btn(primary), width: "100%", marginTop: 12, padding: "11px" }}>
-                  Finalizar compra
-                </button>
-              )}
-            </div>
-          )}
-
-          {checkingOut && !order && (
-            <div style={{ ...cardStyle, display: "block", marginTop: 10 }}>
-              <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Datos de entrega</h3>
-              <input placeholder="Dirección (calle y número)" value={addr.street} onChange={(e) => setAddr({ ...addr, street: e.target.value })} style={inp} />
-              <div style={{ display: "flex", gap: 8 }}>
-                <input placeholder="Ciudad" value={addr.city} onChange={(e) => setAddr({ ...addr, city: e.target.value })} style={{ ...inp, flex: 1 }} />
-                <input placeholder="Zona/barrio" value={addr.zone} onChange={(e) => setAddr({ ...addr, zone: e.target.value })} style={{ ...inp, flex: 1 }} />
-              </div>
-              <input placeholder="Notas (timbre, referencia…)" value={addr.notes} onChange={(e) => setAddr({ ...addr, notes: e.target.value })} style={inp} />
-              <label style={{ display: "block", fontSize: 13, color: "#555", margin: "6px 0 2px" }}>Ventana de entrega</label>
-              <select value={win} onChange={(e) => setWin(e.target.value)} style={inp}>
-                {["Hoy 14–18 h", "Hoy 18–21 h", "Mañana 10–14 h", "Mañana 14–18 h"].map((w) => <option key={w}>{w}</option>)}
-              </select>
-
-              {quote && (
-                <div style={{ marginTop: 10, borderTop: "1px solid #eee", paddingTop: 8, fontSize: 14 }}>
-                  <Row label="Subtotal" value={money(Number(quote.gmvMinor))} />
-                  <Row label="Envío" value={Number(quote.deliveryChargeMinor) === 0 ? "Gratis" : money(Number(quote.deliveryChargeMinor))} />
-                  <Row label="Total" value={money(Number(quote.totalMinor))} bold />
-                </div>
-              )}
-
-              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                <button className="pbtn" onClick={() => setCheckingOut(false)} style={{ ...btn("#94969c"), flex: 1 }}>Volver</button>
-                <button className="pbtn" onClick={pay} disabled={busy} style={{ ...btn(primary), flex: 2 }}>
-                  {busy ? "Procesando…" : quote ? `Pagar ${money(Number(quote.totalMinor))}` : "Pagar"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {order && !paid && (
-            <div style={{ ...cardStyle, display: "block", marginTop: 10, background: "#fff8e1", borderColor: "#f0e0a0" }}>
-              <p style={{ margin: 0 }}>
-                Pedido <code>{order.orderId.slice(0, 8)}</code> creado — <b>pendiente de pago</b> ({money(Number(order.totalMinor))}).
-              </p>
-              <button onClick={simulatePay} disabled={busy} style={{ ...btn(primary), marginTop: 10 }}>
-                {busy ? "…" : "Simular pago aprobado"}
-              </button>
-              <p style={{ color: "#999", fontSize: 12, marginBottom: 0 }}>
-                (En producción esto lo dispara el webhook de Mercado Pago.)
-              </p>
-            </div>
-          )}
-
-          {paid && (
-            <div style={{ ...cardStyle, display: "block", marginTop: 10, background: "#e6f4ea", borderColor: "#a8d5b5" }}>
-              <p style={{ margin: 0 }}>✅ <b>¡Pago confirmado!</b> El pedido pasó a preparación y se descontó el stock.</p>
-            </div>
-          )}
-
-          {error && <p style={{ color: "#c00", fontSize: 13 }}>Error: {error}</p>}
-        </section>
+      {/* Barra promocional */}
+      <div style={{ background: G, color: C.white, fontSize: 13, padding: "9px 24px", textAlign: "center", letterSpacing: ".01em" }}>
+        Envíos gratis en {props.displayName.includes("Gualeguay") ? "Gualeguay" : "tu ciudad"} en compras superiores a {money(threshold)}
       </div>
 
-      <footer style={{ marginTop: 32, color: "#b0b0b8", fontSize: 12, textAlign: "center" }}>{props.displayName} · Commerce OS</footer>
+      <Header
+        G={G} logoUrl={props.logoUrl} displayName={props.displayName}
+        categories={categories} activeCat={view === "list" ? category : ""} query={query}
+        cartCount={items.reduce((a, [, l]) => a + l.qty, 0)} subtotal={subtotal}
+        onHome={() => { setQuery(""); setCategory(""); go("home"); }}
+        onCategory={(c) => { setCategory(c); setQuery(""); go("list"); }}
+        onSearch={(q) => { setQuery(q); if (q) { setCategory(""); go("list"); } else go("home"); }}
+        onCart={() => setCartOpen(true)}
+        waLink={waLink()}
+      />
+
+      <main style={{ maxWidth: view === "checkout" ? 1000 : view === "done" ? 620 : 1180, margin: "0 auto", padding: view === "done" ? "90px 24px 120px" : "28px 24px 80px" }}>
+        {view === "home" && (
+          <HomeView
+            G={G} products={products} categories={categories} config={config} threshold={threshold}
+            waLink={waLink("¡Hola! Quiero hacer un pedido.")}
+            onSeeList={() => { setCategory(""); setQuery(""); go("list"); }}
+            onCategory={(c) => { setCategory(c); setQuery(""); go("list"); }}
+            onOpen={(p) => { setSelId(p.productId); setSizeVariant(null); setQty(1); go("detail"); }}
+            onAdd={(p) => addToCart(p, defaultVariant(p).variantId, 1)}
+          />
+        )}
+
+        {view === "list" && (
+          <ListView
+            G={G} products={products} categories={categories} category={category} query={query}
+            sort={sort} columns={config.listColumns} setSort={setSort} setCategory={(c) => setCategory(c)}
+            onOpen={(p) => { setSelId(p.productId); setSizeVariant(null); setQty(1); go("detail"); }}
+            onAdd={(p) => addToCart(p, defaultVariant(p).variantId, 1)}
+          />
+        )}
+
+        {view === "detail" && sel && (
+          <DetailView
+            G={G} p={sel} category={sel.category}
+            sizeVariant={sizeVariant ?? defaultVariant(sel).variantId} setSizeVariant={setSizeVariant}
+            qty={qty} setQty={setQty}
+            waLink={waLink(`¡Hola! Quiero consultar por ${sel.name}.`)}
+            onBackCat={() => { setCategory(sel.category); go("list"); }}
+            onAdd={(variantId) => addToCart(sel, variantId, qty)}
+          />
+        )}
+
+        {view === "checkout" && (
+          <CheckoutView
+            G={G} items={items} config={config} quote={quote}
+            delivery={delivery} setDelivery={setDelivery} payment={payment} setPayment={setPayment}
+            form={form} setForm={setForm} busy={busy} error={error}
+            subtotal={subtotal} shippingFor={shippingFor} discountFor={discountFor}
+            onConfirm={confirmOrder}
+          />
+        )}
+
+        {view === "done" && done && (
+          <DoneView G={G} orderId={done.orderId} totalMinor={done.totalMinor} onHome={() => { setCategory(""); setQuery(""); go("home"); }} />
+        )}
       </main>
 
-      {detail && (
-        <ProductDetailModal
-          p={detail}
-          primary={primary}
-          inCart={cart[detail.variantId]?.qty ?? 0}
-          whatsapp={props.whatsapp}
-          onAdd={add}
-          onSetQty={setQty}
-          onClose={() => setDetail(null)}
+      <Footer G={G} displayName={props.displayName} categories={categories} onCategory={(c) => { setCategory(c); setQuery(""); go("list"); }} onHome={() => go("home")} />
+
+      {/* Drawer de carrito */}
+      {cartOpen && (
+        <CartDrawer
+          G={G} items={items} subtotal={subtotal} shipping={shippingFor("estandar")} freeShipMsg={freeShipMsg}
+          onClose={() => setCartOpen(false)} onQty={setLineQty}
+          onCheckout={() => { if (items.length > 0) { setCartOpen(false); setError(null); go("checkout"); } }}
         />
       )}
 
-      {waLink && (
-        <a
-          href={waLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Escribinos por WhatsApp"
-          style={{ position: "fixed", right: 18, bottom: 18, width: 58, height: 58, borderRadius: "50%", background: "#25D366", color: "white", display: "grid", placeItems: "center", textDecoration: "none", boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 50 }}
-        >
-          <WhatsAppIcon size={32} />
-        </a>
-      )}
-    </div>
-  );
-}
-
-interface CustomerOrder { orderId: string; status: string; fulfillment: string | null; currency: string; totalMinor: string; itemCount: number; createdAt: string }
-
-/** Mapea (estado de pedido + cumplimiento) a una etiqueta y color para el cliente. */
-function orderLabel(status: string, fulfillment: string | null): { label: string; color: string } {
-  if (status === "cancelled") return { label: "Cancelado", color: "#c62828" };
-  if (status === "refunded" || status === "partially_refunded") return { label: "Reembolsado", color: "#777" };
-  if (status === "pending_payment") return { label: "Pendiente de pago", color: "#b26a00" };
-  switch (fulfillment) {
-    case "delivered": return { label: "Entregado", color: "#2e7d32" };
-    case "in_transit": return { label: "En camino", color: "#00796b" };
-    case "ready": return { label: "Listo para envío", color: "#8e24aa" };
-    case "preparing": return { label: "En preparación", color: "#1a73e8" };
-    case "delivery_failed": return { label: "Entrega fallida", color: "#c62828" };
-    case "rejected": return { label: "Rechazado", color: "#c62828" };
-    default: return { label: "En proceso", color: "#1a73e8" };
-  }
-}
-
-/** Modal "Mis pedidos": historial del cliente logueado con su estado. */
-function MyOrdersModal({ onClose }: { onClose: () => void }) {
-  const [orders, setOrders] = useState<CustomerOrder[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/account/orders")
-      .then((r) => r.json())
-      .then((d) => { if (d.orders) setOrders(d.orders); else setError(d.error ?? "error"); })
-      .catch((e) => setError(String(e)));
-  }, []);
-
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", display: "grid", placeItems: "center", padding: 16, zIndex: 60 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "white", color: "#111", borderRadius: 16, maxWidth: 480, width: "100%", maxHeight: "85vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)", textAlign: "left" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #eee" }}>
-          <strong style={{ fontSize: 17 }}>Mis pedidos</strong>
-          <button onClick={onClose} aria-label="Cerrar" style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1 }}>×</button>
-        </div>
-        <div style={{ padding: 16 }}>
-          {error && <p style={{ color: "#c00" }}>Error: {error}</p>}
-          {!orders && !error && <p style={{ color: "#888" }}>Cargando…</p>}
-          {orders && orders.length === 0 && <p style={{ color: "#888" }}>Todavía no tenés pedidos.</p>}
-          {orders && orders.length > 0 && (
-            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 10 }}>
-              {orders.map((o) => {
-                const s = orderLabel(o.status, o.fulfillment);
-                return (
-                  <li key={o.orderId} style={{ border: "1px solid #ececef", borderRadius: 10, padding: 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span><strong>#{o.orderId.slice(0, 8)}</strong> <span style={{ color: "#9aa0aa", fontSize: 13 }}>· {o.itemCount} ítem(s)</span></span>
-                      <span style={{ background: s.color, color: "white", borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>{s.label}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 13, color: "#555" }}>
-                      <span>{new Date(o.createdAt).toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" })}</span>
-                      <b>{money(Number(o.totalMinor), o.currency)}</b>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AccountWidget({ tenant }: { tenant: string }) {
-  const [email, setEmail] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [form, setForm] = useState({ email: "", password: "" });
-  const [err, setErr] = useState<string | null>(null);
-  const [ordersOpen, setOrdersOpen] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/auth/me").then((r) => r.json()).then((d) => setEmail(d.user?.email ?? null)).catch(() => {});
-  }, []);
-
-  async function submit() {
-    setErr(null);
-    const path = mode === "login" ? "login" : "register";
-    const res = await fetch(`/api/auth/${path}?tenant=${encodeURIComponent(tenant)}`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form),
-    });
-    const d = await res.json();
-    if (!res.ok) { setErr(d.error ?? "error"); return; }
-    setEmail(d.email); setOpen(false); setForm({ email: "", password: "" });
-  }
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    setEmail(null);
-  }
-
-  if (email) {
-    return (
-      <span style={{ fontSize: 13, textAlign: "right" }}>
-        {email}<br />
-        <span style={{ display: "inline-flex", gap: 6, marginTop: 4 }}>
-          <button onClick={() => setOrdersOpen(true)} style={{ background: "rgba(255,255,255,.25)", color: "white", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>Mis pedidos</button>
-          <button onClick={logout} style={{ background: "rgba(255,255,255,.25)", color: "white", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>Salir</button>
-        </span>
-        {ordersOpen && <MyOrdersModal onClose={() => setOrdersOpen(false)} />}
-      </span>
-    );
-  }
-  return (
-    <span style={{ position: "relative" }}>
-      <button onClick={() => setOpen((v) => !v)} style={{ background: "rgba(255,255,255,.25)", color: "white", border: "none", borderRadius: 999, padding: "6px 12px", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
-        Ingresar
-      </button>
-      {open && (
-        <div style={{ position: "absolute", right: 0, top: 40, background: "white", color: "#111", border: "1px solid #ddd", borderRadius: 10, padding: 12, width: 230, zIndex: 10, boxShadow: "0 6px 24px rgba(0,0,0,.12)" }}>
-          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-            {(["login", "register"] as const).map((m) => (
-              <button key={m} onClick={() => setMode(m)} style={{ flex: 1, border: "none", borderRadius: 6, padding: "5px", cursor: "pointer", background: mode === m ? "#2563eb" : "#eee", color: mode === m ? "white" : "#333", fontSize: 12, fontWeight: 600 }}>
-                {m === "login" ? "Ingresar" : "Registrarse"}
-              </button>
-            ))}
-          </div>
-          <input placeholder="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={{ width: "100%", boxSizing: "border-box", padding: "7px", borderRadius: 6, border: "1px solid #ccc", marginBottom: 6 }} />
-          <input placeholder="contraseña" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} style={{ width: "100%", boxSizing: "border-box", padding: "7px", borderRadius: 6, border: "1px solid #ccc" }} />
-          {err && <p style={{ color: "#c00", fontSize: 12, margin: "6px 0 0" }}>{err}</p>}
-          <button onClick={submit} style={{ width: "100%", marginTop: 8, background: "#2563eb", color: "white", border: "none", borderRadius: 8, padding: "8px", fontWeight: 600, cursor: "pointer" }}>
-            {mode === "login" ? "Ingresar" : "Crear cuenta"}
-          </button>
-        </div>
-      )}
-    </span>
-  );
-}
-
-function AgentPanel(props: { tenant: string; primary: string; onAdd: (variantId: string, name: string, priceMinor: number) => void }) {
-  const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [reply, setReply] = useState<string | null>(null);
-  const [proposed, setProposed] = useState<{ items: Array<{ variantId: string; name: string; unitPriceMinor: string }>; totalMinor: string } | null>(null);
-
-  async function ask() {
-    if (!msg.trim()) return;
-    setBusy(true);
-    setReply(null);
-    setProposed(null);
-    try {
-      const res = await fetch(`/api/agent/query?tenant=${encodeURIComponent(props.tenant)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: msg }),
-      });
-      const data = await res.json();
-      setReply(data.reply ?? "…");
-      setProposed(data.proposedCart ?? null);
-    } catch (e) {
-      setReply("Error: " + String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div style={{ ...cardStyle, display: "block", marginBottom: 16, background: "#f4f6ff", borderColor: "#c9d4ff" }}>
-      <div style={{ display: "flex", gap: 8 }}>
-        <input
-          value={msg}
-          onChange={(e) => setMsg(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && ask()}
-          placeholder="Ej: comida para mi perro senior"
-          style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid #ccd" }}
-        />
-        <button onClick={ask} disabled={busy} style={btn(props.primary)}>{busy ? "…" : "Preguntar"}</button>
-      </div>
-      {reply && <p style={{ marginBottom: 6 }}>{reply}</p>}
-      {proposed && proposed.items.length > 0 && (
-        <div>
-          <div style={{ fontSize: 13, color: "#555" }}>Carrito sugerido (confirmás vos):</div>
-          {proposed.items.map((i) => (
-            <div key={i.variantId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
-              <span>{i.name}</span>
-              <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <b>{money(Number(i.unitPriceMinor))}</b>
-                <button onClick={() => props.onAdd(i.variantId, i.name, Number(i.unitPriceMinor))} style={btn(props.primary)}>
-                  Agregar
-                </button>
-              </span>
-            </div>
-          ))}
+      {/* Botón flotante de WhatsApp */}
+      {waLink() && (
+        <div style={{ position: "fixed", right: 26, bottom: 26, zIndex: 50, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+          <a href={waLink()!} target="_blank" rel="noopener noreferrer" aria-label="Escribinos por WhatsApp"
+            style={{ width: 58, height: 58, borderRadius: "50%", background: C.wa, boxShadow: "0 8px 24px rgba(37,211,102,.4)", display: "grid", placeItems: "center", color: C.white }}>
+            <WaIcon size={30} />
+          </a>
+          <span style={{ fontSize: 10.5, fontWeight: 600, color: C.text2, background: C.white, borderRadius: 7, padding: "4px 7px", boxShadow: "0 2px 10px rgba(0,0,0,.08)" }}>Escribinos por WhatsApp</span>
         </div>
       )}
     </div>
   );
 }
 
-const cardStyle: React.CSSProperties = {
-  background: "white",
-  border: "1px solid #ececef",
-  borderRadius: 12,
-  padding: 14,
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  boxShadow: "0 1px 3px rgba(0,0,0,.04)",
-};
-
-const sectionTitle: React.CSSProperties = { fontSize: 18, color: "#1e293b", letterSpacing: "-0.01em", margin: "0 0 12px" };
-
-/** CSS mínimo para hover/transiciones (los estilos inline no soportan :hover). */
-const STORE_CSS = `
-.pcard{transition:box-shadow .18s ease, transform .18s ease;}
-.pcard:hover{box-shadow:0 8px 24px rgba(0,0,0,.10); transform:translateY(-2px);}
-.pbtn{transition:filter .15s ease, transform .05s ease;}
-.pbtn:hover{filter:brightness(1.07);}
-.pbtn:active{transform:scale(.97);}
-.pimg{transition:transform .25s ease;}
-.pcard:hover .pimg{transform:scale(1.03);}
-`;
-
-/** Ficha de producto (modal). Foto grande, categoría, descripción, cantidad y acciones. */
-function ProductDetailModal({
-  p, primary, inCart, whatsapp, onAdd, onSetQty, onClose,
-}: {
-  p: StoreProduct;
-  primary: string;
-  inCart: number;
-  whatsapp?: string;
-  onAdd: (variantId: string, name: string, priceMinor: number) => void;
-  onSetQty: (variantId: string, qty: number) => void;
-  onClose: () => void;
-}) {
-  const price = p.priceMinor ? money(Number(p.priceMinor), p.currency ?? "ARS") : "—";
-  const waLink = whatsapp
-    ? `https://wa.me/${whatsapp}?text=${encodeURIComponent(`¡Hola! Quiero consultar por ${p.productName}${p.variantName ? ` (${p.variantName})` : ""}.`)}`
-    : null;
-
+// ── Iconos SVG inline ──────────────────────────────────────────────────────────
+function WaIcon({ size = 20 }: { size?: number }) {
   return (
-    <div
-      onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", display: "grid", placeItems: "center", padding: 16, zIndex: 60 }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{ background: "white", borderRadius: 16, maxWidth: 560, width: "100%", maxHeight: "90vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}
-      >
-        <div style={{ position: "relative" }}>
-          {p.imageUrl
-            // eslint-disable-next-line @next/next/no-img-element
-            ? <img src={p.imageUrl} alt={p.productName} style={{ width: "100%", height: 260, objectFit: "cover", borderRadius: "16px 16px 0 0", background: "#f1f1f3" }} />
-            : <div style={{ width: "100%", height: 200, borderRadius: "16px 16px 0 0", background: "#f1f1f3", display: "grid", placeItems: "center", fontSize: 64 }}>🐾</div>}
-          <button onClick={onClose} aria-label="Cerrar" style={{ position: "absolute", top: 12, right: 12, width: 34, height: 34, borderRadius: "50%", border: "none", background: "rgba(255,255,255,.92)", cursor: "pointer", fontSize: 18, boxShadow: "0 2px 8px rgba(0,0,0,.15)" }}>×</button>
-        </div>
-        <div style={{ padding: 20 }}>
-          {p.category && <span style={{ display: "inline-block", background: "#eef0f3", color: "#556", borderRadius: 999, padding: "3px 12px", fontSize: 12, fontWeight: 600, marginBottom: 8 }}>{p.category}</span>}
-          <h2 style={{ margin: "0 0 4px", fontSize: 22, letterSpacing: "-0.01em" }}>{p.productName}</h2>
-          <div style={{ color: "#9aa0aa", fontSize: 14, marginBottom: 10 }}>{p.variantName} · {p.sku}</div>
-          <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 12 }}>{price}</div>
-          {p.description
-            ? <p style={{ color: "#4b5563", lineHeight: 1.6, margin: "0 0 18px" }}>{p.description}</p>
-            : <p style={{ color: "#b0b0b8", fontStyle: "italic", margin: "0 0 18px" }}>Sin descripción.</p>}
-
-          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            {p.priceMinor && (
-              inCart > 0 ? (
-                <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <button className="pbtn" onClick={() => onSetQty(p.variantId, inCart - 1)} style={qtyBtn} aria-label="Quitar uno">−</button>
-                  <span style={{ minWidth: 28, textAlign: "center", fontWeight: 700, fontSize: 16 }}>{inCart}</span>
-                  <button className="pbtn" onClick={() => onSetQty(p.variantId, inCart + 1)} style={qtyBtn} aria-label="Agregar uno">+</button>
-                  <span style={{ color: "#2e7d32", fontSize: 13, fontWeight: 600 }}>En el carrito</span>
-                </span>
-              ) : (
-                <button className="pbtn" onClick={() => onAdd(p.variantId, `${p.productName} ${p.variantName}`, Number(p.priceMinor))} style={{ ...btn(primary), padding: "10px 22px", fontSize: 15 }}>
-                  Agregar al carrito
-                </button>
-              )
-            )}
-            {waLink && (
-              <a href={waLink} target="_blank" rel="noopener noreferrer" className="pbtn" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "white", textDecoration: "none", borderRadius: "var(--btn-radius, 10px)", padding: "10px 18px", fontWeight: 700 }}>
-                <WhatsAppIcon size={18} /> Consultar
-              </a>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M16 4C9.9 4 5 8.9 5 15c0 1.9.5 3.7 1.4 5.3L5 28l7.9-1.4c1.5.8 3.2 1.2 5 1.2h.1C24.1 27.8 29 22.9 29 16.8 29 10.7 24.1 4 16 4z" fill="currentColor" stroke="none" opacity="0" />
+      <path d="M16 4.5C10.2 4.5 5.5 9.2 5.5 15c0 1.9.5 3.6 1.4 5.2l-1 3.6 3.7-1c1.5.8 3.2 1.3 5 1.3 5.8 0 10.5-4.7 10.5-10.5S21.8 4.5 16 4.5z" />
+      <path d="M12.3 10.4c-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-.3.3-.9.9-.9 2.1s.9 2.5 1.1 2.6c.1.2 1.8 2.8 4.4 3.8 2.2.9 2.6.7 3.1.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2 0-.1-.2-.2-.5-.3s-1.5-.7-1.7-.8c-.2-.1-.4-.1-.6.1-.2.3-.6.8-.8 1-.1.1-.3.2-.5.1-.3-.1-1.1-.4-2.1-1.3-.8-.7-1.3-1.5-1.5-1.8-.1-.3 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5.1-.2 0-.3 0-.5 0-.1-.6-1.5-.8-2z" fill="currentColor" stroke="none" />
+    </svg>
   );
 }
-
-/** Chip de filtro de categoría. Activo = relleno con el color de marca. */
-function CatChip({ label, active, primary, onClick }: { label: string; active: boolean; primary: string; onClick: () => void }) {
+function CartIcon({ size = 18 }: { size?: number }) {
   return (
-    <button
-      onClick={onClick}
-      className="pbtn"
-      style={{
-        border: `1px solid ${active ? primary : "#dcdce2"}`,
-        background: active ? primary : "white",
-        color: active ? "white" : "#444",
-        borderRadius: 999,
-        padding: "6px 14px",
-        fontWeight: 600,
-        fontSize: 13,
-        cursor: "pointer",
-      }}
-    >
-      {label}
-    </button>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="9" cy="20" r="1.3" /><circle cx="18" cy="20" r="1.3" />
+      <path d="M2 3h2.2l2 12.5h11l2-9H6.3" />
+    </svg>
   );
 }
-
-/** Logo de WhatsApp (SVG inline, hereda el color con fill="currentColor"). */
-function WhatsAppIcon({ size = 20 }: { size?: number }) {
+function Check({ size = 16, sw = 2.4 }: { size?: number; sw?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="currentColor" aria-hidden focusable="false">
-      <path d="M16 3C9.4 3 4 8.4 4 15c0 2.1.6 4.2 1.6 6L4 29l8.2-1.6c1.7.9 3.7 1.4 5.6 1.4h.2c6.6 0 12-5.4 12-12S22.6 3 16 3zm0 21.8c-1.7 0-3.4-.5-4.9-1.3l-.4-.2-4.9 1 1-4.8-.3-.5C5.6 18.4 5 16.7 5 15 5 9 9.9 4.1 16 4.1S27 9 27 15s-4.9 9.8-11 9.8zm6-7.3c-.3-.2-1.9-1-2.2-1.1-.3-.1-.5-.2-.8.2s-.9 1.1-1.1 1.3c-.2.2-.4.2-.7.1-1.7-.9-2.9-1.6-4-3.6-.3-.5.3-.5.8-1.6.1-.2 0-.4 0-.6s-.8-1.9-1.1-2.6c-.3-.6-.6-.5-.8-.6h-.7c-.2 0-.6.1-.9.4-.3.4-1.2 1.2-1.2 2.8s1.2 3.3 1.4 3.5c.2.2 2.4 3.7 5.8 5.1 2.2.9 3 1 4.1.9.7-.1 1.9-.8 2.2-1.5.3-.8.3-1.4.2-1.5-.1-.2-.3-.2-.6-.4z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 12.5l5 5L20 6.5" />
     </svg>
   );
 }
 
-/** Miniatura/foto de producto. En grilla ocupa el ancho; en lista es un cuadrado chico. */
-function Thumb({ src, alt, layout }: { src?: string; alt: string; layout: "grid" | "list" }) {
-  const size = layout === "grid" ? { width: "100%", height: 160 } : { width: 60, height: 60, flexShrink: 0 };
-  const common: React.CSSProperties = { ...size, borderRadius: 10, objectFit: "cover", background: "#f1f1f3", display: "block" };
-  if (!src) {
-    return <span style={{ ...common, display: "grid", placeItems: "center", fontSize: layout === "grid" ? 44 : 26 }}>🐾</span>;
+// ── Placeholder de imagen (foto real cuando exista) ─────────────────────────────
+function Img({ src, alt, ratio, radius, label, hero }: { src?: string; alt: string; ratio?: string; radius: React.CSSProperties["borderRadius"]; label: string; hero?: boolean }) {
+  const base: React.CSSProperties = { width: "100%", borderRadius: radius, objectFit: "cover", display: "block", ...(ratio ? { aspectRatio: ratio } : {}), ...(hero ? { height: 340 } : {}) };
+  if (src) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img className="sf-img" src={src} alt={alt} style={base} />;
   }
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img className="pimg" src={src} alt={alt} style={common} />;
-}
-
-/** Tarjeta de producto. Grilla = card vertical (foto, nombre, precio+acción). Lista = fila. */
-function ProductCard({
-  p, layout, primary, inCart, onAdd, onSetQty, onOpen,
-}: {
-  p: StoreProduct;
-  layout: "grid" | "list";
-  primary: string;
-  inCart: number;
-  onAdd: (variantId: string, name: string, priceMinor: number) => void;
-  onSetQty: (variantId: string, qty: number) => void;
-  onOpen: () => void;
-}) {
-  const price = p.priceMinor ? money(Number(p.priceMinor), p.currency ?? "ARS") : "—";
-  const addFn = () => onAdd(p.variantId, `${p.productName} ${p.variantName}`, Number(p.priceMinor));
-  const stepper = (
-    <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-      <button className="pbtn" onClick={() => onSetQty(p.variantId, inCart - 1)} style={qtyBtn} aria-label="Quitar uno">−</button>
-      <span style={{ minWidth: 18, textAlign: "center", fontWeight: 600 }}>{inCart}</span>
-      <button className="pbtn" onClick={() => onSetQty(p.variantId, inCart + 1)} style={qtyBtn} aria-label="Agregar uno">+</button>
-    </span>
-  );
-  const clickable: React.CSSProperties = { cursor: "pointer" };
-
-  if (layout === "list") {
-    return (
-      <li className="pcard" style={{ ...cardStyle, gap: 14 }}>
-        <span onClick={onOpen} style={{ ...clickable, display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
-          <Thumb src={p.imageUrl} alt={p.productName} layout="list" />
-          <span style={{ minWidth: 0 }}>
-            <strong style={{ display: "block" }}>{p.productName}</strong>
-            <span style={{ color: "#9aa0aa", fontSize: 13 }}>{p.variantName} · {p.sku}</span>
-          </span>
-        </span>
-        <span style={{ display: "flex", gap: 14, alignItems: "center" }}>
-          <b style={{ fontSize: 16, whiteSpace: "nowrap" }}>{price}</b>
-          {p.priceMinor && (inCart > 0 ? stepper : <button className="pbtn" onClick={addFn} style={btn(primary)}>Agregar</button>)}
-        </span>
-      </li>
-    );
-  }
-
   return (
-    <li className="pcard" style={{ ...cardStyle, flexDirection: "column", alignItems: "stretch", gap: 10, padding: 12, overflow: "hidden" }}>
-      <span onClick={onOpen} style={{ ...clickable, overflow: "hidden", borderRadius: 10 }}><Thumb src={p.imageUrl} alt={p.productName} layout="grid" /></span>
-      <span onClick={onOpen} style={{ ...clickable, minHeight: 40 }}>
-        <strong style={{ display: "block", lineHeight: 1.25 }}>{p.productName}</strong>
-        <span style={{ color: "#9aa0aa", fontSize: 12 }}>{p.variantName}</span>
-      </span>
-      <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto" }}>
-        <b style={{ fontSize: 17 }}>{price}</b>
-        {p.priceMinor && (inCart > 0 ? stepper : <button className="pbtn" onClick={addFn} style={btn(primary)}>Agregar</button>)}
-      </span>
-    </li>
-  );
-}
-/** Familias tipográficas configurables (branding.font). Fallbacks siempre presentes. */
-const FONT_STACKS: Record<string, string> = {
-  system: "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-  serif: "Georgia, 'Times New Roman', 'Noto Serif', serif",
-  rounded: "'Nunito', 'Quicksand', 'Segoe UI', system-ui, sans-serif",
-  mono: "'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace",
-};
-/** Radio de los botones según branding.buttonShape. */
-const BUTTON_RADIUS: Record<string, string> = { rounded: "10px", pill: "999px", square: "4px" };
-
-function btn(primary: string): React.CSSProperties {
-  return { background: primary, color: "white", border: "none", borderRadius: "var(--btn-radius, 10px)", padding: "8px 14px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" };
-}
-const qtyBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 8, border: "1px solid #dcdce0", background: "#fafafa", cursor: "pointer", fontSize: 16, lineHeight: 1 };
-const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 6 };
-function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", fontWeight: bold ? 700 : 400 }}>
-      <span>{label}</span>
-      <span>{value}</span>
+    <div style={{ ...base, background: PH_BG, display: "grid", placeItems: "center", ...(ratio ? {} : hero ? { height: 340 } : { height: 180 }) }}>
+      <span style={{ fontFamily: "monospace", fontSize: 12, color: C.ph }}>{label}</span>
     </div>
+  );
+}
+
+// ── Botones reutilizables ────────────────────────────────────────────────────────
+function primaryBtn(G: string): React.CSSProperties {
+  return { background: G, color: C.white, border: "none", borderRadius: 10, padding: "14px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 9, justifyContent: "center", fontFamily: FONT };
+}
+function outlineBtn(G: string): React.CSSProperties {
+  return { background: C.white, color: G, border: `1.5px solid ${G}`, borderRadius: 10, padding: "14px 26px", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 9, justifyContent: "center", fontFamily: FONT };
+}
+const input: React.CSSProperties = { padding: "12px 14px", border: `1.5px solid ${C.border}`, borderRadius: 9, fontSize: 14, outline: "none", width: "100%", fontFamily: FONT, background: C.white, color: C.text };
+
+// ── Header ───────────────────────────────────────────────────────────────────────
+function Header(props: {
+  G: string; logoUrl: string; displayName: string;
+  categories: { name: string; count: number }[]; activeCat: string; query: string;
+  cartCount: number; subtotal: number;
+  onHome: () => void; onCategory: (c: string) => void; onSearch: (q: string) => void; onCart: () => void; waLink: string | null;
+}) {
+  const { G } = props;
+  return (
+    <header style={{ position: "sticky", top: 0, zIndex: 40, background: C.white, borderBottom: `1px solid ${C.border}`, padding: "14px 24px", display: "flex", gap: 32, alignItems: "center" }}>
+      {/* Logo */}
+      <div className="sf-a" onClick={props.onHome} style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        {props.logoUrl
+          // eslint-disable-next-line @next/next/no-img-element
+          ? <img src={props.logoUrl} alt={props.displayName} style={{ width: 42, height: 42, borderRadius: "50%", objectFit: "contain" }} />
+          : <span style={{ width: 42, height: 42, borderRadius: "50%", border: `2px solid ${G}`, display: "grid", placeItems: "center", flexShrink: 0 }}><span style={{ width: 16, height: 16, borderRadius: "50%", background: G, display: "block" }} /></span>}
+        <span style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
+          <span style={{ fontSize: 19, fontWeight: 700, color: G, letterSpacing: ".02em" }}>{props.displayName.replace(/gualeguay/i, "").trim().toUpperCase() || "PET SHOP"}</span>
+          <span style={{ fontSize: 9, fontWeight: 500, color: C.mute, letterSpacing: ".34em", marginTop: 3 }}>{/gualeguay/i.test(props.displayName) ? "GUALEGUAY" : ""}</span>
+        </span>
+      </div>
+
+      {/* Nav */}
+      <nav style={{ flex: 1, display: "flex", gap: 26, fontSize: 14, flexWrap: "wrap" }}>
+        <NavItem label="Inicio" active={props.activeCat === "" && !props.query} onClick={props.onHome} G={G} />
+        {props.categories.slice(0, 6).map((c) => (
+          <NavItem key={c.name} label={c.name} active={props.activeCat === c.name} onClick={() => props.onCategory(c.name)} G={G} />
+        ))}
+        {props.waLink && <a href={props.waLink} target="_blank" rel="noopener noreferrer" style={{ color: C.nav, fontWeight: 500, textDecoration: "none", borderBottom: "2px solid transparent", paddingBottom: 3 }}>Contacto</a>}
+      </nav>
+
+      {/* Derecha */}
+      <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 999, padding: "7px 14px" }}>
+          <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={C.mute} strokeWidth={2} aria-hidden><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeLinecap="round" /></svg>
+          <input value={props.query} onChange={(e) => props.onSearch(e.target.value)} placeholder="Buscar productos" style={{ border: "none", outline: "none", background: "transparent", fontSize: 13, width: 150, fontFamily: FONT, color: C.text }} />
+        </div>
+        <svg width={21} height={21} viewBox="0 0 24 24" fill="none" stroke={C.nav} strokeWidth={1.8} aria-hidden><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" strokeLinecap="round" /></svg>
+        <button className="sf-btn" onClick={props.onCart} style={{ background: G, color: C.white, border: "none", borderRadius: 999, padding: "8px 16px", display: "inline-flex", alignItems: "center", gap: 9, cursor: "pointer", fontFamily: FONT }}>
+          <CartIcon size={18} /><span style={{ fontSize: 14, fontWeight: 600 }}>{money(props.subtotal)}</span>
+        </button>
+      </div>
+    </header>
+  );
+}
+function NavItem({ label, active, onClick, G }: { label: string; active: boolean; onClick: () => void; G: string }) {
+  return (
+    <span className="sf-a" onClick={onClick} style={{ fontWeight: active ? 600 : 500, color: active ? G : C.nav, borderBottom: `2px solid ${active ? G : "transparent"}`, paddingBottom: 3 }}>{label}</span>
+  );
+}
+
+// ── Product card ─────────────────────────────────────────────────────────────────
+function ProductCard({ G, p, listRow, onOpen, onAdd }: { G: string; p: StoreProduct; listRow?: boolean; onOpen: () => void; onAdd: () => void }) {
+  const price = Number(p.variants[p.variants.length - 1]!.priceMinor);
+  const sub = p.variants[p.variants.length - 1]!.size;
+  return (
+    <div className="sf-card" style={{ border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, background: C.white, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="sf-a" onClick={onOpen}><Img src={p.imageUrl} alt={p.name} ratio="1" radius={12} label="512 × 512" /></div>
+      <div className="sf-a" onClick={onOpen} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <span style={{ fontSize: listRow ? 15 : 14.5, fontWeight: 600, lineHeight: 1.3 }}>{p.name}</span>
+        <span style={{ fontSize: 12, color: C.mute }}>{sub}{p.category ? ` · ${p.category}` : ""}</span>
+      </div>
+      {listRow ? (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto" }}>
+          <span style={{ fontSize: 20, fontWeight: 700, color: G }}>{money(price)}</span>
+          <button className="sf-btn" onClick={onAdd} style={{ background: G, color: C.white, border: "none", borderRadius: 9, padding: "10px 15px", fontSize: 12, fontWeight: 600, letterSpacing: ".04em", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: FONT }}><CartIcon size={15} />AGREGAR</button>
+        </div>
+      ) : (
+        <>
+          <span style={{ fontSize: 21, fontWeight: 700, color: G, marginTop: "auto" }}>{money(price)}</span>
+          <button className="sf-btn" onClick={onAdd} style={{ background: G, color: C.white, border: "none", borderRadius: 9, padding: 11, fontSize: 12.5, fontWeight: 600, letterSpacing: ".04em", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: FONT }}><CartIcon size={15} />AGREGAR</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Home ─────────────────────────────────────────────────────────────────────────
+function SectionHead({ G, title, action, onAction }: { G: string; title: string; action?: string; onAction?: () => void }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 56, marginBottom: 22 }}>
+      <h2 style={{ margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: "-.01em", borderBottom: `3px solid ${G}`, paddingBottom: 8 }}>{title}</h2>
+      {action && <span className="sf-a" onClick={onAction} style={{ fontSize: 13.5, fontWeight: 600, color: G }}>{action}</span>}
+    </div>
+  );
+}
+
+function HomeView(props: {
+  G: string; products: StoreProduct[]; categories: { name: string; count: number }[]; config: StoreConfig; threshold: number;
+  waLink: string | null; onSeeList: () => void; onCategory: (c: string) => void; onOpen: (p: StoreProduct) => void; onAdd: (p: StoreProduct) => void;
+}) {
+  const { G } = props;
+  const perks = [
+    ["Envíos en el mismo día", "Pedidos antes de las 18 hs"],
+    ["Envío de Auxilio", "Nocturno y feriados"],
+    ["Compra 100% segura", "Transferencia o Mercado Pago"],
+  ];
+  const benefits = [
+    ["ENVÍO DE AUXILIO", "Emergencias 20:00–23:00, feriados 10:00–22:00"],
+    ["Bolsas cerradas", "10 / 15 kg — las mejores marcas"],
+    ["Fraccionado por kilo", "1,5 / 3 / 5 kg"],
+    ["Ofertas todas las semanas", "Precios especiales"],
+    ["Atención personalizada", "Te asesoramos por WhatsApp"],
+  ];
+  const featured = props.products.slice(0, props.config.featuredCount);
+  return (
+    <>
+      {/* Hero */}
+      <section style={{ background: C.beige, borderRadius: 20, padding: "52px 0 52px 52px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, alignItems: "center", overflow: "hidden" }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 46, fontWeight: 700, lineHeight: 1.1, letterSpacing: "-.02em", maxWidth: 460 }}>
+            Todo lo que tu mascota necesita, <span style={{ color: G }}>sin salir de casa</span>
+          </h1>
+          <p style={{ fontSize: 16, color: C.text2, lineHeight: 1.6, marginTop: 18, maxWidth: 460 }}>Alimentos, accesorios, higiene y más. Envíos rápidos en Gualeguay, Entre Ríos.</p>
+          <div style={{ display: "flex", gap: 12, marginTop: 28, flexWrap: "wrap" }}>
+            {props.waLink && <a className="sf-btn" href={props.waLink} target="_blank" rel="noopener noreferrer" style={{ ...primaryBtn(G), textDecoration: "none" }}><WaIcon size={17} />HACÉ TU PEDIDO POR WHATSAPP</a>}
+            <button className="sf-btn" onClick={props.onSeeList} style={outlineBtn(G)}>VER PRODUCTOS</button>
+          </div>
+          <div style={{ display: "flex", gap: 30, marginTop: 34, flexWrap: "wrap" }}>
+            {perks.map(([a, b]) => (
+              <div key={a} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <span style={{ color: G, marginTop: 1 }}><Check size={16} /></span>
+                <span style={{ display: "flex", flexDirection: "column", fontSize: 12.5 }}>
+                  <span style={{ color: C.nav, fontWeight: 600 }}>{a}</span>
+                  <span style={{ color: C.mute }}>{b}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ position: "relative" }}>
+          <Img alt="banner principal" radius="16px 0 0 16px" label="banner principal 1080 × 450" hero />
+          <div style={{ position: "absolute", left: -46, top: "50%", transform: "translateY(-50%)", width: 132, height: 132, borderRadius: "50%", background: G, color: C.white, boxShadow: "0 8px 24px rgba(46,125,50,.28)", display: "grid", placeItems: "center", textAlign: "center", padding: 10 }}>
+            <span><span style={{ display: "block", fontSize: 17, fontWeight: 700 }}>Envíos GRATIS</span><span style={{ display: "block", fontSize: 9.5, opacity: .9 }}>en compras superiores a {money(props.threshold)}</span></span>
+          </div>
+        </div>
+      </section>
+
+      {/* Franja de beneficios */}
+      <div style={{ marginTop: 18, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 24px", display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 20 }}>
+        {benefits.map(([t, s], i) => (
+          <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <span style={{ width: 34, height: 34, borderRadius: "50%", background: C.iconBg, color: G, display: "grid", placeItems: "center", fontWeight: 700, fontSize: 15, flexShrink: 0 }}>★</span>
+            <span style={{ display: "flex", flexDirection: "column" }}>
+              <span style={{ fontSize: 12.5, fontWeight: 600 }}>{t}</span>
+              <span style={{ fontSize: 11.5, color: C.mute }}>{s}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Categorías */}
+      {props.categories.length > 0 && (
+        <>
+          <SectionHead G={G} title="Categorías" action="Ver todas →" onAction={props.onSeeList} />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 16 }}>
+            {props.categories.slice(0, 10).map((c) => (
+              <div key={c.name} className="sf-a" onClick={() => props.onCategory(c.name)} style={{ textAlign: "center" }}>
+                <div style={{ aspectRatio: "1", borderRadius: 16, background: PH_BG, display: "grid", placeItems: "center" }}><span style={{ fontFamily: "monospace", fontSize: 11, color: C.ph }}>512 × 512</span></div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 10 }}>{c.name}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Destacados */}
+      <SectionHead G={G} title="Productos destacados" action="Ver todos →" onAction={props.onSeeList} />
+      {featured.length === 0 ? <p style={{ color: C.mute }}>Todavía no hay productos cargados.</p> : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 18 }}>
+          {featured.map((p) => <ProductCard key={p.productId} G={G} p={p} onOpen={() => props.onOpen(p)} onAdd={() => props.onAdd(p)} />)}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Listado ────────────────────────────────────────────────────────────────────
+function ListView(props: {
+  G: string; products: StoreProduct[]; categories: { name: string; count: number }[]; category: string; query: string;
+  sort: "relevancia" | "menor" | "mayor"; columns: 2 | 3 | 4; setSort: (s: "relevancia" | "menor" | "mayor") => void; setCategory: (c: string) => void;
+  onOpen: (p: StoreProduct) => void; onAdd: (p: StoreProduct) => void;
+}) {
+  const { G } = props;
+  const q = props.query.trim().toLowerCase();
+  let list = props.products.filter((p) => (q ? `${p.name} ${p.category}`.toLowerCase().includes(q) : props.category ? p.category === props.category : true));
+  const priceOf = (p: StoreProduct) => Number(p.variants[p.variants.length - 1]!.priceMinor);
+  if (props.sort === "menor") list = [...list].sort((a, b) => priceOf(a) - priceOf(b));
+  if (props.sort === "mayor") list = [...list].sort((a, b) => priceOf(b) - priceOf(a));
+
+  const title = q ? `Resultados para "${props.query}"` : props.category || "Todos los productos";
+  return (
+    <>
+      <div style={{ fontSize: 12.5, color: C.mute, marginBottom: 14 }}>Inicio / {q ? "Búsqueda" : props.category || "Productos"}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <h1 style={{ margin: 0, fontSize: 32, fontWeight: 700, letterSpacing: "-.02em" }}>{title}</h1>
+        <span style={{ fontSize: 13, color: C.mute }}>{list.length} productos</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "230px 1fr", gap: 28, alignItems: "start", marginTop: 20 }}>
+        {/* Sidebar */}
+        <aside style={{ border: `1px solid ${C.border}`, borderRadius: 16, padding: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.mute, letterSpacing: ".06em", marginBottom: 12 }}>CATEGORÍAS</div>
+          {props.categories.map((c) => {
+            const on = !q && props.category === c.name;
+            return (
+              <div key={c.name} className="sf-a" onClick={() => props.setCategory(c.name)} style={{ display: "flex", justifyContent: "space-between", padding: "9px 11px", borderRadius: 9, fontSize: 13.5, background: on ? C.tint : "transparent", color: on ? G : C.text, fontWeight: on ? 600 : 400 }}>
+                <span>{c.name}</span><span style={{ fontSize: 11.5, opacity: .7 }}>{c.count}</span>
+              </div>
+            );
+          })}
+          <div style={{ height: 1, background: C.border, margin: "16px 0" }} />
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.mute, letterSpacing: ".06em", marginBottom: 10 }}>ORDENAR POR</div>
+          {([["relevancia", "Relevancia"], ["menor", "Menor precio"], ["mayor", "Mayor precio"]] as const).map(([k, label]) => (
+            <div key={k} className="sf-a" onClick={() => props.setSort(k)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 0", fontSize: 13.5 }}>
+              <span style={{ width: 15, height: 15, borderRadius: "50%", border: `1.5px solid ${props.sort === k ? G : C.radioOff}`, display: "grid", placeItems: "center" }}>{props.sort === k && <span style={{ width: 7, height: 7, borderRadius: "50%", background: G }} />}</span>
+              {label}
+            </div>
+          ))}
+        </aside>
+
+        {/* Grid */}
+        {list.length === 0 ? <p style={{ color: C.mute }}>No hay productos en esta categoría.</p> : (
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${props.columns},1fr)`, gap: 18 }}>
+            {list.map((p) => <ProductCard key={p.productId} G={G} p={p} listRow onOpen={() => props.onOpen(p)} onAdd={() => props.onAdd(p)} />)}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ── Detalle ─────────────────────────────────────────────────────────────────────
+function DetailView(props: {
+  G: string; p: StoreProduct; category: string; sizeVariant: string; setSizeVariant: (v: string) => void;
+  qty: number; setQty: (n: number) => void; waLink: string | null; onBackCat: () => void; onAdd: (variantId: string) => void;
+}) {
+  const { G, p } = props;
+  const variant = p.variants.find((v) => v.variantId === props.sizeVariant) ?? p.variants[p.variants.length - 1]!;
+  return (
+    <>
+      <div style={{ fontSize: 12.5, color: C.mute, marginBottom: 14 }}>
+        Inicio / <span className="sf-a" onClick={props.onBackCat}>{p.category || "Productos"}</span> / {p.name}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "start" }}>
+        <Img src={p.imageUrl} alt={p.name} ratio="1" radius={20} label="foto producto 1080 × 1080" />
+        <div>
+          {p.category && <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".1em", color: C.lightGreen }}>{p.category.toUpperCase()}</div>}
+          <h1 style={{ margin: "6px 0 0", fontSize: 34, fontWeight: 700, letterSpacing: "-.02em" }}>{p.name}</h1>
+          <div style={{ fontSize: 14.5, color: C.mute, marginTop: 4 }}>{variant.size}</div>
+          <div style={{ fontSize: 38, fontWeight: 700, color: G, marginTop: 22 }}>{money(variant.priceMinor)}</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.lightGreen, marginTop: 2 }}>En stock</div>
+          {p.description && <p style={{ fontSize: 14.5, color: C.text2, lineHeight: 1.65, maxWidth: 460, marginTop: 14 }}>{p.description}</p>}
+
+          {p.variants.length > 1 && (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.mute, letterSpacing: ".06em", marginTop: 28, marginBottom: 10 }}>PESO / PRESENTACIÓN</div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {p.variants.map((v) => {
+                  const on = v.variantId === variant.variantId;
+                  return (
+                    <button key={v.variantId} onClick={() => props.setSizeVariant(v.variantId)} style={{ padding: "11px 20px", borderRadius: 9, fontSize: 13.5, fontWeight: 600, border: `1.5px solid ${on ? G : C.border}`, background: on ? C.tint : C.white, color: on ? G : C.nav, cursor: "pointer", fontFamily: FONT }}>{v.size}</button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.mute, letterSpacing: ".06em", marginTop: 24, marginBottom: 10 }}>CANTIDAD</div>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 16, border: `1.5px solid ${C.border}`, borderRadius: 9, padding: "6px 10px" }}>
+            <button onClick={() => props.setQty(Math.max(1, props.qty - 1))} style={{ width: 28, height: 28, border: "none", background: "transparent", fontSize: 20, color: C.nav, cursor: "pointer" }}>−</button>
+            <span style={{ fontSize: 15, fontWeight: 600, minWidth: 16, textAlign: "center" }}>{props.qty}</span>
+            <button onClick={() => props.setQty(props.qty + 1)} style={{ width: 28, height: 28, border: "none", background: "transparent", fontSize: 18, color: C.nav, cursor: "pointer" }}>+</button>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 420, marginTop: 28 }}>
+            <button className="sf-btn" onClick={() => props.onAdd(variant.variantId)} style={{ ...primaryBtn(G), padding: 15 }}><CartIcon size={17} />AGREGAR AL CARRITO</button>
+            {props.waLink && <a className="sf-btn" href={props.waLink} target="_blank" rel="noopener noreferrer" style={{ ...outlineBtn(G), padding: 15 }}><WaIcon size={17} />COMPRAR POR WHATSAPP</a>}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Checkout ────────────────────────────────────────────────────────────────────
+function RadioCard({ G, on, title, sub, price, onClick }: { G: string; on: boolean; title: string; sub: string; price?: string; onClick: () => void }) {
+  return (
+    <div className="sf-a" onClick={onClick} style={{ display: "flex", gap: 13, alignItems: "center", padding: 14, borderRadius: 11, border: `1.5px solid ${on ? G : C.border}`, background: on ? C.tint : C.white, marginBottom: 10 }}>
+      <span style={{ width: 18, height: 18, borderRadius: "50%", border: `1.5px solid ${on ? G : C.radioOff}`, display: "grid", placeItems: "center", flexShrink: 0 }}>{on && <span style={{ width: 8, height: 8, borderRadius: "50%", background: G }} />}</span>
+      <span style={{ flex: 1 }}>
+        <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{title}</span>
+        <span style={{ display: "block", fontSize: 12.5, color: C.mute }}>{sub}</span>
+      </span>
+      {price && <span style={{ fontSize: 13.5, fontWeight: 600, color: G }}>{price}</span>}
+    </div>
+  );
+}
+
+function CheckoutView(props: {
+  G: string; items: [string, CartLine][]; config: StoreConfig; quote: Quote | null;
+  delivery: "estandar" | "auxilio"; setDelivery: (d: "estandar" | "auxilio") => void;
+  payment: "transferencia" | "mercadopago" | "efectivo"; setPayment: (p: "transferencia" | "mercadopago" | "efectivo") => void;
+  form: { street: string; zone: string; phone: string; notes: string }; setForm: (f: { street: string; zone: string; phone: string; notes: string }) => void;
+  busy: boolean; error: string | null; subtotal: number; shippingFor: (d: "estandar" | "auxilio") => number; discountFor: (p: string) => number; onConfirm: () => void;
+}) {
+  const { G, form, setForm } = props;
+  // Números autoritativos: quote del server; fallback a cálculo local mientras carga.
+  const sub = props.quote ? Number(props.quote.gmvMinor) : props.subtotal;
+  const ship = props.quote ? Number(props.quote.deliveryChargeMinor) : props.shippingFor(props.delivery);
+  const disc = props.quote ? Number(props.quote.discountMinor) : props.discountFor(props.payment);
+  const total = props.quote ? Number(props.quote.totalMinor) : sub + ship - disc;
+  const card: React.CSSProperties = { border: `1px solid ${C.border}`, borderRadius: 16, padding: 22 };
+  return (
+    <>
+      <h1 style={{ margin: "0 0 26px", fontSize: 32, fontWeight: 700, letterSpacing: "-.02em" }}>Finalizar compra</h1>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 28, alignItems: "start" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <div style={card}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Dirección de envío</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <input style={{ ...input, gridColumn: "1 / -1" }} placeholder="Calle y número" value={form.street} onChange={(e) => setForm({ ...form, street: e.target.value })} />
+              <input style={input} placeholder="Barrio / zona" value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value })} />
+              <input style={input} placeholder="Teléfono / WhatsApp" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <input style={{ ...input, gridColumn: "1 / -1" }} placeholder="Notas (timbre, referencia…)" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            </div>
+          </div>
+
+          <div style={card}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Método de entrega</div>
+            <RadioCard G={G} on={props.delivery === "estandar"} title="Envío estándar" sub="En el día (13:00 a 20:00)" price={sub >= Number(props.config.freeShippingThresholdMinor) ? "Gratis" : money(props.config.standardCostMinor)} onClick={() => props.setDelivery("estandar")} />
+            {props.config.auxilioEnabled && (
+              <RadioCard G={G} on={props.delivery === "auxilio"} title="Envío de Auxilio" sub="Hoy de 20:00 a 23:00 hs" price={money(props.config.auxilioCostMinor)} onClick={() => props.setDelivery("auxilio")} />
+            )}
+          </div>
+
+          <div style={card}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Método de pago</div>
+            <RadioCard G={G} on={props.payment === "transferencia"} title="Transferencia bancaria" sub={`${props.config.transferDiscountPercent}% de descuento`} onClick={() => props.setPayment("transferencia")} />
+            <RadioCard G={G} on={props.payment === "mercadopago"} title="Mercado Pago" sub="Débito, crédito o dinero en cuenta" onClick={() => props.setPayment("mercadopago")} />
+            <RadioCard G={G} on={props.payment === "efectivo"} title="Efectivo" sub="Pagás al recibir el pedido" onClick={() => props.setPayment("efectivo")} />
+          </div>
+        </div>
+
+        {/* Resumen */}
+        <div style={{ position: "sticky", top: 96, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 16, padding: 22 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Resumen</div>
+          {props.items.map(([id, l]) => (
+            <div key={id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, color: C.text2, padding: "4px 0" }}>
+              <span>{l.qty}× {l.name}</span><span style={{ fontWeight: 600, color: C.text }}>{money(l.priceMinor * l.qty)}</span>
+            </div>
+          ))}
+          <div style={{ height: 1, background: C.borderBeige, margin: "14px 0" }} />
+          <Row label="Subtotal" value={money(sub)} />
+          <Row label="Envío" value={ship === 0 ? "Gratis" : money(ship)} />
+          {disc > 0 && <Row label={`Descuento transferencia (${props.config.transferDiscountPercent}%)`} value={`−${money(disc)}`} valueColor={G} />}
+          <div style={{ height: 1, background: C.borderBeige, margin: "14px 0" }} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <span style={{ fontSize: 15, fontWeight: 700 }}>Total</span><span style={{ fontSize: 26, fontWeight: 700, color: G }}>{money(total)}</span>
+          </div>
+          {props.error && <p style={{ color: "#c62828", fontSize: 12.5, margin: "10px 0 0" }}>{props.error}</p>}
+          <button className="sf-btn" onClick={props.onConfirm} disabled={props.busy} style={{ ...primaryBtn(G), width: "100%", padding: 15, marginTop: 18 }}>{props.busy ? "Procesando…" : "CONFIRMAR PEDIDO"}</button>
+          <p style={{ fontSize: 11.5, color: C.mute, textAlign: "center", marginTop: 10, marginBottom: 0 }}>Te confirmamos el pedido por WhatsApp antes de salir a entregar.</p>
+        </div>
+      </div>
+    </>
+  );
+}
+function Row({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, color: C.text2, padding: "3px 0" }}>
+      <span>{label}</span><span style={{ fontWeight: 600, color: valueColor ?? C.text }}>{value}</span>
+    </div>
+  );
+}
+
+// ── Confirmación ─────────────────────────────────────────────────────────────────
+function DoneView({ G, orderId, totalMinor, onHome }: { G: string; orderId: string; totalMinor: string; onHome: () => void }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ width: 74, height: 74, borderRadius: "50%", background: C.iconBg, color: G, display: "grid", placeItems: "center", margin: "0 auto" }}><Check size={34} sw={2.6} /></div>
+      <h1 style={{ fontSize: 32, fontWeight: 700, marginTop: 24 }}>¡Pedido confirmado!</h1>
+      <p style={{ fontSize: 15.5, color: C.text2, lineHeight: 1.65 }}>Pedido <b>#{orderId.slice(0, 8)}</b> por <b>{money(totalMinor)}</b>. Te escribimos por WhatsApp para coordinar la entrega en Gualeguay.</p>
+      <button className="sf-btn" onClick={onHome} style={{ ...primaryBtn(G), padding: "14px 30px", marginTop: 28 }}>SEGUIR COMPRANDO</button>
+    </div>
+  );
+}
+
+// ── Drawer de carrito ─────────────────────────────────────────────────────────────
+function CartDrawer(props: {
+  G: string; items: [string, CartLine][]; subtotal: number; shipping: number; freeShipMsg: string;
+  onClose: () => void; onQty: (variantId: string, q: number) => void; onCheckout: () => void;
+}) {
+  const { G } = props;
+  const total = props.subtotal + props.shipping;
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60 }}>
+      <div onClick={props.onClose} style={{ position: "absolute", inset: 0, background: "rgba(34,34,34,.42)" }} />
+      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 420, maxWidth: "92vw", background: C.white, boxShadow: "-8px 0 40px rgba(0,0,0,.16)", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "22px 24px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 18, fontWeight: 700 }}>Mi carrito</span>
+          <button onClick={props.onClose} aria-label="Cerrar" style={{ border: "none", background: "transparent", fontSize: 22, color: C.mute, cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: "18px 24px" }}>
+          {props.items.length === 0 ? (
+            <div style={{ textAlign: "center", fontSize: 14, color: C.mute, padding: "60px 0" }}>Tu carrito está vacío.<br />Agregá productos para empezar.</div>
+          ) : props.items.map(([id, l]) => (
+            <div key={id} style={{ display: "flex", gap: 12, alignItems: "center", padding: "14px 0", borderBottom: `1px solid ${C.borderCart}` }}>
+              <div style={{ width: 66, height: 66, borderRadius: 10, background: PH_BG, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{l.name}</div>
+                <div style={{ fontSize: 12, color: C.mute }}>{l.sub}</div>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 10, border: `1px solid ${C.border}`, borderRadius: 8, padding: "3px 9px", marginTop: 6 }}>
+                  <button onClick={() => props.onQty(id, l.qty - 1)} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 15 }}>−</button>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{l.qty}</span>
+                  <button onClick={() => props.onQty(id, l.qty + 1)} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 15 }}>+</button>
+                </div>
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>{money(l.priceMinor * l.qty)}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: "20px 24px", borderTop: `1px solid ${C.border}`, background: C.surf }}>
+          <Row label="Subtotal" value={money(props.subtotal)} />
+          <Row label="Envío" value={props.shipping === 0 ? "Gratis" : money(props.shipping)} />
+          {props.freeShipMsg && <div style={{ fontSize: 12, fontWeight: 600, color: G, marginTop: 6 }}>{props.freeShipMsg}</div>}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 10 }}>
+            <span style={{ fontSize: 15, fontWeight: 700 }}>Total</span><span style={{ fontSize: 24, fontWeight: 700, color: G }}>{money(total)}</span>
+          </div>
+          <button className="sf-btn" onClick={props.onCheckout} disabled={props.items.length === 0} style={{ ...primaryBtn(G), width: "100%", marginTop: 14 }}>FINALIZAR COMPRA</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Footer ───────────────────────────────────────────────────────────────────────
+function Footer({ G, displayName, categories, onCategory, onHome }: { G: string; displayName: string; categories: { name: string; count: number }[]; onCategory: (c: string) => void; onHome: () => void }) {
+  const colTitle: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, color: "#5A594F", letterSpacing: ".07em", marginBottom: 12 };
+  const link: React.CSSProperties = { fontSize: 13, color: C.mute, cursor: "pointer", marginBottom: 7 };
+  return (
+    <footer style={{ background: C.beige, borderTop: `1px solid ${C.border}`, padding: "44px 24px" }}>
+      <div style={{ maxWidth: 1180, margin: "0 auto", display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", gap: 32 }}>
+        <div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: G }}>{displayName.toUpperCase()}</div>
+          <p style={{ fontSize: 13, color: C.mute, lineHeight: 1.7, marginTop: 10 }}>Tu tienda de mascotas en Gualeguay, Entre Ríos. Alimentos, accesorios e higiene con envío en el día y atención por WhatsApp.</p>
+        </div>
+        <div>
+          <div style={colTitle}>TIENDA</div>
+          <div style={link} onClick={onHome}>Inicio</div>
+          {categories.slice(0, 4).map((c) => <div key={c.name} style={link} onClick={() => onCategory(c.name)}>{c.name}</div>)}
+        </div>
+        <div>
+          <div style={colTitle}>AYUDA</div>
+          <div style={link}>Envíos y entregas</div>
+          <div style={link}>Medios de pago</div>
+          <div style={link}>Preguntas frecuentes</div>
+        </div>
+        <div>
+          <div style={colTitle}>CONTACTO</div>
+          <div style={link}>WhatsApp</div>
+          <div style={link}>Gualeguay, Entre Ríos</div>
+          <div style={link}>Lun a Sáb 9 a 21 hs</div>
+        </div>
+      </div>
+    </footer>
   );
 }

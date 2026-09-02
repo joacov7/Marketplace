@@ -3,23 +3,18 @@ import { listCatalog } from "@commerce/modules/catalog";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { safeUrl } from "@/lib/sanitize";
-import Storefront, { type StoreProduct } from "./storefront";
+import Storefront, { type StoreProduct, type StoreConfig } from "./storefront";
 
 export const dynamic = "force-dynamic"; // depende del tenant resuelto por request
 
 /** Normaliza un color de config a un hex CSS válido (con fallback). Defensivo. */
-function cssColor(v: string | undefined, fallback = "#2563eb"): string {
+function cssColor(v: string | undefined, fallback = "#2E7D32"): string {
   const s = (v ?? "").replace(/^"+|"+$/g, "").trim();
   return /^#[0-9a-fA-F]{6}$/.test(s) ? s : fallback;
 }
 function cleanText(v: string | undefined, fallback: string): string {
   const s = (v ?? "").replace(/^"+|"+$/g, "").trim();
   return s.length > 0 ? s : fallback;
-}
-/** Normaliza un valor a uno de la lista permitida (fallback si no coincide). */
-function oneOf<T extends string>(v: string | undefined, allowed: readonly T[], fallback: T): T {
-  const s = (v ?? "").replace(/^"+|"+$/g, "").trim();
-  return (allowed as readonly string[]).includes(s) ? (s as T) : fallback;
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -36,6 +31,11 @@ function Notice({ title, children }: { title: string; children: React.ReactNode 
     </Shell>
   );
 }
+
+const num = (v: unknown, fallback: number): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
 
 export default async function Home({ searchParams }: { searchParams: { tenant?: string } }) {
   let tenant;
@@ -64,20 +64,27 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
     );
   }
 
+  const chain = { tenantId: tenant.tenantId };
+  const cfg = <T,>(key: string) => resolveConfigValue<T>(db(), key, chain).then((r) => r.value);
+
   try {
-    const [primary, secondary, displayName, logoUrl, bannerText, bannerImageUrl, layout, font, buttonShape, whatsapp, whatsappMessage, agentEnabled, catalog] = await Promise.all([
-      resolveConfigValue<string>(db(), "branding.primaryColor", { tenantId: tenant.tenantId }).then((r) => r.value),
-      resolveConfigValue<string>(db(), "branding.secondaryColor", { tenantId: tenant.tenantId }).then((r) => r.value),
-      resolveConfigValue<string>(db(), "branding.displayName", { tenantId: tenant.tenantId }).then((r) => r.value),
-      resolveConfigValue<string>(db(), "branding.logoUrl", { tenantId: tenant.tenantId }).then((r) => r.value),
-      resolveConfigValue<string>(db(), "branding.bannerText", { tenantId: tenant.tenantId }).then((r) => r.value),
-      resolveConfigValue<string>(db(), "branding.bannerImageUrl", { tenantId: tenant.tenantId }).then((r) => r.value),
-      resolveConfigValue<string>(db(), "branding.layout", { tenantId: tenant.tenantId }).then((r) => r.value),
-      resolveConfigValue<string>(db(), "branding.font", { tenantId: tenant.tenantId }).then((r) => r.value),
-      resolveConfigValue<string>(db(), "branding.buttonShape", { tenantId: tenant.tenantId }).then((r) => r.value),
-      resolveConfigValue<string>(db(), "contact.whatsapp", { tenantId: tenant.tenantId }).then((r) => r.value),
-      resolveConfigValue<string>(db(), "contact.whatsappMessage", { tenantId: tenant.tenantId }).then((r) => r.value),
-      resolveConfigValue<boolean>(db(), "features.customerAgent", { tenantId: tenant.tenantId }).then((r) => r.value),
+    const [
+      primary, displayName, logoUrl, whatsapp, whatsappMessage,
+      thresholdMinor, standardCostMinor, auxilioCostMinor, transferPct, auxilioEnabled,
+      featuredCount, listColumns, catalog,
+    ] = await Promise.all([
+      cfg<string>("branding.primaryColor"),
+      cfg<string>("branding.displayName"),
+      cfg<string>("branding.logoUrl"),
+      cfg<string>("contact.whatsapp"),
+      cfg<string>("contact.whatsappMessage"),
+      cfg<number>("delivery.freeOverOrderTotalMinor"),
+      cfg<number>("delivery.customerChargeMinor"),
+      cfg<number>("delivery.auxilioCostMinor"),
+      cfg<number>("payments.transferDiscountPercent"),
+      cfg<boolean>("features.auxilioDelivery"),
+      cfg<number>("storefront.featuredCount"),
+      cfg<number>("storefront.listColumns"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
         if (!merchants[0]) return [];
@@ -85,34 +92,46 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       }),
     ]);
 
-    const products: StoreProduct[] = catalog.map((v) => ({
-      variantId: v.variantId,
-      productName: v.productName ?? v.name,
-      variantName: v.name,
-      sku: v.sku,
-      imageUrl: safeUrl(v.imageUrl),
-      category: cleanText(v.categoryName ?? "", ""),
-      description: cleanText(v.description ?? "", ""),
-      priceMinor: v.price ? v.price.amountMinor.toString() : null,
-      currency: v.price?.currency ?? null,
-    }));
+    // Agrupa las variantes por producto: cada producto tiene 1..n talles/pesos con su precio.
+    const byProduct = new Map<string, StoreProduct>();
+    for (const v of catalog) {
+      if (!v.price) continue;
+      let p = byProduct.get(v.productId);
+      if (!p) {
+        p = {
+          productId: v.productId,
+          name: v.productName ?? v.name,
+          category: cleanText(v.categoryName ?? "", ""),
+          description: cleanText(v.description ?? "", ""),
+          imageUrl: safeUrl(v.imageUrl),
+          variants: [],
+        };
+        byProduct.set(v.productId, p);
+      }
+      p.variants.push({ variantId: v.variantId, size: v.name, priceMinor: v.price.amountMinor.toString(), currency: v.price.currency });
+    }
+    const products = [...byProduct.values()].filter((p) => p.variants.length > 0);
+
+    const config: StoreConfig = {
+      freeShippingThresholdMinor: String(num(thresholdMinor, 2500000)),
+      standardCostMinor: String(num(standardCostMinor, 150000)),
+      auxilioCostMinor: String(num(auxilioCostMinor, 200000)),
+      transferDiscountPercent: num(transferPct, 10),
+      auxilioEnabled: auxilioEnabled !== false,
+      featuredCount: num(featuredCount, 4),
+      listColumns: [2, 3, 4].includes(num(listColumns, 3)) ? (num(listColumns, 3) as 2 | 3 | 4) : 3,
+    };
 
     return (
       <Storefront
         tenant={tenant.slug}
         displayName={cleanText(displayName, "Pet Shop")}
         primary={cssColor(primary)}
-        secondary={cssColor(secondary, "#1e293b")}
         logoUrl={safeUrl(logoUrl)}
-        bannerText={cleanText(bannerText, "")}
-        bannerImageUrl={safeUrl(bannerImageUrl)}
-        layout={layout === "list" ? "list" : "grid"}
-        font={oneOf(font, ["system", "serif", "rounded", "mono"] as const, "system")}
-        buttonShape={oneOf(buttonShape, ["rounded", "pill", "square"] as const, "rounded")}
         whatsapp={(whatsapp ?? "").replace(/[^0-9]/g, "")}
         whatsappMessage={cleanText(whatsappMessage, "¡Hola! Quiero hacer un pedido.")}
-        agentEnabled={agentEnabled}
         products={products}
+        config={config}
       />
     );
   } catch (e) {
