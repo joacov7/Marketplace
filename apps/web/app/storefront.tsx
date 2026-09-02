@@ -9,6 +9,7 @@ export interface StoreProduct {
   sku: string;
   imageUrl?: string;
   category?: string;
+  description?: string;
   priceMinor: string | null;
   currency: string | null;
 }
@@ -58,6 +59,7 @@ export default function Storefront(props: {
   const [addr, setAddr] = useState({ street: "", city: "", zone: "", notes: "" });
   const [win, setWin] = useState("Hoy 14–18 h");
   const [activeCat, setActiveCat] = useState<string>("");
+  const [detail, setDetail] = useState<StoreProduct | null>(null);
 
   // Categorías presentes en el catálogo (para la barra de filtro), en orden de aparición.
   const categories = Array.from(new Set(props.products.map((p) => p.category).filter((c): c is string => !!c)));
@@ -235,7 +237,7 @@ export default function Storefront(props: {
               }}
             >
               {visibleProducts.map((p) => (
-                <ProductCard key={p.variantId} p={p} layout={layout} primary={primary} inCart={cart[p.variantId]?.qty ?? 0} onAdd={add} onSetQty={setQty} />
+                <ProductCard key={p.variantId} p={p} layout={layout} primary={primary} inCart={cart[p.variantId]?.qty ?? 0} onAdd={add} onSetQty={setQty} onOpen={() => setDetail(p)} />
               ))}
             </ul>
           )}
@@ -327,6 +329,19 @@ export default function Storefront(props: {
 
       <footer style={{ marginTop: 32, color: "#b0b0b8", fontSize: 12, textAlign: "center" }}>{props.displayName} · Commerce OS</footer>
       </main>
+
+      {detail && (
+        <ProductDetailModal
+          p={detail}
+          primary={primary}
+          inCart={cart[detail.variantId]?.qty ?? 0}
+          whatsapp={props.whatsapp}
+          onAdd={add}
+          onSetQty={setQty}
+          onClose={() => setDetail(null)}
+        />
+      )}
+
       {waLink && (
         <a
           href={waLink}
@@ -486,6 +501,75 @@ const STORE_CSS = `
 .pcard:hover .pimg{transform:scale(1.03);}
 `;
 
+/** Ficha de producto (modal). Foto grande, categoría, descripción, cantidad y acciones. */
+function ProductDetailModal({
+  p, primary, inCart, whatsapp, onAdd, onSetQty, onClose,
+}: {
+  p: StoreProduct;
+  primary: string;
+  inCart: number;
+  whatsapp?: string;
+  onAdd: (variantId: string, name: string, priceMinor: number) => void;
+  onSetQty: (variantId: string, qty: number) => void;
+  onClose: () => void;
+}) {
+  const price = p.priceMinor ? money(Number(p.priceMinor), p.currency ?? "ARS") : "—";
+  const waLink = whatsapp
+    ? `https://wa.me/${whatsapp}?text=${encodeURIComponent(`¡Hola! Quiero consultar por ${p.productName}${p.variantName ? ` (${p.variantName})` : ""}.`)}`
+    : null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", display: "grid", placeItems: "center", padding: 16, zIndex: 60 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "white", borderRadius: 16, maxWidth: 560, width: "100%", maxHeight: "90vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}
+      >
+        <div style={{ position: "relative" }}>
+          {p.imageUrl
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={p.imageUrl} alt={p.productName} style={{ width: "100%", height: 260, objectFit: "cover", borderRadius: "16px 16px 0 0", background: "#f1f1f3" }} />
+            : <div style={{ width: "100%", height: 200, borderRadius: "16px 16px 0 0", background: "#f1f1f3", display: "grid", placeItems: "center", fontSize: 64 }}>🐾</div>}
+          <button onClick={onClose} aria-label="Cerrar" style={{ position: "absolute", top: 12, right: 12, width: 34, height: 34, borderRadius: "50%", border: "none", background: "rgba(255,255,255,.92)", cursor: "pointer", fontSize: 18, boxShadow: "0 2px 8px rgba(0,0,0,.15)" }}>×</button>
+        </div>
+        <div style={{ padding: 20 }}>
+          {p.category && <span style={{ display: "inline-block", background: "#eef0f3", color: "#556", borderRadius: 999, padding: "3px 12px", fontSize: 12, fontWeight: 600, marginBottom: 8 }}>{p.category}</span>}
+          <h2 style={{ margin: "0 0 4px", fontSize: 22, letterSpacing: "-0.01em" }}>{p.productName}</h2>
+          <div style={{ color: "#9aa0aa", fontSize: 14, marginBottom: 10 }}>{p.variantName} · {p.sku}</div>
+          <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 12 }}>{price}</div>
+          {p.description
+            ? <p style={{ color: "#4b5563", lineHeight: 1.6, margin: "0 0 18px" }}>{p.description}</p>
+            : <p style={{ color: "#b0b0b8", fontStyle: "italic", margin: "0 0 18px" }}>Sin descripción.</p>}
+
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            {p.priceMinor && (
+              inCart > 0 ? (
+                <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button className="pbtn" onClick={() => onSetQty(p.variantId, inCart - 1)} style={qtyBtn} aria-label="Quitar uno">−</button>
+                  <span style={{ minWidth: 28, textAlign: "center", fontWeight: 700, fontSize: 16 }}>{inCart}</span>
+                  <button className="pbtn" onClick={() => onSetQty(p.variantId, inCart + 1)} style={qtyBtn} aria-label="Agregar uno">+</button>
+                  <span style={{ color: "#2e7d32", fontSize: 13, fontWeight: 600 }}>En el carrito</span>
+                </span>
+              ) : (
+                <button className="pbtn" onClick={() => onAdd(p.variantId, `${p.productName} ${p.variantName}`, Number(p.priceMinor))} style={{ ...btn(primary), padding: "10px 22px", fontSize: 15 }}>
+                  Agregar al carrito
+                </button>
+              )
+            )}
+            {waLink && (
+              <a href={waLink} target="_blank" rel="noopener noreferrer" className="pbtn" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "white", textDecoration: "none", borderRadius: "var(--btn-radius, 10px)", padding: "10px 18px", fontWeight: 700 }}>
+                <WhatsAppIcon size={18} /> Consultar
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Chip de filtro de categoría. Activo = relleno con el color de marca. */
 function CatChip({ label, active, primary, onClick }: { label: string; active: boolean; primary: string; onClick: () => void }) {
   return (
@@ -530,7 +614,7 @@ function Thumb({ src, alt, layout }: { src?: string; alt: string; layout: "grid"
 
 /** Tarjeta de producto. Grilla = card vertical (foto, nombre, precio+acción). Lista = fila. */
 function ProductCard({
-  p, layout, primary, inCart, onAdd, onSetQty,
+  p, layout, primary, inCart, onAdd, onSetQty, onOpen,
 }: {
   p: StoreProduct;
   layout: "grid" | "list";
@@ -538,6 +622,7 @@ function ProductCard({
   inCart: number;
   onAdd: (variantId: string, name: string, priceMinor: number) => void;
   onSetQty: (variantId: string, qty: number) => void;
+  onOpen: () => void;
 }) {
   const price = p.priceMinor ? money(Number(p.priceMinor), p.currency ?? "ARS") : "—";
   const addFn = () => onAdd(p.variantId, `${p.productName} ${p.variantName}`, Number(p.priceMinor));
@@ -548,11 +633,12 @@ function ProductCard({
       <button className="pbtn" onClick={() => onSetQty(p.variantId, inCart + 1)} style={qtyBtn} aria-label="Agregar uno">+</button>
     </span>
   );
+  const clickable: React.CSSProperties = { cursor: "pointer" };
 
   if (layout === "list") {
     return (
       <li className="pcard" style={{ ...cardStyle, gap: 14 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+        <span onClick={onOpen} style={{ ...clickable, display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
           <Thumb src={p.imageUrl} alt={p.productName} layout="list" />
           <span style={{ minWidth: 0 }}>
             <strong style={{ display: "block" }}>{p.productName}</strong>
@@ -569,8 +655,8 @@ function ProductCard({
 
   return (
     <li className="pcard" style={{ ...cardStyle, flexDirection: "column", alignItems: "stretch", gap: 10, padding: 12, overflow: "hidden" }}>
-      <span style={{ overflow: "hidden", borderRadius: 10 }}><Thumb src={p.imageUrl} alt={p.productName} layout="grid" /></span>
-      <span style={{ minHeight: 40 }}>
+      <span onClick={onOpen} style={{ ...clickable, overflow: "hidden", borderRadius: 10 }}><Thumb src={p.imageUrl} alt={p.productName} layout="grid" /></span>
+      <span onClick={onOpen} style={{ ...clickable, minHeight: 40 }}>
         <strong style={{ display: "block", lineHeight: 1.25 }}>{p.productName}</strong>
         <span style={{ color: "#9aa0aa", fontSize: 12 }}>{p.variantName}</span>
       </span>

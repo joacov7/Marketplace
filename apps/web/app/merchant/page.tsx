@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 interface Merchant { id: string; slug: string; name: string }
 interface SellerOrder { sellerOrderId: string; orderId: string; status: string; subtotalMinor: string; currency: string; itemCount: number; createdAt: string }
-interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; categoryId: string | null; categoryName: string | null; priceMinor: string | null; currency: string | null; available: number; status: string }
+interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; categoryId: string | null; categoryName: string | null; description: string | null; priceMinor: string | null; currency: string | null; available: number; status: string }
 interface Category { id: string; slug: string; name: string; imageUrl: string | null; position: number }
 interface ReportSummary { paidOrders: number; gmvMinor: string; deliveryRevenueMinor: string; commissionMinor: string; merchantPayoutMinor: string; refundsMinor: string; avgTicketMinor: string }
 interface ReportSeries { day: string; orders: number; gmvMinor: string }
@@ -176,7 +176,7 @@ export default function MerchantPanel() {
 function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | null; token: string; merchantId: string; onError: (s: string | null) => void }) {
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
-  const [f, setF] = useState({ productName: "", sku: "", price: "", stock: "", imageUrl: "", categoryId: "" });
+  const [f, setF] = useState({ productName: "", sku: "", price: "", stock: "", imageUrl: "", categoryId: "", description: "" });
   const [newCat, setNewCat] = useState({ name: "", imageUrl: "" });
   const auth = { authorization: `Bearer ${token}` };
 
@@ -201,11 +201,11 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
     onError(null);
     const res = await fetch(`/api/merchant/catalog?tenant=${encodeURIComponent(tenant ?? "")}`, {
       method: "POST", headers: { ...auth, "content-type": "application/json" },
-      body: JSON.stringify({ merchantId, productName: f.productName, sku: f.sku, priceMinor: Math.round(Number(f.price) * 100), stock: Number(f.stock || 0), imageUrl: f.imageUrl.trim(), categoryId: f.categoryId || undefined }),
+      body: JSON.stringify({ merchantId, productName: f.productName, sku: f.sku, priceMinor: Math.round(Number(f.price) * 100), stock: Number(f.stock || 0), imageUrl: f.imageUrl.trim(), categoryId: f.categoryId || undefined, description: f.description.trim() }),
     });
     const data = await res.json();
     if (!res.ok) { onError(data.error); return; }
-    setF({ productName: "", sku: "", price: "", stock: "", imageUrl: "", categoryId: f.categoryId });
+    setF({ productName: "", sku: "", price: "", stock: "", imageUrl: "", categoryId: f.categoryId, description: "" });
     await load();
   }
 
@@ -222,10 +222,10 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
     await load();
   }
 
-  async function save(variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string) {
+  async function save(variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string) {
     await fetch(`/api/merchant/catalog/${variantId}?tenant=${encodeURIComponent(tenant ?? "")}`, {
       method: "PATCH", headers: { ...auth, "content-type": "application/json" },
-      body: JSON.stringify({ ...(priceMinor !== null ? { priceMinor } : {}), stock, imageUrl, categoryId }),
+      body: JSON.stringify({ ...(priceMinor !== null ? { priceMinor } : {}), stock, imageUrl, categoryId, description }),
     });
     await load();
   }
@@ -260,6 +260,7 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
           <input placeholder="Foto (URL https://…)" value={f.imageUrl} onChange={(e) => setF({ ...f, imageUrl: e.target.value })} style={{ ...input, flex: 1, minWidth: 200 }} />
           <button onClick={addProduct} className="mbtn" style={btn}>Agregar</button>
         </div>
+        <textarea placeholder="Descripción (opcional) — se muestra en la ficha del producto" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} rows={2} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 8, resize: "vertical", fontFamily: "inherit" }} />
       </div>
 
       {items.length === 0 ? <p style={{ color: "#888" }}>Este comercio no tiene productos. Cargá el primero arriba.</p> : (
@@ -271,30 +272,38 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
   );
 }
 
-function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; onSave: (variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string) => void }) {
+function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; onSave: (variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string) => void }) {
   const [price, setPrice] = useState(it.priceMinor ? String(Number(it.priceMinor) / 100) : "");
   const [stock, setStock] = useState(String(it.available));
   const [imageUrl, setImageUrl] = useState(it.imageUrl ?? "");
   const [categoryId, setCategoryId] = useState(it.categoryId ?? "");
+  const [description, setDescription] = useState(it.description ?? "");
+  const [openDesc, setOpenDesc] = useState(false);
   return (
-    <li style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-      <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        {it.imageUrl
-          // eslint-disable-next-line @next/next/no-img-element
-          ? <img src={it.imageUrl} alt={it.productName} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #eee" }} />
-          : <span style={{ width: 40, height: 40, borderRadius: 6, background: "#f2f2f2", display: "grid", placeItems: "center", fontSize: 16 }}>🐾</span>}
-        <span><strong>{it.productName}</strong> <span style={{ color: "#999", fontSize: 13 }}>{it.variantName} · {it.sku}</span></span>
-      </span>
-      <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <label style={{ fontSize: 12, color: "#777" }}>$ <input value={price} onChange={(e) => setPrice(e.target.value)} style={{ ...input, width: 90 }} /></label>
-        <label style={{ fontSize: 12, color: "#777" }}>Stock <input value={stock} onChange={(e) => setStock(e.target.value)} style={{ ...input, width: 70 }} /></label>
-        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={{ ...input, width: 150 }}>
-          <option value="">Sin categoría</option>
-          {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <input placeholder="Foto (URL)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} style={{ ...input, width: 160 }} />
-        <button onClick={() => onSave(it.variantId, price ? Math.round(Number(price) * 100) : null, Number(stock), imageUrl.trim(), categoryId)} className="mbtn" style={btn}>Guardar</button>
-      </span>
+    <li style={{ ...card, display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {it.imageUrl
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={it.imageUrl} alt={it.productName} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #eee" }} />
+            : <span style={{ width: 40, height: 40, borderRadius: 6, background: "#f2f2f2", display: "grid", placeItems: "center", fontSize: 16 }}>🐾</span>}
+          <span><strong>{it.productName}</strong> <span style={{ color: "#999", fontSize: 13 }}>{it.variantName} · {it.sku}</span></span>
+        </span>
+        <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ fontSize: 12, color: "#777" }}>$ <input value={price} onChange={(e) => setPrice(e.target.value)} style={{ ...input, width: 90 }} /></label>
+          <label style={{ fontSize: 12, color: "#777" }}>Stock <input value={stock} onChange={(e) => setStock(e.target.value)} style={{ ...input, width: 70 }} /></label>
+          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={{ ...input, width: 150 }}>
+            <option value="">Sin categoría</option>
+            {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <input placeholder="Foto (URL)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} style={{ ...input, width: 160 }} />
+          <button onClick={() => setOpenDesc((v) => !v)} className="mbtn" style={btnGhost} title="Descripción">{openDesc ? "▲ Desc." : "▼ Desc."}</button>
+          <button onClick={() => onSave(it.variantId, price ? Math.round(Number(price) * 100) : null, Number(stock), imageUrl.trim(), categoryId, description.trim())} className="mbtn" style={btn}>Guardar</button>
+        </span>
+      </div>
+      {openDesc && (
+        <textarea placeholder="Descripción del producto" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} style={{ ...input, width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
+      )}
     </li>
   );
 }

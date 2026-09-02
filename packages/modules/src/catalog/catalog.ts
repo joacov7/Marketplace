@@ -82,6 +82,17 @@ export async function setProductCategoryByVariant(
   );
 }
 
+/** Actualiza la descripción de un producto, por variante. */
+export async function setProductDescriptionByVariant(
+  db: Db,
+  input: { tenantId: string; variantId: string; description: string | null },
+): Promise<void> {
+  await db.query(
+    `update products set description = $2 where id = (select product_id from variants where id = $1)`,
+    [input.variantId, input.description],
+  );
+}
+
 export async function addVariant(
   db: Db,
   input: { tenantId: string; productId: string; sku: string; name: string },
@@ -121,6 +132,8 @@ export interface VariantWithPrice {
   /** Categoría del producto (presente en listCatalog). */
   categoryId?: string | null;
   categoryName?: string | null;
+  /** Descripción del producto (presente en listCatalog). */
+  description?: string | null;
   sku: string;
   name: string;
   price: Money | null;
@@ -172,6 +185,7 @@ export interface CatalogAdminRow {
   imageUrl: string | null;
   categoryId: string | null;
   categoryName: string | null;
+  description: string | null;
   variantName: string;
   sku: string;
   priceMinor: bigint | null;
@@ -192,6 +206,7 @@ export async function listCatalogAdmin(db: Db, merchantId: string): Promise<Cata
     image_url: string | null;
     category_id: string | null;
     category_name: string | null;
+    description: string | null;
     variant_name: string;
     sku: string;
     amount_minor: string | null;
@@ -199,7 +214,7 @@ export async function listCatalogAdmin(db: Db, merchantId: string): Promise<Cata
     available: number;
   }>(
     `select v.id as variant_id, v.product_id, pr.name as product_name, pr.status as product_status,
-            pr.image_url, pr.category_id, cat.name as category_name,
+            pr.image_url, pr.category_id, cat.name as category_name, pr.description,
             v.name as variant_name, v.sku, p.amount_minor, p.currency, coalesce(inv.available,0) as available
        from variants v
        join products pr on pr.id = v.product_id
@@ -221,6 +236,7 @@ export async function listCatalogAdmin(db: Db, merchantId: string): Promise<Cata
     imageUrl: r.image_url,
     categoryId: r.category_id,
     categoryName: r.category_name,
+    description: r.description,
     variantName: r.variant_name,
     sku: r.sku,
     priceMinor: r.amount_minor !== null ? BigInt(r.amount_minor) : null,
@@ -242,13 +258,14 @@ export async function listCatalog(
     image_url: string | null;
     category_id: string | null;
     category_name: string | null;
+    description: string | null;
     sku: string;
     name: string;
     amount_minor: string | null;
     currency: CurrencyCode | null;
   }>(
     `select v.id as variant_id, v.product_id, pr.name as product_name, pr.image_url,
-            pr.category_id, cat.name as category_name, v.sku, v.name, p.amount_minor, p.currency
+            pr.category_id, cat.name as category_name, pr.description, v.sku, v.name, p.amount_minor, p.currency
        from variants v
        join products pr on pr.id = v.product_id and pr.status = 'active'
        left join categories cat on cat.id = pr.category_id
@@ -268,6 +285,7 @@ export async function listCatalog(
     imageUrl: row.image_url,
     categoryId: row.category_id,
     categoryName: row.category_name,
+    description: row.description,
     sku: row.sku,
     name: row.name,
     price:
