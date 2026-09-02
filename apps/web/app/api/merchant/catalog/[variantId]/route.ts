@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { setPrice, setProductImageByVariant } from "@commerce/modules/catalog";
+import { setPrice, setProductImageByVariant, setProductCategoryByVariant } from "@commerce/modules/catalog";
 import { setStock } from "@commerce/modules/inventory";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
@@ -14,7 +14,7 @@ export async function PATCH(req: Request, { params }: { params: { variantId: str
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
-  let body: { priceMinor?: string | number; stock?: number; imageUrl?: string };
+  let body: { priceMinor?: string | number; stock?: number; imageUrl?: string; categoryId?: string | null };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -31,6 +31,9 @@ export async function PATCH(req: Request, { params }: { params: { variantId: str
     if (body.imageUrl !== undefined) {
       const clean = safeUrl(body.imageUrl);
       await setProductImageByVariant(tx, { tenantId: tenant.tenantId, variantId: params.variantId, imageUrl: clean || null });
+    }
+    if (body.categoryId !== undefined) {
+      await setProductCategoryByVariant(tx, { tenantId: tenant.tenantId, variantId: params.variantId, categoryId: body.categoryId || null });
     }
   });
   return NextResponse.json({ ok: true });

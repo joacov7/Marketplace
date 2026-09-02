@@ -15,13 +15,15 @@ export interface CreateProductInput {
   description?: string;
   /** URL de la foto principal (http/https; ya saneada por la capa de app). */
   imageUrl?: string;
+  /** Categoría a la que pertenece (opcional). */
+  categoryId?: string;
 }
 
 export async function createProduct(db: Db, input: CreateProductInput): Promise<{ productId: string }> {
   const [row] = await db.query<{ id: string }>(
-    `insert into products (tenant_id, merchant_id, slug, name, description, image_url)
-     values ($1,$2,$3,$4,$5,$6) returning id`,
-    [input.tenantId, input.merchantId, input.slug, input.name, input.description ?? null, input.imageUrl ?? null],
+    `insert into products (tenant_id, merchant_id, slug, name, description, image_url, category_id)
+     values ($1,$2,$3,$4,$5,$6,$7) returning id`,
+    [input.tenantId, input.merchantId, input.slug, input.name, input.description ?? null, input.imageUrl ?? null, input.categoryId ?? null],
   );
   return { productId: row!.id };
 }
@@ -35,6 +37,48 @@ export async function setProductImageByVariant(
     `update products set image_url = $2
        where id = (select product_id from variants where id = $1)`,
     [input.variantId, input.imageUrl],
+  );
+}
+
+export interface Category {
+  id: string;
+  slug: string;
+  name: string;
+  imageUrl: string | null;
+  position: number;
+}
+
+/** Crea una categoría en un comercio. El slug se deriva del nombre. */
+export async function createCategory(
+  db: Db,
+  input: { tenantId: string; merchantId: string; name: string; imageUrl?: string; position?: number },
+): Promise<{ categoryId: string }> {
+  const slug = input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + Math.random().toString(36).slice(2, 6);
+  const [row] = await db.query<{ id: string }>(
+    `insert into categories (tenant_id, merchant_id, slug, name, image_url, position)
+     values ($1,$2,$3,$4,$5,$6) returning id`,
+    [input.tenantId, input.merchantId, slug, input.name, input.imageUrl ?? null, input.position ?? 0],
+  );
+  return { categoryId: row!.id };
+}
+
+/** Lista las categorías de un comercio, ordenadas por position y nombre. */
+export async function listCategories(db: Db, merchantId: string): Promise<Category[]> {
+  const rows = await db.query<{ id: string; slug: string; name: string; image_url: string | null; position: number }>(
+    `select id, slug, name, image_url, position from categories where merchant_id = $1 order by position, name`,
+    [merchantId],
+  );
+  return rows.map((r) => ({ id: r.id, slug: r.slug, name: r.name, imageUrl: r.image_url, position: r.position }));
+}
+
+/** Asigna (o quita, con null) la categoría de un producto, por variante. */
+export async function setProductCategoryByVariant(
+  db: Db,
+  input: { tenantId: string; variantId: string; categoryId: string | null },
+): Promise<void> {
+  await db.query(
+    `update products set category_id = $2 where id = (select product_id from variants where id = $1)`,
+    [input.variantId, input.categoryId],
   );
 }
 
@@ -74,6 +118,9 @@ export interface VariantWithPrice {
   productName?: string;
   /** URL de la foto del producto (null si no tiene). */
   imageUrl?: string | null;
+  /** Categoría del producto (presente en listCatalog). */
+  categoryId?: string | null;
+  categoryName?: string | null;
   sku: string;
   name: string;
   price: Money | null;
@@ -123,6 +170,8 @@ export interface CatalogAdminRow {
   productName: string;
   productStatus: string;
   imageUrl: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
   variantName: string;
   sku: string;
   priceMinor: bigint | null;
@@ -141,6 +190,8 @@ export async function listCatalogAdmin(db: Db, merchantId: string): Promise<Cata
     product_name: string;
     product_status: string;
     image_url: string | null;
+    category_id: string | null;
+    category_name: string | null;
     variant_name: string;
     sku: string;
     amount_minor: string | null;
@@ -148,9 +199,11 @@ export async function listCatalogAdmin(db: Db, merchantId: string): Promise<Cata
     available: number;
   }>(
     `select v.id as variant_id, v.product_id, pr.name as product_name, pr.status as product_status,
-            pr.image_url, v.name as variant_name, v.sku, p.amount_minor, p.currency, coalesce(inv.available,0) as available
+            pr.image_url, pr.category_id, cat.name as category_name,
+            v.name as variant_name, v.sku, p.amount_minor, p.currency, coalesce(inv.available,0) as available
        from variants v
        join products pr on pr.id = v.product_id
+       left join categories cat on cat.id = pr.category_id
        left join lateral (
          select amount_minor, currency from prices where variant_id = v.id and effective_from <= now()
          order by effective_from desc limit 1
@@ -166,6 +219,8 @@ export async function listCatalogAdmin(db: Db, merchantId: string): Promise<Cata
     productName: r.product_name,
     productStatus: r.product_status,
     imageUrl: r.image_url,
+    categoryId: r.category_id,
+    categoryName: r.category_name,
     variantName: r.variant_name,
     sku: r.sku,
     priceMinor: r.amount_minor !== null ? BigInt(r.amount_minor) : null,
@@ -185,14 +240,18 @@ export async function listCatalog(
     product_id: string;
     product_name: string;
     image_url: string | null;
+    category_id: string | null;
+    category_name: string | null;
     sku: string;
     name: string;
     amount_minor: string | null;
     currency: CurrencyCode | null;
   }>(
-    `select v.id as variant_id, v.product_id, pr.name as product_name, pr.image_url, v.sku, v.name, p.amount_minor, p.currency
+    `select v.id as variant_id, v.product_id, pr.name as product_name, pr.image_url,
+            pr.category_id, cat.name as category_name, v.sku, v.name, p.amount_minor, p.currency
        from variants v
        join products pr on pr.id = v.product_id and pr.status = 'active'
+       left join categories cat on cat.id = pr.category_id
        left join lateral (
          select amount_minor, currency from prices
           where variant_id = v.id and effective_from <= $2
@@ -207,6 +266,8 @@ export async function listCatalog(
     productId: row.product_id,
     productName: row.product_name,
     imageUrl: row.image_url,
+    categoryId: row.category_id,
+    categoryName: row.category_name,
     sku: row.sku,
     name: row.name,
     price:

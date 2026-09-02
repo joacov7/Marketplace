@@ -25,6 +25,8 @@ export async function GET(req: Request) {
       variantName: r.variantName,
       sku: r.sku,
       imageUrl: r.imageUrl,
+      categoryId: r.categoryId,
+      categoryName: r.categoryName,
       priceMinor: r.priceMinor !== null ? r.priceMinor.toString() : null,
       currency: r.currency,
       available: r.available,
@@ -39,7 +41,7 @@ export async function POST(req: Request) {
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
-  let body: { merchantId?: string; productName?: string; variantName?: string; sku?: string; priceMinor?: string | number; stock?: number; imageUrl?: string };
+  let body: { merchantId?: string; productName?: string; variantName?: string; sku?: string; priceMinor?: string | number; stock?: number; imageUrl?: string; categoryId?: string };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -61,6 +63,7 @@ export async function POST(req: Request) {
         slug,
         name: body.productName!,
         ...(imageUrl ? { imageUrl } : {}),
+        ...(body.categoryId ? { categoryId: body.categoryId } : {}),
       });
       const { variantId } = await addVariant(tx, {
         tenantId: tenant.tenantId,

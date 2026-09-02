@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import type { TenantAwareDb } from "@commerce/platform";
 import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
-import { createProduct, addVariant, setPrice, getVariantWithPrice, listCatalog, listCatalogAdmin, setProductImageByVariant } from "./catalog.js";
+import { createProduct, addVariant, setPrice, getVariantWithPrice, listCatalog, listCatalogAdmin, setProductImageByVariant, createCategory, listCategories, setProductCategoryByVariant } from "./catalog.js";
 import { setStock } from "../inventory/inventory.js";
 
 describe("Catálogo — productos, variantes, precios", () => {
@@ -90,5 +90,31 @@ describe("Catálogo — productos, variantes, precios", () => {
     await db.withTenant(tenantId, (tx) => setProductImageByVariant(tx, { tenantId, variantId, imageUrl: null }));
     const list2 = await db.withTenant(tenantId, (tx) => listCatalog(tx, merchantId));
     expect(list2.find((v) => v.variantId === variantId)?.imageUrl).toBeNull();
+  });
+
+  it("categorías: crea, asigna a un producto y las expone en catálogo y panel", async () => {
+    const { categoryId, variantId } = await db.withTenant(tenantId, async (tx) => {
+      const { categoryId } = await createCategory(tx, { tenantId, merchantId, name: "Alimentos para Perros", position: 1 });
+      const { productId } = await createProduct(tx, { tenantId, merchantId, slug: "dogchow", name: "Dog Chow", categoryId });
+      const v = await addVariant(tx, { tenantId, productId, sku: "DC-15", name: "15kg" });
+      await setPrice(tx, { tenantId, variantId: v.variantId, amountMinor: 1_200_000n });
+      return { categoryId, variantId: v.variantId };
+    });
+
+    const catList = await db.withTenant(tenantId, (tx) => listCategories(tx, merchantId));
+    expect(catList.some((c) => c.name === "Alimentos para Perros")).toBe(true);
+
+    const list = await db.withTenant(tenantId, (tx) => listCatalog(tx, merchantId));
+    const row = list.find((v) => v.variantId === variantId);
+    expect(row?.categoryId).toBe(categoryId);
+    expect(row?.categoryName).toBe("Alimentos para Perros");
+
+    const admin = await db.withTenant(tenantId, (tx) => listCatalogAdmin(tx, merchantId));
+    expect(admin.find((r) => r.variantId === variantId)?.categoryName).toBe("Alimentos para Perros");
+
+    // Reasignar a "Sin categoría" (null).
+    await db.withTenant(tenantId, (tx) => setProductCategoryByVariant(tx, { tenantId, variantId, categoryId: null }));
+    const list2 = await db.withTenant(tenantId, (tx) => listCatalog(tx, merchantId));
+    expect(list2.find((v) => v.variantId === variantId)?.categoryId).toBeNull();
   });
 });

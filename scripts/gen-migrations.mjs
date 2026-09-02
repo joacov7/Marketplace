@@ -13,6 +13,7 @@ const files = [
   ["0006_customer", "packages/modules/src/customer/migrations/0006_customer.sql"],
   ["0007_orders_checkout", "packages/modules/src/orders/migrations/0007_orders_checkout.sql"],
   ["0008_product_images", "packages/modules/src/catalog/migrations/0008_product_images.sql"],
+  ["0009_categories", "packages/modules/src/catalog/migrations/0009_categories.sql"],
 ];
 
 const entries = files

@@ -8,6 +8,7 @@ export interface StoreProduct {
   variantName: string;
   sku: string;
   imageUrl?: string;
+  category?: string;
   priceMinor: string | null;
   currency: string | null;
 }
@@ -56,6 +57,11 @@ export default function Storefront(props: {
   const [quote, setQuote] = useState<{ gmvMinor: string; deliveryChargeMinor: string; totalMinor: string } | null>(null);
   const [addr, setAddr] = useState({ street: "", city: "", zone: "", notes: "" });
   const [win, setWin] = useState("Hoy 14–18 h");
+  const [activeCat, setActiveCat] = useState<string>("");
+
+  // Categorías presentes en el catálogo (para la barra de filtro), en orden de aparición.
+  const categories = Array.from(new Set(props.products.map((p) => p.category).filter((c): c is string => !!c)));
+  const visibleProducts = activeCat ? props.products.filter((p) => p.category === activeCat) : props.products;
 
   const storageKey = `cart:${tenant}`;
   useEffect(() => {
@@ -204,7 +210,17 @@ export default function Storefront(props: {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 24 }}>
         <section>
-          <h2 style={sectionTitle}>Productos <span style={{ color: "#aaa", fontWeight: 500, fontSize: 14 }}>({props.products.length})</span></h2>
+          <h2 style={sectionTitle}>Productos <span style={{ color: "#aaa", fontWeight: 500, fontSize: 14 }}>({visibleProducts.length})</span></h2>
+
+          {categories.length > 0 && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+              <CatChip label="Todo" active={activeCat === ""} primary={primary} onClick={() => setActiveCat("")} />
+              {categories.map((c) => (
+                <CatChip key={c} label={c} active={activeCat === c} primary={primary} onClick={() => setActiveCat(c)} />
+              ))}
+            </div>
+          )}
+
           {props.products.length === 0 ? (
             <p style={{ color: "#888" }}>Todavía no hay productos cargados.</p>
           ) : (
@@ -218,7 +234,7 @@ export default function Storefront(props: {
                 gridTemplateColumns: layout === "grid" ? "repeat(auto-fill, minmax(180px, 1fr))" : "1fr",
               }}
             >
-              {props.products.map((p) => (
+              {visibleProducts.map((p) => (
                 <ProductCard key={p.variantId} p={p} layout={layout} primary={primary} inCart={cart[p.variantId]?.qty ?? 0} onAdd={add} onSetQty={setQty} />
               ))}
             </ul>
@@ -469,6 +485,28 @@ const STORE_CSS = `
 .pimg{transition:transform .25s ease;}
 .pcard:hover .pimg{transform:scale(1.03);}
 `;
+
+/** Chip de filtro de categoría. Activo = relleno con el color de marca. */
+function CatChip({ label, active, primary, onClick }: { label: string; active: boolean; primary: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="pbtn"
+      style={{
+        border: `1px solid ${active ? primary : "#dcdce2"}`,
+        background: active ? primary : "white",
+        color: active ? "white" : "#444",
+        borderRadius: 999,
+        padding: "6px 14px",
+        fontWeight: 600,
+        fontSize: 13,
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
 
 /** Logo de WhatsApp (SVG inline, hereda el color con fill="currentColor"). */
 function WhatsAppIcon({ size = 20 }: { size?: number }) {

@@ -91,6 +91,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       variantName: v.name,
       sku: v.sku,
       imageUrl: safeUrl(v.imageUrl),
+      category: cleanText(v.categoryName ?? "", ""),
       priceMinor: v.price ? v.price.amountMinor.toString() : null,
       currency: v.price?.currency ?? null,
     }));

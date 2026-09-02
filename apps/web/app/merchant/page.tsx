@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 
 interface Merchant { id: string; slug: string; name: string }
 interface SellerOrder { sellerOrderId: string; orderId: string; status: string; subtotalMinor: string; currency: string; itemCount: number; createdAt: string }
-interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; priceMinor: string | null; currency: string | null; available: number; status: string }
+interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; categoryId: string | null; categoryName: string | null; priceMinor: string | null; currency: string | null; available: number; status: string }
+interface Category { id: string; slug: string; name: string; imageUrl: string | null; position: number }
 interface ReportSummary { paidOrders: number; gmvMinor: string; deliveryRevenueMinor: string; commissionMinor: string; merchantPayoutMinor: string; refundsMinor: string; avgTicketMinor: string }
 interface ReportSeries { day: string; orders: number; gmvMinor: string }
 interface ReportTop { productId: string; productName: string; unitsSold: number; revenueMinor: string }
@@ -174,15 +175,23 @@ export default function MerchantPanel() {
 
 function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | null; token: string; merchantId: string; onError: (s: string | null) => void }) {
   const [items, setItems] = useState<CatalogItem[]>([]);
-  const [f, setF] = useState({ productName: "", sku: "", price: "", stock: "", imageUrl: "" });
+  const [cats, setCats] = useState<Category[]>([]);
+  const [f, setF] = useState({ productName: "", sku: "", price: "", stock: "", imageUrl: "", categoryId: "" });
+  const [newCat, setNewCat] = useState({ name: "", imageUrl: "" });
   const auth = { authorization: `Bearer ${token}` };
 
   const load = useCallback(async () => {
     if (!tenant || !merchantId) return;
-    const res = await fetch(`/api/merchant/catalog?tenant=${encodeURIComponent(tenant)}&merchantId=${merchantId}`, { headers: auth });
-    const data = await res.json();
-    if (!res.ok) { onError(data.error); return; }
-    setItems(data.items);
+    const qs = `tenant=${encodeURIComponent(tenant)}&merchantId=${merchantId}`;
+    const [cRes, catRes] = await Promise.all([
+      fetch(`/api/merchant/catalog?${qs}`, { headers: auth }),
+      fetch(`/api/merchant/categories?${qs}`, { headers: auth }),
+    ]);
+    const cData = await cRes.json();
+    const catData = await catRes.json();
+    if (!cRes.ok) { onError(cData.error); return; }
+    setItems(cData.items);
+    if (catRes.ok) setCats(catData.categories);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant, merchantId, token]);
   useEffect(() => { void load(); }, [load]);
@@ -192,18 +201,31 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
     onError(null);
     const res = await fetch(`/api/merchant/catalog?tenant=${encodeURIComponent(tenant ?? "")}`, {
       method: "POST", headers: { ...auth, "content-type": "application/json" },
-      body: JSON.stringify({ merchantId, productName: f.productName, sku: f.sku, priceMinor: Math.round(Number(f.price) * 100), stock: Number(f.stock || 0), imageUrl: f.imageUrl.trim() }),
+      body: JSON.stringify({ merchantId, productName: f.productName, sku: f.sku, priceMinor: Math.round(Number(f.price) * 100), stock: Number(f.stock || 0), imageUrl: f.imageUrl.trim(), categoryId: f.categoryId || undefined }),
     });
     const data = await res.json();
     if (!res.ok) { onError(data.error); return; }
-    setF({ productName: "", sku: "", price: "", stock: "", imageUrl: "" });
+    setF({ productName: "", sku: "", price: "", stock: "", imageUrl: "", categoryId: f.categoryId });
     await load();
   }
 
-  async function save(variantId: string, priceMinor: number | null, stock: number, imageUrl?: string) {
+  async function addCategory() {
+    if (!newCat.name.trim()) { onError("Poné un nombre de categoría"); return; }
+    onError(null);
+    const res = await fetch(`/api/merchant/categories?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "POST", headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ merchantId, name: newCat.name.trim(), imageUrl: newCat.imageUrl.trim() }),
+    });
+    const data = await res.json();
+    if (!res.ok) { onError(data.error); return; }
+    setNewCat({ name: "", imageUrl: "" });
+    await load();
+  }
+
+  async function save(variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string) {
     await fetch(`/api/merchant/catalog/${variantId}?tenant=${encodeURIComponent(tenant ?? "")}`, {
       method: "PATCH", headers: { ...auth, "content-type": "application/json" },
-      body: JSON.stringify({ ...(priceMinor !== null ? { priceMinor } : {}), stock, ...(imageUrl !== undefined ? { imageUrl } : {}) }),
+      body: JSON.stringify({ ...(priceMinor !== null ? { priceMinor } : {}), stock, imageUrl, categoryId }),
     });
     await load();
   }
@@ -211,12 +233,30 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
   return (
     <div style={{ display: "grid", gap: 14 }}>
       <div style={{ ...card }}>
+        <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Categorías</h3>
+        {cats.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+            {cats.map((c) => <span key={c.id} style={{ background: "#eef0f3", borderRadius: 999, padding: "4px 12px", fontSize: 13, fontWeight: 600, color: "#445" }}>{c.name}</span>)}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input placeholder="Nueva categoría (ej: Alimentos para Perros)" value={newCat.name} onChange={(e) => setNewCat({ ...newCat, name: e.target.value })} style={{ ...input, flex: 2, minWidth: 200 }} />
+          <input placeholder="Foto de categoría (URL, opcional)" value={newCat.imageUrl} onChange={(e) => setNewCat({ ...newCat, imageUrl: e.target.value })} style={{ ...input, flex: 1, minWidth: 180 }} />
+          <button onClick={addCategory} className="mbtn" style={btnGhost}>+ Crear categoría</button>
+        </div>
+      </div>
+
+      <div style={{ ...card }}>
         <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Cargar producto</h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input placeholder="Nombre del producto" value={f.productName} onChange={(e) => setF({ ...f, productName: e.target.value })} style={{ ...input, flex: 2, minWidth: 180 }} />
           <input placeholder="SKU" value={f.sku} onChange={(e) => setF({ ...f, sku: e.target.value })} style={{ ...input, width: 110 }} />
           <input placeholder="Precio $" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} style={{ ...input, width: 110 }} />
           <input placeholder="Stock" value={f.stock} onChange={(e) => setF({ ...f, stock: e.target.value })} style={{ ...input, width: 90 }} />
+          <select value={f.categoryId} onChange={(e) => setF({ ...f, categoryId: e.target.value })} style={{ ...input, minWidth: 150 }}>
+            <option value="">Sin categoría</option>
+            {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
           <input placeholder="Foto (URL https://…)" value={f.imageUrl} onChange={(e) => setF({ ...f, imageUrl: e.target.value })} style={{ ...input, flex: 1, minWidth: 200 }} />
           <button onClick={addProduct} className="mbtn" style={btn}>Agregar</button>
         </div>
@@ -224,17 +264,18 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
 
       {items.length === 0 ? <p style={{ color: "#888" }}>Este comercio no tiene productos. Cargá el primero arriba.</p> : (
         <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 8 }}>
-          {items.map((it) => <CatalogRow key={it.variantId} it={it} onSave={save} />)}
+          {items.map((it) => <CatalogRow key={it.variantId} it={it} cats={cats} onSave={save} />)}
         </ul>
       )}
     </div>
   );
 }
 
-function CatalogRow({ it, onSave }: { it: CatalogItem; onSave: (variantId: string, priceMinor: number | null, stock: number, imageUrl?: string) => void }) {
+function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; onSave: (variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string) => void }) {
   const [price, setPrice] = useState(it.priceMinor ? String(Number(it.priceMinor) / 100) : "");
   const [stock, setStock] = useState(String(it.available));
   const [imageUrl, setImageUrl] = useState(it.imageUrl ?? "");
+  const [categoryId, setCategoryId] = useState(it.categoryId ?? "");
   return (
     <li style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
       <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -247,8 +288,12 @@ function CatalogRow({ it, onSave }: { it: CatalogItem; onSave: (variantId: strin
       <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ fontSize: 12, color: "#777" }}>$ <input value={price} onChange={(e) => setPrice(e.target.value)} style={{ ...input, width: 90 }} /></label>
         <label style={{ fontSize: 12, color: "#777" }}>Stock <input value={stock} onChange={(e) => setStock(e.target.value)} style={{ ...input, width: 70 }} /></label>
-        <input placeholder="Foto (URL)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} style={{ ...input, width: 180 }} />
-        <button onClick={() => onSave(it.variantId, price ? Math.round(Number(price) * 100) : null, Number(stock), imageUrl.trim())} className="mbtn" style={btn}>Guardar</button>
+        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={{ ...input, width: 150 }}>
+          <option value="">Sin categoría</option>
+          {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <input placeholder="Foto (URL)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} style={{ ...input, width: 160 }} />
+        <button onClick={() => onSave(it.variantId, price ? Math.round(Number(price) * 100) : null, Number(stock), imageUrl.trim(), categoryId)} className="mbtn" style={btn}>Guardar</button>
       </span>
     </li>
   );
