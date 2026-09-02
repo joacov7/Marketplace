@@ -1,9 +1,9 @@
 import { resolveConfigValue } from "@commerce/platform";
-import { listCatalog } from "@commerce/modules/catalog";
+import { listCatalog, listCategories } from "@commerce/modules/catalog";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { safeUrl } from "@/lib/sanitize";
-import Storefront, { type StoreProduct, type StoreConfig } from "./storefront";
+import Storefront, { type StoreProduct, type StoreConfig, type StoreCategory } from "./storefront";
 
 export const dynamic = "force-dynamic"; // depende del tenant resuelto por request
 
@@ -71,7 +71,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
     const [
       primary, displayName, logoUrl, whatsapp, whatsappMessage,
       thresholdMinor, standardCostMinor, auxilioCostMinor, transferPct, auxilioEnabled,
-      featuredCount, listColumns, catalog,
+      featuredCount, listColumns, catalog0,
     ] = await Promise.all([
       cfg<string>("branding.primaryColor"),
       cfg<string>("branding.displayName"),
@@ -87,10 +87,12 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<number>("storefront.listColumns"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
-        if (!merchants[0]) return [];
-        return listCatalog(tx, merchants[0].id);
+        if (!merchants[0]) return { catalog: [], categories: [] };
+        const [catalog, categories] = await Promise.all([listCatalog(tx, merchants[0].id), listCategories(tx, merchants[0].id)]);
+        return { catalog, categories };
       }),
     ]);
+    const { catalog, categories: catRows } = catalog0;
 
     // Agrupa las variantes por producto: cada producto tiene 1..n talles/pesos con su precio.
     const byProduct = new Map<string, StoreProduct>();
@@ -112,6 +114,10 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
     }
     const products = [...byProduct.values()].filter((p) => p.variants.length > 0);
 
+    const storeCategories: StoreCategory[] = catRows
+      .map((c) => ({ name: c.name, position: c.position }))
+      .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+
     const config: StoreConfig = {
       freeShippingThresholdMinor: String(num(thresholdMinor, 2500000)),
       standardCostMinor: String(num(standardCostMinor, 150000)),
@@ -131,6 +137,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
         whatsapp={(whatsapp ?? "").replace(/[^0-9]/g, "")}
         whatsappMessage={cleanText(whatsappMessage, "¡Hola! Quiero hacer un pedido.")}
         products={products}
+        categories={storeCategories}
         config={config}
       />
     );

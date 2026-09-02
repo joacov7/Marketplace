@@ -17,6 +17,10 @@ export interface StoreProduct {
   imageUrl: string;
   variants: StoreVariant[];
 }
+export interface StoreCategory {
+  name: string;
+  position: number;
+}
 export interface StoreConfig {
   freeShippingThresholdMinor: string;
   standardCostMinor: string;
@@ -75,6 +79,7 @@ export default function Storefront(props: {
   whatsapp: string;
   whatsappMessage: string;
   products: StoreProduct[];
+  categories: StoreCategory[];
   config: StoreConfig;
 }) {
   const { tenant, primary, products, config } = props;
@@ -108,12 +113,18 @@ export default function Storefront(props: {
 
   const go = useCallback((v: View) => { setView(v); if (typeof window !== "undefined") window.scrollTo(0, 0); }, []);
 
-  // ── Categorías (derivadas del catálogo real) ─────────────────────────────────
+  // ── Categorías: orden real (por position, provisto por el server) con su conteo. ─
+  // Solo se muestran las que tienen al menos un producto.
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
     for (const p of products) if (p.category) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
-    return [...counts.entries()].map(([name, count]) => ({ name, count }));
-  }, [products]);
+    const ordered = props.categories
+      .filter((c) => (counts.get(c.name) ?? 0) > 0)
+      .map((c) => ({ name: c.name, count: counts.get(c.name)! }));
+    // Fallback: categorías presentes en productos pero no en la lista provista.
+    for (const [name, count] of counts) if (!props.categories.some((c) => c.name === name)) ordered.push({ name, count });
+    return ordered;
+  }, [products, props.categories]);
 
   const defaultVariant = (p: StoreProduct) => p.variants[p.variants.length - 1]!;
 
@@ -367,7 +378,7 @@ function Header(props: {
       {/* Nav */}
       <nav style={{ flex: 1, display: "flex", gap: 26, fontSize: 14, flexWrap: "wrap" }}>
         <NavItem label="Inicio" active={props.activeCat === "" && !props.query} onClick={props.onHome} G={G} />
-        {props.categories.slice(0, 6).map((c) => (
+        {props.categories.map((c) => (
           <NavItem key={c.name} label={c.name} active={props.activeCat === c.name} onClick={() => props.onCategory(c.name)} G={G} />
         ))}
         {props.waLink && <a href={props.waLink} target="_blank" rel="noopener noreferrer" style={{ color: C.nav, fontWeight: 500, textDecoration: "none", borderBottom: "2px solid transparent", paddingBottom: 3 }}>Contacto</a>}
