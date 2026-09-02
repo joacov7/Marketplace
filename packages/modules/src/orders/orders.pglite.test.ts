@@ -4,7 +4,7 @@ import { type TenantAwareDb, setConfigValue } from "@commerce/platform";
 import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
 import { createProduct, addVariant } from "../catalog/catalog.js";
 import { setStock, getStock } from "../inventory/inventory.js";
-import { createOrder, confirmOrder, cancelOrder, getOrder, listSellerOrders, transitionSellerOrder } from "./orders.js";
+import { createOrder, confirmOrder, cancelOrder, getOrder, listSellerOrders, transitionSellerOrder, listCustomerOrders } from "./orders.js";
 
 async function variantWithStock(
   db: TenantAwareDb,
@@ -179,5 +179,36 @@ describe("Orders — creación, reserva, confirmación, cancelación", () => {
     expect(await db.withTenant(tenantId, (tx) => getStock(tx, v))).toEqual({ available: 6, reserved: 4 });
     await cancelOrder(db, tenantId, created.value.orderId);
     expect(await db.withTenant(tenantId, (tx) => getStock(tx, v))).toEqual({ available: 10, reserved: 0 });
+  });
+
+  it("mis pedidos: lista solo los del cliente, con estado y cumplimiento", async () => {
+    const customerId = "33333333-3333-3333-3333-333333333333";
+    const other = "44444444-4444-4444-4444-444444444444";
+    const v = await variantWithStock(db, tenantId, merchantId, "MP1", 10);
+    const mine = await createOrder(db, {
+      tenantId,
+      customerId,
+      sellers: [{ merchantId, items: [{ variantId: v, qty: 2, unitPriceMinor: 1000n }] }],
+    });
+    if (!mine.ok) throw new Error("create falló");
+    await createOrder(db, {
+      tenantId,
+      customerId: other,
+      sellers: [{ merchantId, items: [{ variantId: v, qty: 1, unitPriceMinor: 1000n }] }],
+    });
+
+    const list = await db.withTenant(tenantId, (tx) => listCustomerOrders(tx, customerId));
+    expect(list.length).toBe(1);
+    expect(list[0]!.orderId).toBe(mine.value.orderId);
+    expect(list[0]!.status).toBe("pending_payment");
+    expect(list[0]!.itemCount).toBe(1); // 1 línea de order_item (qty 2)
+    expect(list[0]!.totalMinor).toBe(2000n);
+
+    // Tras confirmar y avanzar el cumplimiento, se refleja el estado.
+    await confirmOrder(db, tenantId, mine.value.orderId);
+    await transitionSellerOrder(db, tenantId, mine.value.sellerOrderIds[0]!, "preparing");
+    const list2 = await db.withTenant(tenantId, (tx) => listCustomerOrders(tx, customerId));
+    expect(list2[0]!.status).toBe("confirmed");
+    expect(list2[0]!.fulfillment).toBe("preparing");
   });
 });

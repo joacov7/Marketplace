@@ -280,6 +280,54 @@ export async function transitionSellerOrder(
   }
 }
 
+export interface CustomerOrderRow {
+  orderId: string;
+  status: string;
+  fulfillment: string | null;
+  currency: string;
+  totalMinor: bigint;
+  deliveryChargeMinor: bigint;
+  itemCount: number;
+  createdAt: string;
+}
+
+/**
+ * Historial de pedidos de un cliente ("Mis pedidos"). Corre con contexto de tenant (RLS),
+ * así que solo ve pedidos de ese tenant; filtra por customer_id. Incluye el estado de
+ * cumplimiento del seller_order (para V1, 1 pedido = 1 comercio).
+ */
+export async function listCustomerOrders(db: Db, customerId: string, opts: { limit?: number } = {}): Promise<CustomerOrderRow[]> {
+  const rows = await db.query<{
+    id: string;
+    status: string;
+    fulfillment: string | null;
+    currency: string;
+    total_minor: string;
+    delivery_charge_minor: string;
+    item_count: string;
+    created_at: string;
+  }>(
+    `select o.id, o.status, o.currency, o.total_minor, o.delivery_charge_minor, o.created_at,
+            (select count(*) from order_items oi join seller_orders so on so.id = oi.seller_order_id where so.order_id = o.id) as item_count,
+            (select so.status from seller_orders so where so.order_id = o.id order by so.created_at limit 1) as fulfillment
+       from orders o
+      where o.customer_id = $1
+      order by o.created_at desc
+      limit $2`,
+    [customerId, opts.limit ?? 50],
+  );
+  return rows.map((r) => ({
+    orderId: r.id,
+    status: r.status,
+    fulfillment: r.fulfillment,
+    currency: r.currency,
+    totalMinor: BigInt(r.total_minor),
+    deliveryChargeMinor: BigInt(r.delivery_charge_minor ?? "0"),
+    itemCount: Number(r.item_count),
+    createdAt: new Date(r.created_at).toISOString(),
+  }));
+}
+
 export async function getOrder(db: Db, orderId: string): Promise<OrderView | null> {
   const [o] = await db.query<{ id: string; status: string; currency: CurrencyCode; total_minor: string }>(
     `select id, status, currency, total_minor from orders where id = $1`,

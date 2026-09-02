@@ -357,12 +357,79 @@ export default function Storefront(props: {
   );
 }
 
+interface CustomerOrder { orderId: string; status: string; fulfillment: string | null; currency: string; totalMinor: string; itemCount: number; createdAt: string }
+
+/** Mapea (estado de pedido + cumplimiento) a una etiqueta y color para el cliente. */
+function orderLabel(status: string, fulfillment: string | null): { label: string; color: string } {
+  if (status === "cancelled") return { label: "Cancelado", color: "#c62828" };
+  if (status === "refunded" || status === "partially_refunded") return { label: "Reembolsado", color: "#777" };
+  if (status === "pending_payment") return { label: "Pendiente de pago", color: "#b26a00" };
+  switch (fulfillment) {
+    case "delivered": return { label: "Entregado", color: "#2e7d32" };
+    case "in_transit": return { label: "En camino", color: "#00796b" };
+    case "ready": return { label: "Listo para envío", color: "#8e24aa" };
+    case "preparing": return { label: "En preparación", color: "#1a73e8" };
+    case "delivery_failed": return { label: "Entrega fallida", color: "#c62828" };
+    case "rejected": return { label: "Rechazado", color: "#c62828" };
+    default: return { label: "En proceso", color: "#1a73e8" };
+  }
+}
+
+/** Modal "Mis pedidos": historial del cliente logueado con su estado. */
+function MyOrdersModal({ onClose }: { onClose: () => void }) {
+  const [orders, setOrders] = useState<CustomerOrder[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/account/orders")
+      .then((r) => r.json())
+      .then((d) => { if (d.orders) setOrders(d.orders); else setError(d.error ?? "error"); })
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", display: "grid", placeItems: "center", padding: 16, zIndex: 60 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "white", color: "#111", borderRadius: 16, maxWidth: 480, width: "100%", maxHeight: "85vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)", textAlign: "left" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #eee" }}>
+          <strong style={{ fontSize: 17 }}>Mis pedidos</strong>
+          <button onClick={onClose} aria-label="Cerrar" style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ padding: 16 }}>
+          {error && <p style={{ color: "#c00" }}>Error: {error}</p>}
+          {!orders && !error && <p style={{ color: "#888" }}>Cargando…</p>}
+          {orders && orders.length === 0 && <p style={{ color: "#888" }}>Todavía no tenés pedidos.</p>}
+          {orders && orders.length > 0 && (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 10 }}>
+              {orders.map((o) => {
+                const s = orderLabel(o.status, o.fulfillment);
+                return (
+                  <li key={o.orderId} style={{ border: "1px solid #ececef", borderRadius: 10, padding: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span><strong>#{o.orderId.slice(0, 8)}</strong> <span style={{ color: "#9aa0aa", fontSize: 13 }}>· {o.itemCount} ítem(s)</span></span>
+                      <span style={{ background: s.color, color: "white", borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>{s.label}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 13, color: "#555" }}>
+                      <span>{new Date(o.createdAt).toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                      <b>{money(Number(o.totalMinor), o.currency)}</b>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AccountWidget({ tenant }: { tenant: string }) {
   const [email, setEmail] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [form, setForm] = useState({ email: "", password: "" });
   const [err, setErr] = useState<string | null>(null);
+  const [ordersOpen, setOrdersOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((d) => setEmail(d.user?.email ?? null)).catch(() => {});
@@ -387,7 +454,11 @@ function AccountWidget({ tenant }: { tenant: string }) {
     return (
       <span style={{ fontSize: 13, textAlign: "right" }}>
         {email}<br />
-        <button onClick={logout} style={{ background: "rgba(255,255,255,.25)", color: "white", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12, marginTop: 4 }}>Salir</button>
+        <span style={{ display: "inline-flex", gap: 6, marginTop: 4 }}>
+          <button onClick={() => setOrdersOpen(true)} style={{ background: "rgba(255,255,255,.25)", color: "white", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>Mis pedidos</button>
+          <button onClick={logout} style={{ background: "rgba(255,255,255,.25)", color: "white", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>Salir</button>
+        </span>
+        {ordersOpen && <MyOrdersModal onClose={() => setOrdersOpen(false)} />}
       </span>
     );
   }
