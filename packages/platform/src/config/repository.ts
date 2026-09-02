@@ -55,6 +55,25 @@ export async function setConfigValue(
   return ok({ version });
 }
 
+/**
+ * Normaliza el valor leído de config_values. Según el driver, una columna jsonb puede
+ * volver ya parseada (objeto/valor JS) o como TEXTO JSON crudo (p. ej. `"#2E7D32"` con
+ * comillas, o `[{...}]` como string). Si vino como texto de un string/array/objeto JSON, lo
+ * des-envuelve una vez; los strings comunes (colores, textos) quedan intactos. Idempotente.
+ */
+function coerceValue(v: unknown): unknown {
+  if (typeof v !== "string") return v;
+  const s = v.trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || s.startsWith("[") || s.startsWith("{")) {
+    try {
+      return JSON.parse(s);
+    } catch {
+      return v;
+    }
+  }
+  return v;
+}
+
 /** Pares (scope_type, scope_id) que aplican a una cadena, para acotar la query. */
 function scopePairs(chain: ConfigScopeChain): Array<[ConfigScopeType, string]> {
   const pairs: Array<[ConfigScopeType, string]> = [["platform", "platform"], ["tenant", chain.tenantId]];
@@ -97,7 +116,7 @@ export async function resolveConfigValue<V>(
     key: r.key,
     scopeType: r.scope_type,
     scopeId: r.scope_id,
-    value: r.value,
+    value: coerceValue(r.value),
     version: r.version,
     effectiveFrom: new Date(r.effective_from).toISOString(),
     actor: r.actor,
