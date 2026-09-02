@@ -23,6 +23,11 @@ interface Theme {
   "branding.buttonShape": string;
   "contact.whatsapp": string;
   "contact.whatsappMessage": string;
+  "storefront.promoText": string;
+  "storefront.heroTitle": string;
+  "storefront.heroHighlight": string;
+  "storefront.heroSubtitle": string;
+  "storefront.footerBlurb": string;
 }
 const FONT_STACKS: Record<string, string> = {
   system: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
@@ -225,6 +230,25 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
     await load();
   }
 
+  async function renameCategory(id: string, current: string) {
+    const name = prompt("Nuevo nombre de la categoría:", current);
+    if (name === null || !name.trim() || name.trim() === current) return;
+    onError(null);
+    const res = await fetch(`/api/merchant/categories/${id}?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ name: name.trim() }),
+    });
+    if (!res.ok) { const d = await res.json(); onError(d.error); return; }
+    await load();
+  }
+
+  async function removeCategory(id: string, name: string) {
+    if (!confirm(`¿Borrar la categoría "${name}"? Los productos quedan sin categoría.`)) return;
+    onError(null);
+    const res = await fetch(`/api/merchant/categories/${id}?tenant=${encodeURIComponent(tenant ?? "")}`, { method: "DELETE", headers: auth });
+    if (!res.ok) { const d = await res.json(); onError(d.error); return; }
+    await load();
+  }
+
   async function save(variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string) {
     await fetch(`/api/merchant/catalog/${variantId}?tenant=${encodeURIComponent(tenant ?? "")}`, {
       method: "PATCH", headers: { ...auth, "content-type": "application/json" },
@@ -238,8 +262,14 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
       <div style={{ ...card }}>
         <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Categorías</h3>
         {cats.length > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-            {cats.map((c) => <span key={c.id} style={{ background: "#eef0f3", borderRadius: 999, padding: "4px 12px", fontSize: 13, fontWeight: 600, color: "#445" }}>{c.name}</span>)}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            {cats.map((c) => (
+              <span key={c.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#eef0f3", borderRadius: 999, padding: "4px 6px 4px 12px", fontSize: 13, fontWeight: 600, color: "#445" }}>
+                {c.name}
+                <button onClick={() => renameCategory(c.id, c.name)} title="Renombrar" style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 12, padding: "0 2px" }}>✏️</button>
+                <button onClick={() => removeCategory(c.id, c.name)} title="Borrar" style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 12, padding: "0 2px", color: "#c62828" }}>✕</button>
+              </span>
+            ))}
           </div>
         )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -466,7 +496,17 @@ const DEFAULT_THEME: Theme = {
   "branding.buttonShape": "rounded",
   "contact.whatsapp": "",
   "contact.whatsappMessage": "¡Hola! Quiero hacer un pedido.",
+  "storefront.promoText": "",
+  "storefront.heroTitle": "",
+  "storefront.heroHighlight": "",
+  "storefront.heroSubtitle": "",
+  "storefront.footerBlurb": "",
 };
+
+type Pair = { t: string; s: string };
+const pairsToText = (v: unknown): string => (Array.isArray(v) ? v.map((p) => `${(p as Pair).t ?? ""} | ${(p as Pair).s ?? ""}`).join("\n") : "");
+const textToPairs = (text: string): Pair[] =>
+  text.split("\n").map((line) => { const [t, ...rest] = line.split("|"); return { t: (t ?? "").trim(), s: rest.join("|").trim() }; }).filter((p) => p.t);
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -480,6 +520,8 @@ function Field({ label, children, hint }: { label: string; children: React.React
 
 function DesignTab({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
+  const [perksText, setPerksText] = useState("");
+  const [benefitsText, setBenefitsText] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -495,6 +537,8 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
       setLoading(false);
       if (!res.ok) { onError(d.error); return; }
       setTheme({ ...DEFAULT_THEME, ...d.theme });
+      setPerksText(pairsToText(d.theme?.["storefront.perks"]));
+      setBenefitsText(pairsToText(d.theme?.["storefront.benefits"]));
     } catch (e) { setLoading(false); onError(String(e)); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant, token]);
@@ -504,8 +548,9 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
     onError(null);
     setSaving(true);
     try {
+      const body = { ...theme, "storefront.perks": textToPairs(perksText), "storefront.benefits": textToPairs(benefitsText) };
       const res = await fetch(`/api/merchant/branding?tenant=${encodeURIComponent(tenant ?? "")}`, {
-        method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(theme),
+        method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(body),
       });
       const d = await res.json();
       setSaving(false);
@@ -573,6 +618,29 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
         <Field label="Mensaje prellenado de WhatsApp">
           <input value={theme["contact.whatsappMessage"]} onChange={(e) => set("contact.whatsappMessage", e.target.value)} placeholder="¡Hola! Quiero hacer un pedido." style={{ ...input, width: "100%", boxSizing: "border-box" }} />
         </Field>
+
+        <div style={{ borderTop: "1px solid #eee", margin: "6px 0 12px" }} />
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#556", marginBottom: 8 }}>Textos de la tienda</div>
+        <Field label="Barra promocional (arriba de todo)">
+          <input value={theme["storefront.promoText"]} onChange={(e) => set("storefront.promoText", e.target.value)} placeholder="Envíos gratis en compras superiores a $25.000" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        </Field>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Field label="Título del hero"><input value={theme["storefront.heroTitle"]} onChange={(e) => set("storefront.heroTitle", e.target.value)} style={{ ...input, width: "100%", boxSizing: "border-box" }} /></Field>
+          <Field label="Destacado (en color)"><input value={theme["storefront.heroHighlight"]} onChange={(e) => set("storefront.heroHighlight", e.target.value)} style={{ ...input, width: "100%", boxSizing: "border-box" }} /></Field>
+        </div>
+        <Field label="Subtítulo del hero">
+          <input value={theme["storefront.heroSubtitle"]} onChange={(e) => set("storefront.heroSubtitle", e.target.value)} style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        </Field>
+        <Field label="Beneficios cortos del hero" hint="Uno por línea, formato: Título | Subtítulo">
+          <textarea value={perksText} onChange={(e) => { setPerksText(e.target.value); setSaved(false); }} rows={3} style={{ ...input, width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
+        </Field>
+        <Field label="Franja de beneficios" hint="Uno por línea, formato: Título | Subtítulo">
+          <textarea value={benefitsText} onChange={(e) => { setBenefitsText(e.target.value); setSaved(false); }} rows={5} style={{ ...input, width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
+        </Field>
+        <Field label="Texto del footer">
+          <input value={theme["storefront.footerBlurb"]} onChange={(e) => set("storefront.footerBlurb", e.target.value)} style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        </Field>
+
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
           <button onClick={save} disabled={saving} className="mbtn" style={btn}>{saving ? "Guardando…" : "Guardar diseño"}</button>
           {saved && <span style={{ color: "#2e7d32", fontSize: 13 }}>✓ Guardado. Recargá la tienda para verlo.</span>}

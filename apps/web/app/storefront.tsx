@@ -21,6 +21,15 @@ export interface StoreCategory {
   name: string;
   position: number;
 }
+export interface StoreContent {
+  promoText: string;
+  heroTitle: string;
+  heroHighlight: string;
+  heroSubtitle: string;
+  footerBlurb: string;
+  perks: Array<{ t: string; s: string }>;
+  benefits: Array<{ t: string; s: string }>;
+}
 export interface StoreConfig {
   freeShippingThresholdMinor: string;
   standardCostMinor: string;
@@ -80,6 +89,7 @@ export default function Storefront(props: {
   whatsappMessage: string;
   products: StoreProduct[];
   categories: StoreCategory[];
+  content: StoreContent;
   config: StoreConfig;
 }) {
   const { tenant, primary, products, config } = props;
@@ -217,9 +227,11 @@ export default function Storefront(props: {
       `}</style>
 
       {/* Barra promocional */}
-      <div style={{ background: G, color: C.white, fontSize: 13, padding: "9px 24px", textAlign: "center", letterSpacing: ".01em" }}>
-        Envíos gratis en {props.displayName.includes("Gualeguay") ? "Gualeguay" : "tu ciudad"} en compras superiores a {money(threshold)}
-      </div>
+      {props.content.promoText && (
+        <div style={{ background: G, color: C.white, fontSize: 13, padding: "9px 24px", textAlign: "center", letterSpacing: ".01em" }}>
+          {props.content.promoText}
+        </div>
+      )}
 
       <Header
         G={G} logoUrl={props.logoUrl} displayName={props.displayName}
@@ -235,7 +247,7 @@ export default function Storefront(props: {
       <main style={{ maxWidth: view === "checkout" ? 1000 : view === "done" ? 620 : 1180, margin: "0 auto", padding: view === "done" ? "90px 24px 120px" : "28px 24px 80px" }}>
         {view === "home" && (
           <HomeView
-            G={G} products={products} categories={categories} config={config} threshold={threshold}
+            G={G} products={products} categories={categories} config={config} threshold={threshold} content={props.content}
             waLink={waLink("¡Hola! Quiero hacer un pedido.")}
             onSeeList={() => { setCategory(""); setQuery(""); go("list"); }}
             onCategory={(c) => { setCategory(c); setQuery(""); go("list"); }}
@@ -279,7 +291,7 @@ export default function Storefront(props: {
         )}
       </main>
 
-      <Footer G={G} displayName={props.displayName} categories={categories} onCategory={(c) => { setCategory(c); setQuery(""); go("list"); }} onHome={() => go("home")} />
+      <Footer G={G} displayName={props.displayName} blurb={props.content.footerBlurb} categories={categories} onCategory={(c) => { setCategory(c); setQuery(""); go("list"); }} onHome={() => go("home")} />
 
       {/* Drawer de carrito */}
       {cartOpen && (
@@ -441,22 +453,12 @@ function SectionHead({ G, title, action, onAction }: { G: string; title: string;
 }
 
 function HomeView(props: {
-  G: string; products: StoreProduct[]; categories: { name: string; count: number }[]; config: StoreConfig; threshold: number;
+  G: string; products: StoreProduct[]; categories: { name: string; count: number }[]; config: StoreConfig; threshold: number; content: StoreContent;
   waLink: string | null; onSeeList: () => void; onCategory: (c: string) => void; onOpen: (p: StoreProduct) => void; onAdd: (p: StoreProduct) => void;
 }) {
-  const { G } = props;
-  const perks = [
-    ["Envíos en el mismo día", "Pedidos antes de las 18 hs"],
-    ["Envío de Auxilio", "Nocturno y feriados"],
-    ["Compra 100% segura", "Transferencia o Mercado Pago"],
-  ];
-  const benefits = [
-    ["ENVÍO DE AUXILIO", "Emergencias 20:00–23:00, feriados 10:00–22:00"],
-    ["Bolsas cerradas", "10 / 15 kg — las mejores marcas"],
-    ["Fraccionado por kilo", "1,5 / 3 / 5 kg"],
-    ["Ofertas todas las semanas", "Precios especiales"],
-    ["Atención personalizada", "Te asesoramos por WhatsApp"],
-  ];
+  const { G, content } = props;
+  const perks = content.perks;
+  const benefits = content.benefits;
   const featured = props.products.slice(0, props.config.featuredCount);
   return (
     <>
@@ -464,24 +466,26 @@ function HomeView(props: {
       <section style={{ background: C.beige, borderRadius: 20, padding: "52px 0 52px 52px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, alignItems: "center", overflow: "hidden" }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 46, fontWeight: 700, lineHeight: 1.1, letterSpacing: "-.02em", maxWidth: 460 }}>
-            Todo lo que tu mascota necesita, <span style={{ color: G }}>sin salir de casa</span>
+            {content.heroTitle} {content.heroHighlight && <span style={{ color: G }}>{content.heroHighlight}</span>}
           </h1>
-          <p style={{ fontSize: 16, color: C.text2, lineHeight: 1.6, marginTop: 18, maxWidth: 460 }}>Alimentos, accesorios, higiene y más. Envíos rápidos en Gualeguay, Entre Ríos.</p>
+          {content.heroSubtitle && <p style={{ fontSize: 16, color: C.text2, lineHeight: 1.6, marginTop: 18, maxWidth: 460 }}>{content.heroSubtitle}</p>}
           <div style={{ display: "flex", gap: 12, marginTop: 28, flexWrap: "wrap" }}>
             {props.waLink && <a className="sf-btn" href={props.waLink} target="_blank" rel="noopener noreferrer" style={{ ...primaryBtn(G), textDecoration: "none" }}><WaIcon size={17} />HACÉ TU PEDIDO POR WHATSAPP</a>}
             <button className="sf-btn" onClick={props.onSeeList} style={outlineBtn(G)}>VER PRODUCTOS</button>
           </div>
-          <div style={{ display: "flex", gap: 30, marginTop: 34, flexWrap: "wrap" }}>
-            {perks.map(([a, b]) => (
-              <div key={a} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                <span style={{ color: G, marginTop: 1 }}><Check size={16} /></span>
-                <span style={{ display: "flex", flexDirection: "column", fontSize: 12.5 }}>
-                  <span style={{ color: C.nav, fontWeight: 600 }}>{a}</span>
-                  <span style={{ color: C.mute }}>{b}</span>
-                </span>
-              </div>
-            ))}
-          </div>
+          {perks.length > 0 && (
+            <div style={{ display: "flex", gap: 30, marginTop: 34, flexWrap: "wrap" }}>
+              {perks.map((p, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                  <span style={{ color: G, marginTop: 1 }}><Check size={16} /></span>
+                  <span style={{ display: "flex", flexDirection: "column", fontSize: 12.5 }}>
+                    <span style={{ color: C.nav, fontWeight: 600 }}>{p.t}</span>
+                    <span style={{ color: C.mute }}>{p.s}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div style={{ position: "relative" }}>
           <Img alt="banner principal" radius="16px 0 0 16px" label="banner principal 1080 × 450" hero />
@@ -492,17 +496,19 @@ function HomeView(props: {
       </section>
 
       {/* Franja de beneficios */}
-      <div style={{ marginTop: 18, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 24px", display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 20 }}>
-        {benefits.map(([t, s], i) => (
-          <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-            <span style={{ width: 34, height: 34, borderRadius: "50%", background: C.iconBg, color: G, display: "grid", placeItems: "center", fontWeight: 700, fontSize: 15, flexShrink: 0 }}>★</span>
-            <span style={{ display: "flex", flexDirection: "column" }}>
-              <span style={{ fontSize: 12.5, fontWeight: 600 }}>{t}</span>
-              <span style={{ fontSize: 11.5, color: C.mute }}>{s}</span>
-            </span>
-          </div>
-        ))}
-      </div>
+      {benefits.length > 0 && (
+        <div style={{ marginTop: 18, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 24px", display: "grid", gridTemplateColumns: `repeat(${Math.min(5, benefits.length)},1fr)`, gap: 20 }}>
+          {benefits.map((b, i) => (
+            <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <span style={{ width: 34, height: 34, borderRadius: "50%", background: C.iconBg, color: G, display: "grid", placeItems: "center", fontWeight: 700, fontSize: 15, flexShrink: 0 }}>★</span>
+              <span style={{ display: "flex", flexDirection: "column" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600 }}>{b.t}</span>
+                <span style={{ fontSize: 11.5, color: C.mute }}>{b.s}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Categorías */}
       {props.categories.length > 0 && (
@@ -789,7 +795,7 @@ function CartDrawer(props: {
 }
 
 // ── Footer ───────────────────────────────────────────────────────────────────────
-function Footer({ G, displayName, categories, onCategory, onHome }: { G: string; displayName: string; categories: { name: string; count: number }[]; onCategory: (c: string) => void; onHome: () => void }) {
+function Footer({ G, displayName, blurb, categories, onCategory, onHome }: { G: string; displayName: string; blurb: string; categories: { name: string; count: number }[]; onCategory: (c: string) => void; onHome: () => void }) {
   const colTitle: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, color: "#5A594F", letterSpacing: ".07em", marginBottom: 12 };
   const link: React.CSSProperties = { fontSize: 13, color: C.mute, cursor: "pointer", marginBottom: 7 };
   return (
@@ -797,7 +803,7 @@ function Footer({ G, displayName, categories, onCategory, onHome }: { G: string;
       <div style={{ maxWidth: 1180, margin: "0 auto", display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", gap: 32 }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 700, color: G }}>{displayName.toUpperCase()}</div>
-          <p style={{ fontSize: 13, color: C.mute, lineHeight: 1.7, marginTop: 10 }}>Tu tienda de mascotas en Gualeguay, Entre Ríos. Alimentos, accesorios e higiene con envío en el día y atención por WhatsApp.</p>
+          {blurb && <p style={{ fontSize: 13, color: C.mute, lineHeight: 1.7, marginTop: 10 }}>{blurb}</p>}
         </div>
         <div>
           <div style={colTitle}>TIENDA</div>

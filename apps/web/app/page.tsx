@@ -3,7 +3,7 @@ import { listCatalog, listCategories } from "@commerce/modules/catalog";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { safeUrl } from "@/lib/sanitize";
-import Storefront, { type StoreProduct, type StoreConfig, type StoreCategory } from "./storefront";
+import Storefront, { type StoreProduct, type StoreConfig, type StoreCategory, type StoreContent } from "./storefront";
 
 export const dynamic = "force-dynamic"; // depende del tenant resuelto por request
 
@@ -71,7 +71,9 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
     const [
       primary, displayName, logoUrl, whatsapp, whatsappMessage,
       thresholdMinor, standardCostMinor, auxilioCostMinor, transferPct, auxilioEnabled,
-      featuredCount, listColumns, catalog0,
+      featuredCount, listColumns,
+      promoText, heroTitle, heroHighlight, heroSubtitle, footerBlurb, perks, benefits,
+      catalog0,
     ] = await Promise.all([
       cfg<string>("branding.primaryColor"),
       cfg<string>("branding.displayName"),
@@ -85,6 +87,13 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<boolean>("features.auxilioDelivery"),
       cfg<number>("storefront.featuredCount"),
       cfg<number>("storefront.listColumns"),
+      cfg<string>("storefront.promoText"),
+      cfg<string>("storefront.heroTitle"),
+      cfg<string>("storefront.heroHighlight"),
+      cfg<string>("storefront.heroSubtitle"),
+      cfg<string>("storefront.footerBlurb"),
+      cfg<Array<{ t: string; s: string }>>("storefront.perks"),
+      cfg<Array<{ t: string; s: string }>>("storefront.benefits"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
         if (!merchants[0]) return { catalog: [], categories: [] };
@@ -118,6 +127,19 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       .map((c) => ({ name: c.name, position: c.position }))
       .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
 
+    const cleanPairs = (v: unknown): Array<{ t: string; s: string }> =>
+      Array.isArray(v) ? v.map((x) => ({ t: cleanText((x as { t?: string }).t, ""), s: cleanText((x as { s?: string }).s, "") })).filter((x) => x.t) : [];
+
+    const content: StoreContent = {
+      promoText: cleanText(promoText, ""),
+      heroTitle: cleanText(heroTitle, "Todo lo que tu mascota necesita,"),
+      heroHighlight: cleanText(heroHighlight, "sin salir de casa"),
+      heroSubtitle: cleanText(heroSubtitle, ""),
+      footerBlurb: cleanText(footerBlurb, ""),
+      perks: cleanPairs(perks),
+      benefits: cleanPairs(benefits),
+    };
+
     const config: StoreConfig = {
       freeShippingThresholdMinor: String(num(thresholdMinor, 2500000)),
       standardCostMinor: String(num(standardCostMinor, 150000)),
@@ -138,6 +160,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
         whatsappMessage={cleanText(whatsappMessage, "¡Hola! Quiero hacer un pedido.")}
         products={products}
         categories={storeCategories}
+        content={content}
         config={config}
       />
     );

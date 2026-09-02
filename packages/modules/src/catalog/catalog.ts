@@ -71,6 +71,26 @@ export async function listCategories(db: Db, merchantId: string): Promise<Catego
   return rows.map((r) => ({ id: r.id, slug: r.slug, name: r.name, imageUrl: r.image_url, position: r.position }));
 }
 
+/** Renombra / actualiza una categoría (nombre, foto, posición). Solo campos provistos. */
+export async function updateCategory(
+  db: Db,
+  input: { categoryId: string; name?: string; imageUrl?: string | null; position?: number },
+): Promise<void> {
+  const sets: string[] = [];
+  const params: unknown[] = [input.categoryId];
+  if (input.name !== undefined) { params.push(input.name); sets.push(`name = $${params.length}`); }
+  if (input.imageUrl !== undefined) { params.push(input.imageUrl); sets.push(`image_url = $${params.length}`); }
+  if (input.position !== undefined) { params.push(input.position); sets.push(`position = $${params.length}`); }
+  if (sets.length === 0) return;
+  await db.query(`update categories set ${sets.join(", ")} where id = $1`, params);
+}
+
+/** Borra una categoría; los productos que la tenían quedan sin categoría (category_id null). */
+export async function deleteCategory(db: Db, categoryId: string): Promise<void> {
+  await db.query(`update products set category_id = null where category_id = $1`, [categoryId]);
+  await db.query(`delete from categories where id = $1`, [categoryId]);
+}
+
 /** Asigna (o quita, con null) la categoría de un producto, por variante. */
 export async function setProductCategoryByVariant(
   db: Db,

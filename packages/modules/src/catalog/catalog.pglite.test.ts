@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import type { TenantAwareDb } from "@commerce/platform";
 import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
-import { createProduct, addVariant, setPrice, getVariantWithPrice, listCatalog, listCatalogAdmin, setProductImageByVariant, createCategory, listCategories, setProductCategoryByVariant } from "./catalog.js";
+import { createProduct, addVariant, setPrice, getVariantWithPrice, listCatalog, listCatalogAdmin, setProductImageByVariant, createCategory, listCategories, setProductCategoryByVariant, updateCategory, deleteCategory } from "./catalog.js";
 import { setStock } from "../inventory/inventory.js";
 
 describe("Catálogo — productos, variantes, precios", () => {
@@ -116,5 +116,25 @@ describe("Catálogo — productos, variantes, precios", () => {
     await db.withTenant(tenantId, (tx) => setProductCategoryByVariant(tx, { tenantId, variantId, categoryId: null }));
     const list2 = await db.withTenant(tenantId, (tx) => listCatalog(tx, merchantId));
     expect(list2.find((v) => v.variantId === variantId)?.categoryId).toBeNull();
+  });
+
+  it("renombra y borra categorías; borrar deja los productos sin categoría", async () => {
+    const { categoryId, variantId } = await db.withTenant(tenantId, async (tx) => {
+      const { categoryId } = await createCategory(tx, { tenantId, merchantId, name: "Higiene" });
+      const { productId } = await createProduct(tx, { tenantId, merchantId, slug: "shampoo-x", name: "Shampoo", categoryId });
+      const v = await addVariant(tx, { tenantId, productId, sku: "SH-1", name: "500ml" });
+      await setPrice(tx, { tenantId, variantId: v.variantId, amountMinor: 600_000n });
+      return { categoryId, variantId: v.variantId };
+    });
+    // Renombrar.
+    await db.withTenant(tenantId, (tx) => updateCategory(tx, { categoryId, name: "Higiene y Cuidado" }));
+    const cats = await db.withTenant(tenantId, (tx) => listCategories(tx, merchantId));
+    expect(cats.find((c) => c.id === categoryId)?.name).toBe("Higiene y Cuidado");
+    // Borrar → el producto queda sin categoría, la categoría desaparece.
+    await db.withTenant(tenantId, (tx) => deleteCategory(tx, categoryId));
+    const cats2 = await db.withTenant(tenantId, (tx) => listCategories(tx, merchantId));
+    expect(cats2.some((c) => c.id === categoryId)).toBe(false);
+    const list = await db.withTenant(tenantId, (tx) => listCatalog(tx, merchantId));
+    expect(list.find((v) => v.variantId === variantId)?.categoryId).toBeNull();
   });
 });
