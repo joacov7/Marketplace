@@ -96,17 +96,20 @@ export default function MerchantPanel() {
   function saveToken() { try { localStorage.setItem("merchantToken", tokenInput); } catch { /* */ } setToken(tokenInput); }
   function logout() { try { localStorage.removeItem("merchantToken"); } catch { /* */ } setToken(""); }
 
-  /** Corre las migraciones pendientes en la base (idempotente). Útil tras un deploy con
-   *  cambios de esquema, para no depender de curl. Gated por el mismo token del panel. */
+  /** Corre las migraciones pendientes y siembra categorías + catálogo demo del tenant
+   *  actual (idempotente: no duplica; asigna categoría a productos demo sin ella). Útil tras
+   *  un deploy con cambios de esquema. Gated por el mismo token del panel. */
   async function runMigrate() {
     setError(null);
     setMigrating(true);
     try {
-      const res = await fetch(`/api/admin/migrate`, { method: "POST", headers: auth });
+      const seed = tenant ? `?seed=${encodeURIComponent(tenant)}` : "";
+      const res = await fetch(`/api/admin/migrate${seed}`, { method: "POST", headers: auth });
       const data = await res.json();
       if (!res.ok) { setError(`migración: ${data.error ?? "error"}`); return; }
       await loadMerchants();
-      setError(`✓ Base actualizada (${(data.applied ?? []).length} migraciones). Recargá la tienda.`);
+      const cats = data.seed?.categories ? `, ${data.seed.categories} categorías` : "";
+      setError(`✓ Base actualizada (${(data.applied ?? []).length} migraciones${cats}). Recargá la tienda.`);
     } catch (e) { setError(String(e)); } finally { setMigrating(false); }
   }
 

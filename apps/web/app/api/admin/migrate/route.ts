@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createTenant, PET_SHOP_TEMPLATE } from "@commerce/platform";
-import { createProduct, addVariant, setPrice } from "@commerce/modules/catalog";
+import { createProduct, addVariant, setPrice, createCategory, listCategories } from "@commerce/modules/catalog";
 import { setStock } from "@commerce/modules/inventory";
 import { db, rawExec } from "@/lib/db";
 import { requireServiceToken } from "@/lib/auth";
@@ -9,10 +9,42 @@ import { MIGRATIONS } from "@/lib/migrations.generated";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+// Categorías estándar del vertical pet shop (las de la vitrina). Orden = position.
+const DEMO_CATEGORIES = [
+  "Alimentos para Perros",
+  "Alimentos para Gatos",
+  "Snacks y Golosinas",
+  "Piedras Sanitarias",
+  "Higiene y Cuidado",
+  "Antiparasitarios y Salud",
+  "Accesorios y Juguetes",
+  "Transporte",
+  "Comederos y Bebederos",
+  "Ofertas",
+];
+
+// Catálogo demo categorizado, con talles/pesos (variantes) y descripción. Precios en centavos.
 const DEMO_PRODUCTS = [
-  { slug: "alimento-perro", name: "Alimento Perro Adulto", sku: "AP-15KG", vname: "15kg", price: 3_000_000n, stock: 20 },
-  { slug: "arena-gato", name: "Arena Gato Aglomerante", sku: "AG-10L", vname: "10L", price: 800_000n, stock: 15 },
-  { slug: "juguete-mordedor", name: "Juguete Mordedor", sku: "JM-01", vname: "Único", price: 450_000n, stock: 30 },
+  { slug: "proplan", name: "Pro Plan Adulto", category: "Alimentos para Perros", desc: "Alimento completo y balanceado para perros adultos de razas medianas y grandes. Con OPTIHEALTH para una digestión saludable.",
+    sizes: [{ v: "3 kg", price: 1_890_000n }, { v: "7.5 kg", price: 4_190_000n }, { v: "15 kg", price: 7_290_000n }] },
+  { slug: "dogo", name: "Dogo Premium", category: "Alimentos para Perros", desc: "Alimento premium argentino para perros adultos. Buena relación precio-calidad para el día a día.",
+    sizes: [{ v: "8 kg", price: 2_590_000n }, { v: "15 kg", price: 4_580_000n }, { v: "22 kg", price: 6_390_000n }] },
+  { slug: "raza", name: "Raza Adultos", category: "Alimentos para Perros", desc: "Alimento estándar para perros adultos de todas las razas. Disponible también fraccionado por kilo.",
+    sizes: [{ v: "10 kg", price: 2_690_000n }, { v: "15 kg", price: 3_850_000n }, { v: "20 kg", price: 4_990_000n }] },
+  { slug: "pedigree", name: "Pedigree Vital", category: "Alimentos para Perros", desc: "Alimento con Vital Protection para el cuidado diario de la piel, el pelaje y las defensas.",
+    sizes: [{ v: "8 kg", price: 2_290_000n }, { v: "15 kg", price: 3_990_000n }, { v: "21 kg", price: 5_290_000n }] },
+  { slug: "whiskas", name: "Whiskas Adulto", category: "Alimentos para Gatos", desc: "Alimento balanceado para gatos adultos, con nutrientes esenciales y sabor a carne.",
+    sizes: [{ v: "1.5 kg", price: 690_000n }, { v: "3 kg", price: 1_290_000n }, { v: "10 kg", price: 3_450_000n }] },
+  { slug: "piedras", name: "Piedras Sanitarias", category: "Piedras Sanitarias", desc: "Piedras aglomerantes de alto poder absorbente. Controlan el olor y facilitan la limpieza diaria.",
+    sizes: [{ v: "4 kg", price: 890_000n }, { v: "10 kg", price: 1_850_000n }] },
+  { slug: "snack-dental", name: "Snack Dental", category: "Snacks y Golosinas", desc: "Snack dental de textura especial que ayuda a reducir la formación de sarro hasta un 80%.",
+    sizes: [{ v: "7 u.", price: 490_000n }, { v: "14 u.", price: 890_000n }, { v: "28 u.", price: 1_590_000n }] },
+  { slug: "shampoo", name: "Shampoo Hipoalergénico", category: "Higiene y Cuidado", desc: "Shampoo suave de pH neutro para pieles sensibles. No irrita los ojos y deja el pelaje brillante.",
+    sizes: [{ v: "250 ml", price: 590_000n }, { v: "500 ml", price: 970_000n }] },
+  { slug: "collar-correa", name: "Collar + Correa", category: "Accesorios y Juguetes", desc: "Set de collar y correa de cuero reforzado con herrajes metálicos. Resistente al uso diario.",
+    sizes: [{ v: "S", price: 990_000n }, { v: "M", price: 1_240_000n }, { v: "L", price: 1_490_000n }] },
+  { slug: "antiparasitario", name: "Antiparasitario Externo", category: "Antiparasitarios y Salud", desc: "Pipeta de acción prolongada contra pulgas y garrapatas. Protección por 30 días.",
+    sizes: [{ v: "2-10 kg", price: 1_290_000n }, { v: "10-20 kg", price: 1_560_000n }, { v: "20-40 kg", price: 1_890_000n }] },
 ];
 
 /**
@@ -86,15 +118,40 @@ async function seedTenant(slug: string) {
       );
       merchantId = r[0]!.id;
     }
+
+    // Categorías estándar (idempotente por nombre).
+    const existingCats = await listCategories(tx, merchantId);
+    const catId = new Map(existingCats.map((c) => [c.name, c.id]));
+    for (let i = 0; i < DEMO_CATEGORIES.length; i++) {
+      const name = DEMO_CATEGORIES[i]!;
+      if (!catId.has(name)) {
+        const { categoryId } = await createCategory(tx, { tenantId, merchantId, name, position: i });
+        catId.set(name, categoryId);
+      }
+    }
+
     for (const p of DEMO_PRODUCTS) {
-      const ex = await tx.query("select id from products where merchant_id = $1 and slug = $2", [merchantId, p.slug]);
-      if (ex[0]) continue;
-      const { productId } = await createProduct(tx, { tenantId, merchantId, slug: p.slug, name: p.name });
-      const { variantId } = await addVariant(tx, { tenantId, productId, sku: p.sku, name: p.vname });
-      await setPrice(tx, { tenantId, variantId, amountMinor: p.price });
-      await setStock(tx, { tenantId, variantId, available: p.stock });
+      const categoryId = catId.get(p.category) ?? null;
+      const ex = await tx.query<{ id: string; category_id: string | null }>(
+        "select id, category_id from products where merchant_id = $1 and slug = $2",
+        [merchantId, p.slug],
+      );
+      if (ex[0]) {
+        // Backfill: si el producto existe sin categoría, se la asignamos.
+        if (!ex[0].category_id && categoryId) {
+          await tx.query("update products set category_id = $2, description = coalesce(description,$3) where id = $1", [ex[0].id, categoryId, p.desc]);
+        }
+        continue;
+      }
+      const { productId } = await createProduct(tx, { tenantId, merchantId, slug: p.slug, name: p.name, description: p.desc, ...(categoryId ? { categoryId } : {}) });
+      let idx = 0;
+      for (const s of p.sizes) {
+        const { variantId } = await addVariant(tx, { tenantId, productId, sku: `${p.slug}-${idx++}`, name: s.v });
+        await setPrice(tx, { tenantId, variantId, amountMinor: s.price });
+        await setStock(tx, { tenantId, variantId, available: 25 });
+      }
       created.push(p.name);
     }
   });
-  return { tenantId, slug, productsCreated: created };
+  return { tenantId, slug, categories: DEMO_CATEGORIES.length, productsCreated: created };
 }
