@@ -26,6 +26,7 @@ export type JsonSchema = Record<string, unknown>;
 export type ConfigCategory =
   | "money" // comisiones, precios, tarifas → sensible, auditado
   | "branding"
+  | "contact" // WhatsApp, teléfono, datos de contacto del comercio
   | "ops"
   | "features" // feature flags
   | "text"

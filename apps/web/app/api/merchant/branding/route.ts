@@ -17,6 +17,8 @@ const THEME_KEYS = [
   "branding.layout",
   "branding.font",
   "branding.buttonShape",
+  "contact.whatsapp",
+  "contact.whatsappMessage",
 ] as const;
 type ThemeKey = (typeof THEME_KEYS)[number];
 

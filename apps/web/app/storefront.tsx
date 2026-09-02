@@ -34,6 +34,8 @@ export default function Storefront(props: {
   layout?: "grid" | "list";
   font?: "system" | "serif" | "rounded" | "mono";
   buttonShape?: "rounded" | "pill" | "square";
+  whatsapp?: string;
+  whatsappMessage?: string;
   agentEnabled: boolean;
   products: StoreProduct[];
 }) {
@@ -41,6 +43,9 @@ export default function Storefront(props: {
   const layout = props.layout ?? "grid";
   const fontFamily = FONT_STACKS[props.font ?? "system"];
   const btnRadius = BUTTON_RADIUS[props.buttonShape ?? "rounded"];
+  const waLink = props.whatsapp
+    ? `https://wa.me/${props.whatsapp}?text=${encodeURIComponent(props.whatsappMessage ?? "¡Hola! Quiero hacer un pedido.")}`
+    : null;
   const [cart, setCart] = useState<Cart>({});
   const [agentOpen, setAgentOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -177,14 +182,22 @@ export default function Storefront(props: {
           <AccountWidget tenant={tenant} />
         </div>
         <p style={{ margin: "10px 0 0", opacity: 0.92, fontSize: 16 }}>{props.bannerText && props.bannerText.length > 0 ? props.bannerText : "¿Qué necesitás para tu mascota?"}</p>
-        {props.agentEnabled && (
-          <button
-            onClick={() => setAgentOpen((v) => !v)}
-            style={{ marginTop: 12, background: "white", color: primary, border: "none", borderRadius: 999, padding: "8px 16px", fontWeight: 600, cursor: "pointer" }}
-          >
-            🐾 {agentOpen ? "Cerrar asistente" : "Preguntar al agente"}
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+          {waLink && (
+            <a href={waLink} target="_blank" rel="noopener noreferrer" className="pbtn" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "white", textDecoration: "none", borderRadius: 999, padding: "9px 18px", fontWeight: 700 }}>
+              <WhatsAppIcon size={18} /> Hacé tu pedido por WhatsApp
+            </a>
+          )}
+          {props.agentEnabled && (
+            <button
+              onClick={() => setAgentOpen((v) => !v)}
+              className="pbtn"
+              style={{ background: "white", color: primary, border: "none", borderRadius: 999, padding: "9px 16px", fontWeight: 600, cursor: "pointer" }}
+            >
+              🐾 {agentOpen ? "Cerrar asistente" : "Preguntar al agente"}
+            </button>
+          )}
+        </div>
       </header>
 
       {agentOpen && <AgentPanel tenant={tenant} primary={primary} onAdd={add} />}
@@ -298,6 +311,17 @@ export default function Storefront(props: {
 
       <footer style={{ marginTop: 32, color: "#b0b0b8", fontSize: 12, textAlign: "center" }}>{props.displayName} · Commerce OS</footer>
       </main>
+      {waLink && (
+        <a
+          href={waLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Escribinos por WhatsApp"
+          style={{ position: "fixed", right: 18, bottom: 18, width: 58, height: 58, borderRadius: "50%", background: "#25D366", color: "white", display: "grid", placeItems: "center", textDecoration: "none", boxShadow: "0 6px 20px rgba(0,0,0,.25)", zIndex: 50 }}
+        >
+          <WhatsAppIcon size={32} />
+        </a>
+      )}
     </div>
   );
 }
@@ -445,6 +469,15 @@ const STORE_CSS = `
 .pimg{transition:transform .25s ease;}
 .pcard:hover .pimg{transform:scale(1.03);}
 `;
+
+/** Logo de WhatsApp (SVG inline, hereda el color con fill="currentColor"). */
+function WhatsAppIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="currentColor" aria-hidden focusable="false">
+      <path d="M16 3C9.4 3 4 8.4 4 15c0 2.1.6 4.2 1.6 6L4 29l8.2-1.6c1.7.9 3.7 1.4 5.6 1.4h.2c6.6 0 12-5.4 12-12S22.6 3 16 3zm0 21.8c-1.7 0-3.4-.5-4.9-1.3l-.4-.2-4.9 1 1-4.8-.3-.5C5.6 18.4 5 16.7 5 15 5 9 9.9 4.1 16 4.1S27 9 27 15s-4.9 9.8-11 9.8zm6-7.3c-.3-.2-1.9-1-2.2-1.1-.3-.1-.5-.2-.8.2s-.9 1.1-1.1 1.3c-.2.2-.4.2-.7.1-1.7-.9-2.9-1.6-4-3.6-.3-.5.3-.5.8-1.6.1-.2 0-.4 0-.6s-.8-1.9-1.1-2.6c-.3-.6-.6-.5-.8-.6h-.7c-.2 0-.6.1-.9.4-.3.4-1.2 1.2-1.2 2.8s1.2 3.3 1.4 3.5c.2.2 2.4 3.7 5.8 5.1 2.2.9 3 1 4.1.9.7-.1 1.9-.8 2.2-1.5.3-.8.3-1.4.2-1.5-.1-.2-.3-.2-.6-.4z" />
+    </svg>
+  );
+}
 
 /** Miniatura/foto de producto. En grilla ocupa el ancho; en lista es un cuadrado chico. */
 function Thumb({ src, alt, layout }: { src?: string; alt: string; layout: "grid" | "list" }) {

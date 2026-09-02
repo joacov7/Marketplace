@@ -145,6 +145,22 @@ export const CONFIG_KEYS = {
     sensitive: false,
     description: "Forma de los botones de la tienda (rounded/pill/square).",
   },
+  "contact.whatsapp": {
+    key: "contact.whatsapp",
+    jsonSchema: { type: "string", maxLength: 20, pattern: "^[0-9]{0,20}$" },
+    defaultValue: "",
+    category: "contact",
+    sensitive: false,
+    description: "Número de WhatsApp del comercio (solo dígitos, con código de país; ej: 5493444123456). Vacío = sin WhatsApp.",
+  },
+  "contact.whatsappMessage": {
+    key: "contact.whatsappMessage",
+    jsonSchema: { type: "string", maxLength: 160 },
+    defaultValue: "¡Hola! Quiero hacer un pedido.",
+    category: "contact",
+    sensitive: false,
+    description: "Mensaje prellenado al abrir WhatsApp desde la tienda.",
+  },
   "tenant.vertical": {
     key: "tenant.vertical",
     jsonSchema: { type: "string", minLength: 1 },

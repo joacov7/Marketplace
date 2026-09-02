@@ -20,6 +20,8 @@ interface Theme {
   "branding.layout": string;
   "branding.font": string;
   "branding.buttonShape": string;
+  "contact.whatsapp": string;
+  "contact.whatsappMessage": string;
 }
 const FONT_STACKS: Record<string, string> = {
   system: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
@@ -405,6 +407,8 @@ const DEFAULT_THEME: Theme = {
   "branding.layout": "grid",
   "branding.font": "system",
   "branding.buttonShape": "rounded",
+  "contact.whatsapp": "",
+  "contact.whatsappMessage": "¡Hola! Quiero hacer un pedido.",
 };
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
@@ -505,6 +509,13 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
             </select>
           </Field>
         </div>
+        <div style={{ borderTop: "1px solid #eee", margin: "6px 0 12px" }} />
+        <Field label="WhatsApp (solo números, con código de país)" hint="Ej: 5493444123456. Vacío = sin botón de WhatsApp.">
+          <input value={theme["contact.whatsapp"]} onChange={(e) => set("contact.whatsapp", e.target.value.replace(/[^0-9]/g, ""))} placeholder="5493444123456" inputMode="numeric" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        </Field>
+        <Field label="Mensaje prellenado de WhatsApp">
+          <input value={theme["contact.whatsappMessage"]} onChange={(e) => set("contact.whatsappMessage", e.target.value)} placeholder="¡Hola! Quiero hacer un pedido." style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        </Field>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
           <button onClick={save} disabled={saving} className="mbtn" style={btn}>{saving ? "Guardando…" : "Guardar diseño"}</button>
           {saved && <span style={{ color: "#2e7d32", fontSize: 13 }}>✓ Guardado. Recargá la tienda para verlo.</span>}

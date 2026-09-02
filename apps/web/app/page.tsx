@@ -65,7 +65,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
   }
 
   try {
-    const [primary, secondary, displayName, logoUrl, bannerText, bannerImageUrl, layout, font, buttonShape, agentEnabled, catalog] = await Promise.all([
+    const [primary, secondary, displayName, logoUrl, bannerText, bannerImageUrl, layout, font, buttonShape, whatsapp, whatsappMessage, agentEnabled, catalog] = await Promise.all([
       resolveConfigValue<string>(db(), "branding.primaryColor", { tenantId: tenant.tenantId }).then((r) => r.value),
       resolveConfigValue<string>(db(), "branding.secondaryColor", { tenantId: tenant.tenantId }).then((r) => r.value),
       resolveConfigValue<string>(db(), "branding.displayName", { tenantId: tenant.tenantId }).then((r) => r.value),
@@ -75,6 +75,8 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       resolveConfigValue<string>(db(), "branding.layout", { tenantId: tenant.tenantId }).then((r) => r.value),
       resolveConfigValue<string>(db(), "branding.font", { tenantId: tenant.tenantId }).then((r) => r.value),
       resolveConfigValue<string>(db(), "branding.buttonShape", { tenantId: tenant.tenantId }).then((r) => r.value),
+      resolveConfigValue<string>(db(), "contact.whatsapp", { tenantId: tenant.tenantId }).then((r) => r.value),
+      resolveConfigValue<string>(db(), "contact.whatsappMessage", { tenantId: tenant.tenantId }).then((r) => r.value),
       resolveConfigValue<boolean>(db(), "features.customerAgent", { tenantId: tenant.tenantId }).then((r) => r.value),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
@@ -105,6 +107,8 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
         layout={layout === "list" ? "list" : "grid"}
         font={oneOf(font, ["system", "serif", "rounded", "mono"] as const, "system")}
         buttonShape={oneOf(buttonShape, ["rounded", "pill", "square"] as const, "rounded")}
+        whatsapp={(whatsapp ?? "").replace(/[^0-9]/g, "")}
+        whatsappMessage={cleanText(whatsappMessage, "¡Hola! Quiero hacer un pedido.")}
         agentEnabled={agentEnabled}
         products={products}
       />
