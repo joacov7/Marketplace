@@ -92,6 +92,47 @@
 - **Asignación**: el comercio asigna cada pedido a un repartidor, o el repartidor ve todos
   los pedidos listos (recomendado para 1–2 cadetes).
 
+## Visión de experiencia — "ayudamos a cuidar" (flywheel)
+
+Concepto central: **"No vendemos solo productos para mascotas. Ayudamos a sus dueños a
+cuidar de ellas."** No es una tienda online tradicional, sino una experiencia centrada en la
+mascota. El objetivo es una **rueda que se autoalimenta** (flywheel), armada eslabón por
+eslabón (no todo a la vez):
+
+**Compra fácil → buena entrega → recompra inteligente → referido → nuevo cliente → comunidad**
+
+### Las 6 piezas y su estado
+| Pieza | Qué es | Estado |
+|---|---|---|
+| 1. **Perfil de mascota** | Nombre, peso, edad, alimento, etc. Personaliza recomendaciones. | ✅ Hecho (Mis mascotas) |
+| 2. **Compra rápida** | Elegís la mascota → su alimento habitual → "Repetir última compra" 1 clic + recomendaciones (snacks, higiene, antiparasitarios). | ⏳ Falta (hay calculadora/comparador; falta "repetir" y "su alimento habitual") |
+| 3. **Recompra inteligente** | Estima cuándo se termina el alimento → recordatorio ("A Bruno le quedan 5 días") → "Reponer ahora". Después: **suscripción recurrente** con beneficios. | ✅ Parcial (estimación in-app lista; recordatorio proactivo = follow-up) |
+| 4. **Entrega** | Confirmado → preparando → en camino → "a pocos minutos" → entregado ❤️. | ⏳ Parcial (estados listos; seguimiento en vivo = plan de operatoria) |
+| 5. **Referidos** | Amigo recibe descuento; vos recibís crédito. Niveles/embajadores. | ❌ Nuevo |
+| 6. **Adopción** | Mascotas de protectoras asociadas: empatía, comunidad, identidad de marca, alianzas. | ✅ Hecho (Adopciones/callejeritos) |
+
+### Principios de diseño del flywheel
+- **El motor es identificar al cliente + el perfil de la mascota** (por teléfono/cuenta).
+  Sin eso no hay personalización, recompra ni referidos → va primero.
+- **Retención antes que crecimiento**: la recompra es el corazón; los referidos recién
+  rinden cuando la experiencia ya fideliza.
+- **Un eslabón a la vez**, midiendo que cada uno convierta antes de seguir.
+- **Config por tenant**: el perfil de mascota es del vertical pet; entrega/recompra/
+  referidos/suscripción son genéricos (sirven para otros verticales, p. ej. limpieza).
+
+### Agregado a la visión: suscripción recurrente
+Auto-envío del alimento cada X días con un beneficio. Es la evolución natural de la recompra
+y el modelo de retención típico de las pet shops fuertes. Va **después** del recordatorio
+proactivo.
+
+### Orden del flywheel (sobre el roadmap de operatoria)
+1. **Ficha de cliente por teléfono + operatoria de entrega** → base del flywheel.
+2. **Compra rápida**: "elegí tu mascota → su alimento habitual → repetir en 1 clic" +
+   recomendaciones.
+3. **Recompra proactiva** (recordatorio por WhatsApp) → luego **suscripción**.
+4. **Referidos** (amigo con descuento / crédito para vos; niveles/embajadores).
+5. **Comunidad** (adopción ya está; se potencia con alianzas con protectoras).
+
 ## Follow-ups anotados de antes
 - **Descuento por transferencia y recargo de auxilio**: hoy se muestran/cotizan por config,
   pero su imputación al cobro real y al ledger (allocations) queda como follow-up.
