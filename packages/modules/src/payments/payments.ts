@@ -162,7 +162,7 @@ export async function capturePayment(
             if (!c.ok) throw new Error(`reservation_confirm_failed:${it.reservation_id}`);
           }
         }
-        await tx.query(`update orders set status = 'confirmed', updated_at = now() where id = $1`, [payment.order_id]);
+        await tx.query(`update orders set status = 'confirmed', payment_status = 'pagado', updated_at = now() where id = $1`, [payment.order_id]);
 
         await tx.query(
           `insert into processed_webhooks (provider_event_id, tenant_id, payment_id) values ($1,$2,$3)`,

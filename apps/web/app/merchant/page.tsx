@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 interface Merchant { id: string; slug: string; name: string }
-interface SellerOrder { sellerOrderId: string; orderId: string; status: string; subtotalMinor: string; currency: string; itemCount: number; createdAt: string }
+interface SellerOrder { sellerOrderId: string; orderId: string; orderStatus: string; status: string; subtotalMinor: string; currency: string; itemCount: number; petName: string | null; customerName: string | null; customerPhone: string | null; paymentMethod: string | null; paymentStatus: string; channel: string; needsAcceptance: boolean; createdAt: string }
 interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; categoryId: string | null; categoryName: string | null; description: string | null; kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null; priceMinor: string | null; currency: string | null; available: number; status: string }
 interface Category { id: string; slug: string; name: string; imageUrl: string | null; position: number }
 interface AdoptionItem { id: string; name: string; species: string; age: string | null; description: string | null; imageUrl: string | null; contactWhatsapp: string | null; status: string; createdAt: string }
@@ -44,6 +44,8 @@ const NEXT: Record<string, string[]> = {
 };
 const LABEL: Record<string, string> = { preparing: "Preparar", ready: "Listo", in_transit: "En camino", delivered: "Entregado", delivery_failed: "Falló", rejected: "Rechazar" };
 const COLOR: Record<string, string> = { pending: "#b26a00", preparing: "#1a73e8", ready: "#8e24aa", in_transit: "#00796b", delivered: "#2e7d32", delivery_failed: "#c62828", rejected: "#c62828", cancelled: "#777" };
+const CHANNEL_LABEL: Record<string, string> = { web: "🛒 Web", whatsapp: "💬 WhatsApp", telefono: "📞 Teléfono", mostrador: "🏪 Mostrador" };
+const METHOD_LABEL: Record<string, string> = { online: "Online", efectivo: "Efectivo", pos: "Tarjeta (POS)", transferencia: "Transferencia" };
 
 const money = (minor: string | number, c = "ARS") => (Number(minor) / 100).toLocaleString("es-AR", { style: "currency", currency: c });
 const btn: React.CSSProperties = { background: "#2563eb", color: "white", border: "none", borderRadius: 9, padding: "8px 14px", fontWeight: 600, cursor: "pointer" };
@@ -174,7 +176,7 @@ export default function MerchantPanel() {
       )}
 
       {tab === "catalogo" ? <CatalogTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
-        : tab === "pedidos" ? <OrdersTab tenant={tenant} token={token} onError={setError} />
+        : tab === "pedidos" ? <OrdersTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
         : tab === "reportes" ? <ReportsTab tenant={tenant} token={token} onError={setError} />
         : tab === "diseno" ? <DesignTab tenant={tenant} token={token} onError={setError} />
         : <AdoptionsTab tenant={tenant} token={token} onError={setError} />}
@@ -356,9 +358,10 @@ function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; o
   );
 }
 
-function OrdersTab({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | null; token: string; merchantId: string; onError: (s: string | null) => void }) {
   const [orders, setOrders] = useState<SellerOrder[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showNew, setShowNew] = useState(false);
   const auth = { authorization: `Bearer ${token}` };
 
   const load = useCallback(async () => {
@@ -381,17 +384,56 @@ function OrdersTab({ tenant, token, onError }: { tenant: string | null; token: s
     await load();
   }
 
+  async function decide(orderId: string, decision: "aceptar" | "rechazar") {
+    const res = await fetch(`/api/merchant/orders/${orderId}/decision?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "POST", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ decision }),
+    });
+    if (!res.ok) { const d = await res.json(); onError(d.error); }
+    await load();
+  }
+
+  // Título humano del pedido: "Pedido de Bruno" cuando sabemos la mascota.
+  const titleOf = (o: SellerOrder) => (o.petName ? `Pedido de ${o.petName}` : `Pedido #${o.orderId.slice(0, 8)}`);
+  const pending = orders.filter((o) => o.needsAcceptance);
+  const active = orders.filter((o) => !o.needsAcceptance);
+
   return (
     <div>
-      <button onClick={load} className="mbtn" style={{ ...btnGhost, marginBottom: 10 }}>{loading ? "…" : "Actualizar"}</button>
-      {orders.length === 0 ? <p style={{ color: "#888" }}>No hay pedidos pagados todavía.</p> : (
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button onClick={() => setShowNew(true)} className="mbtn" style={btn}>＋ Nuevo pedido</button>
+        <button onClick={load} className="mbtn" style={btnGhost}>{loading ? "…" : "Actualizar"}</button>
+      </div>
+
+      {showNew && (
+        <ManualOrderForm tenant={tenant} token={token} merchantId={merchantId} onError={onError}
+          onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); void load(); }} />
+      )}
+
+      {/* Pedidos por aceptar (pago al recibir) — arriba, es lo que requiere acción. */}
+      {pending.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <h3 style={{ fontSize: 14, color: "#b26a00", margin: "0 0 8px" }}>Por aceptar ({pending.length})</h3>
+          <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 10 }}>
+            {pending.map((o) => (
+              <li key={o.sellerOrderId} style={{ ...card, borderColor: "#f0c98a", background: "#fffdf7" }}>
+                <OrderHead o={o} title={titleOf(o)} />
+                <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                  <button onClick={() => decide(o.orderId, "aceptar")} className="mbtn" style={{ ...btn, background: "#2e7d32" }}>Aceptar</button>
+                  <button onClick={() => decide(o.orderId, "rechazar")} className="mbtn" style={{ ...btn, background: "#c62828" }}>Rechazar</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Pedidos aceptados / en curso: máquina de cumplimiento existente. */}
+      <h3 style={{ fontSize: 14, color: "#5b6270", margin: "0 0 8px" }}>En curso ({active.length})</h3>
+      {active.length === 0 ? <p style={{ color: "#888" }}>No hay pedidos en curso.</p> : (
         <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 10 }}>
-          {orders.map((o) => (
+          {active.map((o) => (
             <li key={o.sellerOrderId} style={card}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span><strong>#{o.orderId.slice(0, 8)}</strong> <span style={{ color: "#999", fontSize: 13 }}>· {o.itemCount} ítem(s) · {money(o.subtotalMinor, o.currency)}</span></span>
-                <span style={{ background: COLOR[o.status] ?? "#777", color: "white", borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>{o.status}</span>
-              </div>
+              <OrderHead o={o} title={titleOf(o)} />
               <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {(NEXT[o.status] ?? []).length === 0 ? <span style={{ color: "#aaa", fontSize: 13 }}>— sin acciones —</span>
                   : (NEXT[o.status] ?? []).map((to) => (
@@ -405,6 +447,234 @@ function OrdersTab({ tenant, token, onError }: { tenant: string | null; token: s
     </div>
   );
 }
+
+/** Encabezado de un pedido en el panel: mascota (protagonista), cliente, pago y canal. */
+function OrderHead({ o, title }: { o: SellerOrder; title: string }) {
+  const paid = o.paymentStatus === "pagado";
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+      <div>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>{title}</div>
+        <div style={{ color: "#666", fontSize: 12.5, marginTop: 3 }}>
+          {o.customerName ? <span>{o.customerName} · </span> : null}
+          {o.customerPhone ? <span>📱 {o.customerPhone} · </span> : null}
+          {o.itemCount} ítem(s) · {money(o.subtotalMinor, o.currency)}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+          <span style={{ background: "#eef0f3", color: "#334", borderRadius: 999, padding: "2px 9px", fontSize: 11.5, fontWeight: 600 }}>{CHANNEL_LABEL[o.channel] ?? o.channel}</span>
+          <span style={{ background: paid ? "#e6f4ea" : "#fdecea", color: paid ? "#2e7d32" : "#b26a00", borderRadius: 999, padding: "2px 9px", fontSize: 11.5, fontWeight: 600 }}>
+            {paid ? "Pagado" : "Pago pendiente"}{o.paymentMethod ? ` · ${METHOD_LABEL[o.paymentMethod] ?? o.paymentMethod}` : ""}
+          </span>
+        </div>
+      </div>
+      <span style={{ background: COLOR[o.status] ?? "#777", color: "white", borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 600, flexShrink: 0 }}>{o.status}</span>
+    </div>
+  );
+}
+
+type PetLite = { id: string; name: string; species: string };
+type ManualLine = { variantId: string; name: string; priceMinor: number; qty: number };
+
+/**
+ * Pedido manual (WhatsApp / teléfono / mostrador). Mismo modelo Order del ecommerce: aparece
+ * junto a los pedidos web, en el historial del cliente/mascota y en los reportes. Flujo:
+ * teléfono → (reconoce cliente + mascotas) → productos → entrega → pago → canal → confirmar.
+ */
+function ManualOrderForm({ tenant, token, merchantId, onClose, onCreated, onError }: {
+  tenant: string | null; token: string; merchantId: string; onClose: () => void; onCreated: () => void; onError: (s: string | null) => void;
+}) {
+  const auth = { authorization: `Bearer ${token}` };
+  const [phone, setPhone] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [greetName, setGreetName] = useState<string | null>(null);
+  const [pets, setPets] = useState<PetLite[]>([]);
+  const [petSel, setPetSel] = useState("");
+  const [newPet, setNewPet] = useState({ name: "", species: "perro", weight: "" });
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [q, setQ] = useState("");
+  const [lines, setLines] = useState<ManualLine[]>([]);
+  const [channel, setChannel] = useState("whatsapp");
+  const [method, setMethod] = useState("efectivo");
+  const [payStatus, setPayStatus] = useState("pendiente");
+  const [addr, setAddr] = useState({ street: "", zone: "", notes: "" });
+  const [busy, setBusy] = useState(false);
+
+  // Catálogo del comercio para elegir productos (mismos precios que la tienda).
+  useEffect(() => {
+    if (!tenant || !merchantId) return;
+    fetch(`/api/merchant/catalog?tenant=${encodeURIComponent(tenant)}&merchantId=${encodeURIComponent(merchantId)}`, { headers: auth })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.items) setCatalog(d.items as CatalogItem[]); })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, merchantId, token]);
+
+  // Reconocer al cliente por teléfono (debounce): trae nombre + mascotas.
+  useEffect(() => {
+    const digits = phone.replace(/\D+/g, "");
+    if (!tenant || digits.length < 6) { setGreetName(null); setPets([]); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      fetch(`/api/customer/lookup?tenant=${encodeURIComponent(tenant)}&phone=${encodeURIComponent(digits)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (cancelled || !d) return;
+          setGreetName(d.found ? (d.name ?? null) : null);
+          if (d.found && d.name && !customerName.trim()) setCustomerName(d.name);
+          setPets(Array.isArray(d.pets) ? (d.pets as PetLite[]) : []);
+        })
+        .catch(() => {});
+    }, 450);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phone, tenant]);
+
+  const results = q.trim()
+    ? catalog.filter((c) => c.priceMinor && `${c.productName} ${c.variantName} ${c.sku}`.toLowerCase().includes(q.toLowerCase())).slice(0, 8)
+    : [];
+  const addLine = (c: CatalogItem) => {
+    setLines((ls) => {
+      const ex = ls.find((l) => l.variantId === c.variantId);
+      if (ex) return ls.map((l) => (l.variantId === c.variantId ? { ...l, qty: l.qty + 1 } : l));
+      return [...ls, { variantId: c.variantId, name: `${c.productName} · ${c.variantName}`, priceMinor: Number(c.priceMinor), qty: 1 }];
+    });
+    setQ("");
+  };
+  const setQty = (variantId: string, qty: number) =>
+    setLines((ls) => (qty <= 0 ? ls.filter((l) => l.variantId !== variantId) : ls.map((l) => (l.variantId === variantId ? { ...l, qty } : l))));
+  const total = lines.reduce((a, l) => a + l.priceMinor * l.qty, 0);
+
+  async function submit() {
+    if (!phone.trim()) { onError("Ingresá el teléfono del cliente."); return; }
+    if (lines.length === 0) { onError("Agregá al menos un producto."); return; }
+    setBusy(true); onError(null);
+    const petFields = petSel
+      ? { petId: petSel }
+      : newPet.name.trim()
+        ? { petName: newPet.name.trim(), petSpecies: newPet.species, ...(Number(newPet.weight) > 0 ? { petWeightKg: Number(newPet.weight) } : {}) }
+        : {};
+    const res = await fetch(`/api/merchant/orders/manual?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "POST", headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        phone: phone.trim(),
+        ...(customerName.trim() ? { customerName: customerName.trim() } : {}),
+        ...petFields,
+        items: lines.map((l) => ({ variantId: l.variantId, qty: l.qty })),
+        channel, paymentMethod: method, paymentStatus: payStatus,
+        ...(addr.street.trim() ? { address: addr } : {}),
+      }),
+    });
+    setBusy(false);
+    const d = await res.json();
+    if (!res.ok) { onError(d.error ?? "error"); return; }
+    onCreated();
+  }
+
+  const hasPets = pets.length > 0;
+  const addingNew = !petSel;
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(20,22,28,.45)", display: "grid", placeItems: "center", padding: 16 }}>
+      <div style={{ background: "white", borderRadius: 14, width: 620, maxWidth: "100%", maxHeight: "92vh", overflowY: "auto", padding: 22 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h2 style={{ margin: 0, fontSize: 20 }}>Nuevo pedido</h2>
+          <button onClick={onClose} style={{ border: "none", background: "transparent", fontSize: 24, cursor: "pointer", color: "#888" }}>×</button>
+        </div>
+        <p style={{ color: "#6b7280", fontSize: 13, marginTop: 0 }}>Para lo que llega por WhatsApp, teléfono o mostrador. Queda igual que un pedido web.</p>
+
+        {/* 1. Cliente por teléfono */}
+        <label style={lbl}>1 · Cliente (teléfono)</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <input style={input} placeholder="Teléfono / WhatsApp" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <input style={input} placeholder="Nombre del cliente" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+        </div>
+        {greetName && <div style={{ fontSize: 12.5, color: "#2e7d32", fontWeight: 600, marginTop: 6 }}>Cliente conocido: {greetName} 🐾</div>}
+
+        {/* 2. Mascota */}
+        <label style={lbl}>2 · ¿Para quién es el pedido?</label>
+        {hasPets && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: addingNew ? 8 : 0 }}>
+            {pets.map((p) => {
+              const on = petSel === p.id;
+              return (
+                <button key={p.id} type="button" onClick={() => setPetSel(on ? "" : p.id)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 999, cursor: "pointer",
+                    border: `1.5px solid ${on ? "#2e7d32" : "#d4d6dc"}`, background: on ? "#e6f4ea" : "white", fontSize: 13, fontWeight: 600 }}>
+                  {({ perro: "🐶", gato: "🐱" } as Record<string, string>)[p.species] ?? "🐾"} {p.name}
+                </button>
+              );
+            })}
+            <button type="button" onClick={() => setPetSel("")} style={{ padding: "7px 12px", borderRadius: 999, cursor: "pointer", border: `1.5px dashed ${addingNew ? "#2e7d32" : "#d4d6dc"}`, background: "white", fontSize: 13, fontWeight: 600, color: "#5b6270" }}>＋ Mascota</button>
+          </div>
+        )}
+        {addingNew && (
+          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", gap: 8 }}>
+            <input style={input} placeholder="Nombre (ej: Bruno)" value={newPet.name} onChange={(e) => setNewPet({ ...newPet, name: e.target.value })} />
+            <select style={input} value={newPet.species} onChange={(e) => setNewPet({ ...newPet, species: e.target.value })}>
+              <option value="perro">🐶 Perro</option><option value="gato">🐱 Gato</option><option value="otro">🐾 Otro</option>
+            </select>
+            <input style={input} placeholder="Peso kg (opc.)" value={newPet.weight} onChange={(e) => setNewPet({ ...newPet, weight: e.target.value })} />
+          </div>
+        )}
+
+        {/* 3. Productos */}
+        <label style={lbl}>3 · Productos</label>
+        <input style={{ ...input, width: "100%" }} placeholder="Buscar producto del catálogo…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {results.length > 0 && (
+          <div style={{ border: "1px solid #ececef", borderRadius: 9, marginTop: 6 }}>
+            {results.map((c) => (
+              <div key={c.variantId} onClick={() => addLine(c)} className="mbtn" style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", cursor: "pointer", borderBottom: "1px solid #f4f4f6" }}>
+                <span style={{ fontSize: 13 }}>{c.productName} · {c.variantName}</span>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{money(c.priceMinor ?? 0, c.currency ?? "ARS")}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {lines.length > 0 && (
+          <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+            {lines.map((l) => (
+              <div key={l.variantId} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                <span style={{ flex: 1 }}>{l.name}</span>
+                <button onClick={() => setQty(l.variantId, l.qty - 1)} style={qtyBtn}>−</button>
+                <span style={{ width: 20, textAlign: "center", fontWeight: 600 }}>{l.qty}</span>
+                <button onClick={() => setQty(l.variantId, l.qty + 1)} style={qtyBtn}>+</button>
+                <span style={{ width: 90, textAlign: "right", fontWeight: 600 }}>{money(l.priceMinor * l.qty)}</span>
+              </div>
+            ))}
+            <div style={{ textAlign: "right", fontWeight: 700, marginTop: 4 }}>Total: {money(total)}</div>
+          </div>
+        )}
+
+        {/* 4. Entrega (opcional) */}
+        <label style={lbl}>4 · Entrega (opcional — vacío = retira en mostrador)</label>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8 }}>
+          <input style={input} placeholder="Calle y número" value={addr.street} onChange={(e) => setAddr({ ...addr, street: e.target.value })} />
+          <input style={input} placeholder="Barrio / zona" value={addr.zone} onChange={(e) => setAddr({ ...addr, zone: e.target.value })} />
+        </div>
+
+        {/* 5 y 6. Pago + canal */}
+        <label style={lbl}>5 · Pago y canal</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          <select style={input} value={method} onChange={(e) => setMethod(e.target.value)}>
+            <option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="pos">Tarjeta (POS)</option>
+          </select>
+          <select style={input} value={payStatus} onChange={(e) => setPayStatus(e.target.value)}>
+            <option value="pendiente">Pago pendiente</option><option value="pagado">Ya pagó</option>
+          </select>
+          <select style={input} value={channel} onChange={(e) => setChannel(e.target.value)}>
+            <option value="whatsapp">💬 WhatsApp</option><option value="telefono">📞 Teléfono</option><option value="mostrador">🏪 Mostrador</option>
+          </select>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+          <button onClick={submit} disabled={busy} className="mbtn" style={{ ...btn, background: "#2e7d32", flex: 1, padding: 12 }}>{busy ? "Creando…" : "Confirmar pedido"}</button>
+          <button onClick={onClose} className="mbtn" style={{ ...btnGhost, padding: 12 }}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+const lbl: React.CSSProperties = { display: "block", fontSize: 12.5, fontWeight: 700, color: "#374151", margin: "16px 0 7px", textTransform: "uppercase", letterSpacing: ".03em" };
+const qtyBtn: React.CSSProperties = { width: 26, height: 26, borderRadius: 7, border: "1px solid #d4d6dc", background: "white", cursor: "pointer", fontSize: 15 };
 
 function Metric({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: string }) {
   return (

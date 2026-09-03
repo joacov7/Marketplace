@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 interface QuoteBody {
   items?: Array<{ variantId: string; qty: number }>;
   delivery?: "estandar" | "auxilio";
-  payment?: "transferencia" | "mercadopago" | "efectivo";
+  payment?: "transferencia" | "mercadopago" | "efectivo" | "pos";
 }
 
 /**

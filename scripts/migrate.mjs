@@ -24,6 +24,7 @@ const files = [
   "packages/modules/src/adoptions/migrations/0010_adoptions.sql",
   "packages/modules/src/catalog/migrations/0011_food_nutrition.sql",
   "packages/modules/src/pets/migrations/0012_pets.sql",
+  "packages/modules/src/customer/migrations/0013_customers_channel.sql",
 ];
 
 const sql = postgres(url, { max: 1, prepare: false, onnotice: (n) => console.log("  ·", n.message) });

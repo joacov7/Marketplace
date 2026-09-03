@@ -20,10 +20,18 @@ export async function GET(req: Request) {
     orders: rows.map((r) => ({
       sellerOrderId: r.sellerOrderId,
       orderId: r.orderId,
+      orderStatus: r.orderStatus,
       status: r.status,
       subtotalMinor: r.subtotalMinor.toString(),
       currency: r.currency,
       itemCount: r.itemCount,
+      petName: r.petName,
+      customerName: r.customerName,
+      customerPhone: r.customerPhone,
+      paymentMethod: r.paymentMethod,
+      paymentStatus: r.paymentStatus,
+      channel: r.channel,
+      needsAcceptance: r.needsAcceptance,
       createdAt: r.createdAt,
     })),
   });

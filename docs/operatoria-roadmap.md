@@ -78,13 +78,39 @@
 - **Necesita cuenta del cliente**: **Mercado Pago** (para "Pagar ahora" online).
 
 ## Orden de construcción propuesto (cuando dé el OK)
-1. **Pago al recibir + Aceptar/Rechazar + cobro al entregar** (ya se opera de verdad, sin
-   depender de nadie) + **pedido manual/mostrador** (para no perder WhatsApp/teléfono) +
-   **teléfono como ficha de cliente**.
+1. ✅ **Pago al recibir + Aceptar/Rechazar** (ya se opera de verdad, sin depender de nadie) +
+   **pedido manual/mostrador** (para no perder WhatsApp/teléfono) + **teléfono como ficha de
+   cliente** + **mascota protagonista**. **IMPLEMENTADO** (ver abajo). Falta solo el **cobro
+   al entregar**, que va con la pantalla de reparto (paso 2).
 2. **Pantalla de reparto (PWA)**: entregas del día, "Cómo llegar", WhatsApp, Entregado/Cobrado.
 3. **Direcciones**: referencias + "compartir ubicación" opcional en checkout; botón "Cómo
    llegar" en reparto; (más adelante) zonas de reparto.
 4. **Mercado Pago** real: cuando el cliente tenga la cuenta, se suma "Pagar ahora".
+
+### ✅ Eslabón 1 — implementado (la mascota en el centro)
+- **Cliente por teléfono** (`customers`, migración 0013): el teléfono normalizado es la llave;
+  reutiliza la ficha sin duplicar y aísla por tenant (RLS). Usuario registrado → ficha con
+  `id = user id` (las mascotas/pedidos ya existentes siguen válidos, sin migrar datos).
+- **Mascota protagonista**: el checkout reconoce al cliente por teléfono, saluda ("¡Hola de
+  nuevo, …!") y ofrece "¿Para quién compramos hoy? 🐾" con sus mascotas; si no la conoce,
+  pide el nombre de forma natural (no obligatorio). El pedido guarda `pet_id` + `pet_name`
+  (snapshot), y todo el panel/historial dice "Pedido de Bruno". Confirmación:
+  "¡Listo! El pedido de Bruno está confirmado ❤️".
+- **Pago al recibir**: el pedido separa `payment_method` (online/efectivo/pos/transferencia) y
+  `payment_status` (pendiente/pagado). Pago al recibir entra `pendiente` y NO se cobra en el
+  checkout (el cobro al entregar queda para el paso 2). Mercado Pago = "Próximamente".
+- **Aceptar / Rechazar** en el panel: los pedidos de pago al recibir entran "por aceptar";
+  Aceptar = confirma (consume reserva), Rechazar = cancela (libera stock). El rechazado NO se
+  borra: queda en historial/reportes.
+- **Pedido manual** (WhatsApp / teléfono / mostrador): mismo modelo `Order`, con `channel`.
+  Aparece junto a los pedidos web, en el historial del cliente/mascota y en los reportes.
+- **Datos listos para la recompra**: cliente, teléfono, mascota, fecha, productos, cantidades,
+  total, canal, método y estado de pago quedan guardados (sin recordatorios automáticos aún).
+- Archivos clave: `packages/modules/src/customer/*` (ficha por teléfono),
+  `orders.ts` (pet/pago/canal + cola con "por aceptar"), rutas
+  `api/customer/lookup`, `api/checkout`, `api/merchant/orders/{manual,[id]/decision}`,
+  y UI en `storefront.tsx` + `merchant/page.tsx`. Tests: `customer.pglite.test.ts` +
+  casos Eslabón 1 en `orders.pglite.test.ts`.
 
 ## Definiciones pendientes (a resolver al arrancar, no ahora)
 - **Acceso del repartidor**: link con PIN/código simple (recomendado para arrancar) vs.

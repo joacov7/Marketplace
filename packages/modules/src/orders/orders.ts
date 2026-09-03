@@ -8,10 +8,21 @@ import { type Result, ok, err, type CurrencyCode } from "@commerce/contracts";
 import { reserveStock, confirmReservation, releaseReservation } from "../inventory/inventory.js";
 import { canTransitionOrder, canTransitionSellerOrder, type SellerOrderStatus } from "./state.js";
 
+export type OrderChannel = "web" | "whatsapp" | "telefono" | "mostrador";
+export type PaymentMethod = "online" | "efectivo" | "pos" | "transferencia";
+export type PaymentStatus = "pendiente" | "pagado";
+
 export interface CreateOrderInput {
   tenantId: string;
   customerId?: string;
   currency?: CurrencyCode;
+  /** Para quién es el pedido (mascota protagonista). `petName` se guarda como snapshot. */
+  petId?: string;
+  petName?: string;
+  /** Forma/estado de pago y canal de origen. Default: pago pendiente, canal web. */
+  paymentMethod?: PaymentMethod;
+  paymentStatus?: PaymentStatus;
+  channel?: OrderChannel;
   /** Datos de entrega capturados en el checkout (opcionales). */
   shippingAddress?: Record<string, unknown>;
   deliveryWindow?: string;
@@ -52,8 +63,10 @@ export async function createOrder(
       if (input.sellers.length === 0) throw new Error("empty_order");
 
       const [order] = await tx.query<{ id: string }>(
-        `insert into orders (tenant_id, customer_id, status, currency, total_minor, shipping_address, delivery_window, delivery_charge_minor)
-         values ($1,$2,'pending_payment',$3,0,$4,$5,$6) returning id`,
+        `insert into orders (tenant_id, customer_id, status, currency, total_minor, shipping_address,
+                             delivery_window, delivery_charge_minor, pet_id, pet_name,
+                             payment_method, payment_status, channel)
+         values ($1,$2,'pending_payment',$3,0,$4,$5,$6,$7,$8,$9,$10,$11) returning id`,
         [
           input.tenantId,
           input.customerId ?? null,
@@ -61,6 +74,11 @@ export async function createOrder(
           input.shippingAddress ? JSON.stringify(input.shippingAddress) : null,
           input.deliveryWindow ?? null,
           (input.deliveryChargeMinor ?? 0n).toString(),
+          input.petId ?? null,
+          input.petName ?? null,
+          input.paymentMethod ?? null,
+          input.paymentStatus ?? "pendiente",
+          input.channel ?? "web",
         ],
       );
       const orderId = order!.id;
@@ -207,16 +225,30 @@ export interface SellerOrderRow {
   orderId: string;
   merchantId: string;
   customerId: string | null;
+  /** Estado del PEDIDO (pending_payment = "a aceptar"; confirmed = aceptado; cancelled = rechazado/cancelado). */
+  orderStatus: string;
   status: SellerOrderStatus;
   subtotalMinor: bigint;
   currency: string;
   itemCount: number;
+  petName: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  paymentMethod: string | null;
+  paymentStatus: string;
+  channel: string;
+  /** true cuando el pedido espera que el comercio lo acepte (pago al recibir, sin confirmar). */
+  needsAcceptance: boolean;
   createdAt: string;
 }
 
 /**
- * Lista los seller_orders PAGADOS (la cola de preparación del comercio). Solo pedidos ya
- * confirmados; los `pending_payment` no se muestran. Corre con contexto de tenant (RLS).
+ * Cola de pedidos del comercio. Incluye:
+ *  - Pedidos por ACEPTAR: pago al recibir (efectivo/pos/transferencia) todavía en
+ *    `pending_payment` → el comercio Acepta o Rechaza.
+ *  - Pedidos en curso: ya confirmados/completados (pagados online o aceptados).
+ * Un pedido rechazado (cancelled) NO se lista (queda en historial/reportes). Corre con
+ * contexto de tenant (RLS). Left join a customers para mostrar a quién y para qué mascota.
  */
 export async function listSellerOrders(db: Db, opts: { limit?: number } = {}): Promise<SellerOrderRow[]> {
   const rows = await db.query<{
@@ -224,19 +256,32 @@ export async function listSellerOrders(db: Db, opts: { limit?: number } = {}): P
     order_id: string;
     merchant_id: string;
     customer_id: string | null;
+    order_status: string;
     status: SellerOrderStatus;
     subtotal_minor: string;
     currency: string;
     item_count: string;
+    pet_name: string | null;
+    customer_name: string | null;
+    customer_phone: string | null;
+    payment_method: string | null;
+    payment_status: string;
+    channel: string;
     created_at: string;
   }>(
-    `select so.id as seller_order_id, so.order_id, so.merchant_id, o.customer_id, so.status,
-            so.subtotal_minor, o.currency, o.created_at,
+    `select so.id as seller_order_id, so.order_id, so.merchant_id, o.customer_id,
+            o.status as order_status, so.status, so.subtotal_minor, o.currency,
+            o.pet_name, c.name as customer_name, c.phone as customer_phone,
+            o.payment_method, o.payment_status, o.channel, o.created_at,
             (select count(*) from order_items oi where oi.seller_order_id = so.id) as item_count
        from seller_orders so
        join orders o on o.id = so.order_id
+       left join customers c on c.id = o.customer_id
       where o.status in ('confirmed','completed','partially_refunded')
-      order by o.created_at desc
+         or (o.status = 'pending_payment' and o.payment_method in ('efectivo','pos','transferencia'))
+      order by
+        case when o.status = 'pending_payment' then 0 else 1 end,
+        o.created_at desc
       limit $1`,
     [opts.limit ?? 100],
   );
@@ -245,10 +290,18 @@ export async function listSellerOrders(db: Db, opts: { limit?: number } = {}): P
     orderId: r.order_id,
     merchantId: r.merchant_id,
     customerId: r.customer_id,
+    orderStatus: r.order_status,
     status: r.status,
     subtotalMinor: BigInt(r.subtotal_minor),
     currency: r.currency,
     itemCount: Number(r.item_count),
+    petName: r.pet_name,
+    customerName: r.customer_name,
+    customerPhone: r.customer_phone,
+    paymentMethod: r.payment_method,
+    paymentStatus: r.payment_status,
+    channel: r.channel,
+    needsAcceptance: r.order_status === "pending_payment",
     createdAt: new Date(r.created_at).toISOString(),
   }));
 }
@@ -288,6 +341,8 @@ export interface CustomerOrderRow {
   totalMinor: bigint;
   deliveryChargeMinor: bigint;
   itemCount: number;
+  petName: string | null;
+  paymentStatus: string;
   createdAt: string;
 }
 
@@ -305,9 +360,12 @@ export async function listCustomerOrders(db: Db, customerId: string, opts: { lim
     total_minor: string;
     delivery_charge_minor: string;
     item_count: string;
+    pet_name: string | null;
+    payment_status: string;
     created_at: string;
   }>(
-    `select o.id, o.status, o.currency, o.total_minor, o.delivery_charge_minor, o.created_at,
+    `select o.id, o.status, o.currency, o.total_minor, o.delivery_charge_minor, o.pet_name,
+            o.payment_status, o.created_at,
             (select count(*) from order_items oi join seller_orders so on so.id = oi.seller_order_id where so.order_id = o.id) as item_count,
             (select so.status from seller_orders so where so.order_id = o.id order by so.created_at limit 1) as fulfillment
        from orders o
@@ -324,6 +382,8 @@ export async function listCustomerOrders(db: Db, customerId: string, opts: { lim
     totalMinor: BigInt(r.total_minor),
     deliveryChargeMinor: BigInt(r.delivery_charge_minor ?? "0"),
     itemCount: Number(r.item_count),
+    petName: r.pet_name,
+    paymentStatus: r.payment_status,
     createdAt: new Date(r.created_at).toISOString(),
   }));
 }

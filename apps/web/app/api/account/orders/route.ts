@@ -20,6 +20,8 @@ export async function GET() {
       totalMinor: r.totalMinor.toString(),
       deliveryChargeMinor: r.deliveryChargeMinor.toString(),
       itemCount: r.itemCount,
+      petName: r.petName,
+      paymentStatus: r.paymentStatus,
       createdAt: r.createdAt,
     })),
   });

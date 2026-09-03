@@ -103,6 +103,8 @@ function consumption(weightKg: number, factor: number, kcalPerKg: number): { mer
 type View = "home" | "list" | "detail" | "checkout" | "done" | "adopciones" | "comparar";
 type CartLine = { name: string; sub: string; priceMinor: number; qty: number };
 type Cart = Record<string, CartLine>; // key = variantId
+type PayMethod = "transferencia" | "efectivo" | "pos" | "mercadopago";
+type StorePetLite = { id: string; name: string; species: string };
 
 interface Quote {
   gmvMinor: string;
@@ -139,12 +141,22 @@ export default function Storefront(props: {
   const [qty, setQty] = useState(1);
   const [sort, setSort] = useState<"relevancia" | "menor" | "mayor">("relevancia");
   const [delivery, setDelivery] = useState<"estandar" | "auxilio">("estandar");
-  const [payment, setPayment] = useState<"transferencia" | "mercadopago" | "efectivo">("transferencia");
+  const [payment, setPayment] = useState<PayMethod>("transferencia");
   const [form, setForm] = useState({ street: "", zone: "", phone: "", notes: "" });
   const [quote, setQuote] = useState<Quote | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ orderId: string; totalMinor: string } | null>(null);
+  const [done, setDone] = useState<{ orderId: string; totalMinor: string; petName: string | null } | null>(null);
+
+  // ── Cliente + mascota protagonista en el checkout ────────────────────────────
+  // El teléfono es la llave del cliente (sin obligar a registrarse). Con él reconocemos al
+  // dueño y traemos sus mascotas para "¿Para quién compramos hoy?". Si no lo reconocemos,
+  // pedimos el nombre de la mascota de forma natural (no obligatorio para comprar).
+  const [customerName, setCustomerName] = useState("");
+  const [knownPets, setKnownPets] = useState<StorePetLite[]>([]);
+  const [greetName, setGreetName] = useState<string | null>(null);
+  const [petSel, setPetSel] = useState<string>(""); // id de mascota elegida, o "" (ninguna/nueva)
+  const [newPet, setNewPet] = useState({ name: "", species: "perro", weight: "" });
 
   // Carrito persistente por tenant.
   const storageKey = `cart:${tenant}`;
@@ -224,12 +236,54 @@ export default function Storefront(props: {
 
   useEffect(() => { if (view === "checkout") void fetchQuote(); }, [view, fetchQuote]);
 
+  // Cliente logueado: traemos sus mascotas al entrar al checkout (su alimento habitual va acá).
+  useEffect(() => {
+    if (view !== "checkout") return;
+    fetch("/api/account/pets")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.pets?.length) { setKnownPets(d.pets as StorePetLite[]); } })
+      .catch(() => {});
+  }, [view]);
+
+  // Guest: reconocemos al cliente por teléfono (debounce). Traemos su nombre y sus mascotas
+  // para saludarlo y ofrecer "¿Para quién compramos hoy?". No bloquea la compra.
+  useEffect(() => {
+    const digits = form.phone.replace(/\D+/g, "");
+    if (view !== "checkout" || digits.length < 6) { setGreetName(null); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      fetch(`/api/customer/lookup?tenant=${encodeURIComponent(tenant)}&phone=${encodeURIComponent(digits)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (cancelled || !d) return;
+          if (d.found) {
+            setGreetName(d.name ?? null);
+            if (d.name && !customerName.trim()) setCustomerName(d.name);
+            if (Array.isArray(d.pets) && d.pets.length) setKnownPets(d.pets as StorePetLite[]);
+          } else {
+            setGreetName(null);
+          }
+        })
+        .catch(() => {});
+    }, 450);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.phone, view, tenant]);
+
+  const selectedPet = knownPets.find((p) => p.id === petSel) ?? null;
+
   async function confirmOrder() {
     if (!form.street.trim()) { setError("Ingresá la calle y número de entrega."); return; }
     if (items.length === 0) return;
     setBusy(true);
     setError(null);
     try {
+      // Para quién es: mascota elegida, o alta rápida con el nombre que escribieron.
+      const petFields = selectedPet
+        ? { petId: selectedPet.id }
+        : newPet.name.trim()
+          ? { petName: newPet.name.trim(), petSpecies: newPet.species, ...(Number(newPet.weight) > 0 ? { petWeightKg: Number(newPet.weight) } : {}) }
+          : {};
       const res = await fetch(`/api/checkout?tenant=${encodeURIComponent(tenant)}`, {
         method: "POST",
         headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
@@ -238,14 +292,18 @@ export default function Storefront(props: {
           address: { street: form.street, zone: form.zone, phone: form.phone, notes: form.notes },
           delivery,
           payment,
+          ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
+          ...(customerName.trim() ? { customerName: customerName.trim() } : {}),
+          ...petFields,
         }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.error ?? "error en el checkout"); return; }
       // Mostramos el total cotizado (con descuento) que el cliente confirmó.
       const shownTotal = quote?.totalMinor ?? d.totalMinor;
-      setDone({ orderId: d.orderId, totalMinor: shownTotal });
+      setDone({ orderId: d.orderId, totalMinor: shownTotal, petName: d.petName ?? selectedPet?.name ?? newPet.name.trim() ?? null });
       setCart({});
+      setPetSel(""); setNewPet({ name: "", species: "perro", weight: "" });
       go("done");
     } catch (e) { setError(String(e)); } finally { setBusy(false); }
   }
@@ -327,12 +385,15 @@ export default function Storefront(props: {
             delivery={delivery} setDelivery={setDelivery} payment={payment} setPayment={setPayment}
             form={form} setForm={setForm} busy={busy} error={error}
             subtotal={subtotal} shippingFor={shippingFor} discountFor={discountFor}
+            knownPets={knownPets} greetName={greetName} petSel={petSel} setPetSel={setPetSel}
+            newPet={newPet} setNewPet={setNewPet} customerName={customerName} setCustomerName={setCustomerName}
+            factors={config.nutritionFactors}
             onConfirm={confirmOrder}
           />
         )}
 
         {view === "done" && done && (
-          <DoneView G={G} orderId={done.orderId} totalMinor={done.totalMinor} onHome={() => { setCategory(""); setQuery(""); go("home"); }} />
+          <DoneView G={G} orderId={done.orderId} totalMinor={done.totalMinor} petName={done.petName} onHome={() => { setCategory(""); setQuery(""); go("home"); }} />
         )}
 
         {view === "adopciones" && (
@@ -729,11 +790,16 @@ function RadioCard({ G, on, title, sub, price, onClick }: { G: string; on: boole
   );
 }
 
+const SPECIES_EMOJI: Record<string, string> = { perro: "🐶", gato: "🐱", otro: "🐾" };
+
 function CheckoutView(props: {
   G: string; items: [string, CartLine][]; config: StoreConfig; quote: Quote | null;
   delivery: "estandar" | "auxilio"; setDelivery: (d: "estandar" | "auxilio") => void;
-  payment: "transferencia" | "mercadopago" | "efectivo"; setPayment: (p: "transferencia" | "mercadopago" | "efectivo") => void;
+  payment: PayMethod; setPayment: (p: PayMethod) => void;
   form: { street: string; zone: string; phone: string; notes: string }; setForm: (f: { street: string; zone: string; phone: string; notes: string }) => void;
+  knownPets: StorePetLite[]; greetName: string | null; petSel: string; setPetSel: (id: string) => void;
+  newPet: { name: string; species: string; weight: string }; setNewPet: (p: { name: string; species: string; weight: string }) => void;
+  customerName: string; setCustomerName: (n: string) => void; factors: Record<string, number>;
   busy: boolean; error: string | null; subtotal: number; shippingFor: (d: "estandar" | "auxilio") => number; discountFor: (p: string) => number; onConfirm: () => void;
 }) {
   const { G, form, setForm } = props;
@@ -743,6 +809,8 @@ function CheckoutView(props: {
   const disc = props.quote ? Number(props.quote.discountMinor) : props.discountFor(props.payment);
   const total = props.quote ? Number(props.quote.totalMinor) : sub + ship - disc;
   const card: React.CSSProperties = { border: `1px solid ${C.border}`, borderRadius: 16, padding: 22 };
+  const hasPets = props.knownPets.length > 0;
+  const addingNew = !props.petSel; // sin mascota elegida → alta rápida / captura del nombre
   return (
     <>
       <h1 style={{ margin: "0 0 26px", fontSize: 32, fontWeight: 700, letterSpacing: "-.02em" }}>Finalizar compra</h1>
@@ -758,6 +826,50 @@ function CheckoutView(props: {
             </div>
           </div>
 
+          {/* La mascota es el centro. Si reconocemos al cliente por teléfono, lo saludamos y le
+              mostramos sus mascotas. Si no, capturamos el nombre de forma natural (no obligatorio). */}
+          <div style={card}>
+            {props.greetName && (
+              <div style={{ fontSize: 13.5, color: G, fontWeight: 600, marginBottom: 8 }}>¡Hola de nuevo, {props.greetName}! 🐾</div>
+            )}
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{hasPets ? "¿Para quién compramos hoy? 🐾" : "¿Cómo se llama tu mascota? 🐾"}</div>
+            <div style={{ fontSize: 12.5, color: C.mute, marginBottom: 14 }}>
+              {hasPets ? "Elegí la mascota del pedido (o sumá una nueva)." : "Nos ayuda a cuidarla mejor y a avisarte cuando se le esté por acabar el alimento."}
+            </div>
+
+            {hasPets && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 9, marginBottom: addingNew ? 14 : 0 }}>
+                {props.knownPets.map((p) => {
+                  const on = props.petSel === p.id;
+                  return (
+                    <button key={p.id} type="button" onClick={() => props.setPetSel(on ? "" : p.id)}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", borderRadius: 999, cursor: "pointer",
+                        border: `1.5px solid ${on ? G : C.border}`, background: on ? C.tint : C.white, fontSize: 13.5, fontWeight: 600, color: on ? G : C.text }}>
+                      <span style={{ fontSize: 16 }}>{SPECIES_EMOJI[p.species] ?? "🐾"}</span>{p.name}
+                    </button>
+                  );
+                })}
+                <button type="button" onClick={() => props.setPetSel("")}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 999, cursor: "pointer",
+                    border: `1.5px dashed ${addingNew ? G : C.border}`, background: C.white, fontSize: 13.5, fontWeight: 600, color: addingNew ? G : C.mute }}>
+                  ＋ Agregar mascota
+                </button>
+              </div>
+            )}
+
+            {addingNew && (
+              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", gap: 10 }}>
+                <input style={input} placeholder="Nombre (ej: Bruno)" value={props.newPet.name} onChange={(e) => props.setNewPet({ ...props.newPet, name: e.target.value })} />
+                <select style={input} value={props.newPet.species} onChange={(e) => props.setNewPet({ ...props.newPet, species: e.target.value })}>
+                  <option value="perro">🐶 Perro</option>
+                  <option value="gato">🐱 Gato</option>
+                  <option value="otro">🐾 Otro</option>
+                </select>
+                <input style={input} placeholder="Peso kg (opcional)" inputMode="decimal" value={props.newPet.weight} onChange={(e) => props.setNewPet({ ...props.newPet, weight: e.target.value })} />
+              </div>
+            )}
+          </div>
+
           <div style={card}>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Método de entrega</div>
             <RadioCard G={G} on={props.delivery === "estandar"} title="Envío estándar" sub="En el día (13:00 a 20:00)" price={sub >= Number(props.config.freeShippingThresholdMinor) ? "Gratis" : money(props.config.standardCostMinor)} onClick={() => props.setDelivery("estandar")} />
@@ -767,10 +879,20 @@ function CheckoutView(props: {
           </div>
 
           <div style={card}>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Método de pago</div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Método de pago</div>
+            <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em", margin: "10px 0 8px" }}>Pagar al recibir</div>
+            <RadioCard G={G} on={props.payment === "efectivo"} title="Efectivo" sub="Pagás en la puerta al recibir el pedido" onClick={() => props.setPayment("efectivo")} />
             <RadioCard G={G} on={props.payment === "transferencia"} title="Transferencia bancaria" sub={`${props.config.transferDiscountPercent}% de descuento`} onClick={() => props.setPayment("transferencia")} />
-            <RadioCard G={G} on={props.payment === "mercadopago"} title="Mercado Pago" sub="Débito, crédito o dinero en cuenta" onClick={() => props.setPayment("mercadopago")} />
-            <RadioCard G={G} on={props.payment === "efectivo"} title="Efectivo" sub="Pagás al recibir el pedido" onClick={() => props.setPayment("efectivo")} />
+            <RadioCard G={G} on={props.payment === "pos"} title="Tarjeta (POS al recibir)" sub="Débito o crédito al momento de la entrega" onClick={() => props.setPayment("pos")} />
+            <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em", margin: "14px 0 8px" }}>Pagar ahora</div>
+            <div style={{ display: "flex", gap: 13, alignItems: "center", padding: 14, borderRadius: 11, border: `1.5px solid ${C.border}`, background: C.surf, opacity: 0.7 }}>
+              <span style={{ width: 18, height: 18, borderRadius: "50%", border: `1.5px solid ${C.radioOff}`, flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>Mercado Pago</span>
+                <span style={{ display: "block", fontSize: 12.5, color: C.mute }}>Débito, crédito o dinero en cuenta</span>
+              </span>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: C.mute, background: C.white, borderRadius: 7, padding: "4px 8px" }}>Próximamente</span>
+            </div>
           </div>
         </div>
 
@@ -807,11 +929,14 @@ function Row({ label, value, valueColor }: { label: string; value: string; value
 }
 
 // ── Confirmación ─────────────────────────────────────────────────────────────────
-function DoneView({ G, orderId, totalMinor, onHome }: { G: string; orderId: string; totalMinor: string; onHome: () => void }) {
+function DoneView({ G, orderId, totalMinor, petName, onHome }: { G: string; orderId: string; totalMinor: string; petName: string | null; onHome: () => void }) {
+  const forPet = petName?.trim();
   return (
     <div style={{ textAlign: "center" }}>
       <div style={{ width: 74, height: 74, borderRadius: "50%", background: C.iconBg, color: G, display: "grid", placeItems: "center", margin: "0 auto" }}><Check size={34} sw={2.6} /></div>
-      <h1 style={{ fontSize: 32, fontWeight: 700, marginTop: 24 }}>¡Pedido confirmado!</h1>
+      <h1 style={{ fontSize: 32, fontWeight: 700, marginTop: 24 }}>
+        {forPet ? <>¡Listo! El pedido de {forPet} está confirmado ❤️</> : <>¡Pedido confirmado! ❤️</>}
+      </h1>
       <p style={{ fontSize: 15.5, color: C.text2, lineHeight: 1.65 }}>Pedido <b>#{orderId.slice(0, 8)}</b> por <b>{money(totalMinor)}</b>. Te escribimos por WhatsApp para coordinar la entrega en Gualeguay.</p>
       <button className="sf-btn" onClick={onHome} style={{ ...primaryBtn(G), padding: "14px 30px", marginTop: 28 }}>SEGUIR COMPRANDO</button>
     </div>

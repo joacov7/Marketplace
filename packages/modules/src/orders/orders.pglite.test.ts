@@ -5,6 +5,7 @@ import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
 import { createProduct, addVariant } from "../catalog/catalog.js";
 import { setStock, getStock } from "../inventory/inventory.js";
 import { createOrder, confirmOrder, cancelOrder, getOrder, listSellerOrders, transitionSellerOrder, listCustomerOrders } from "./orders.js";
+import { findOrCreateCustomerByPhone } from "../customer/customer.js";
 
 async function variantWithStock(
   db: TenantAwareDb,
@@ -210,5 +211,85 @@ describe("Orders — creación, reserva, confirmación, cancelación", () => {
     const list2 = await db.withTenant(tenantId, (tx) => listCustomerOrders(tx, customerId));
     expect(list2[0]!.status).toBe("confirmed");
     expect(list2[0]!.fulfillment).toBe("preparing");
+  });
+
+  it("Eslabón 1: guarda para qué mascota, forma de pago y canal", async () => {
+    const { customerId } = await db.withTenant(tenantId, (tx) =>
+      findOrCreateCustomerByPhone(tx, { tenantId, phone: "2447-9001", name: "Dueño de Bruno" }),
+    );
+    const v = await variantWithStock(db, tenantId, merchantId, "E1A", 10);
+    const created = await createOrder(db, {
+      tenantId,
+      customerId,
+      petName: "Bruno",
+      paymentMethod: "efectivo",
+      paymentStatus: "pendiente",
+      channel: "web",
+      sellers: [{ merchantId, items: [{ variantId: v, qty: 1, unitPriceMinor: 5000n }] }],
+    });
+    if (!created.ok) throw new Error("create falló");
+
+    const list = await db.withTenant(tenantId, (tx) => listCustomerOrders(tx, customerId));
+    const row = list.find((r) => r.orderId === created.value.orderId)!;
+    expect(row.petName).toBe("Bruno"); // "Pedido de Bruno" en Mis pedidos
+    expect(row.paymentStatus).toBe("pendiente"); // pago al recibir
+  });
+
+  it("Eslabón 1: pago al recibir entra 'a aceptar' → Aceptar lo confirma", async () => {
+    const { customerId } = await db.withTenant(tenantId, (tx) =>
+      findOrCreateCustomerByPhone(tx, { tenantId, phone: "2447-9002", name: "Mishi Dueña" }),
+    );
+    const v = await variantWithStock(db, tenantId, merchantId, "E1B", 10);
+    const created = await createOrder(db, {
+      tenantId,
+      customerId,
+      petName: "Mishi",
+      paymentMethod: "efectivo",
+      channel: "web",
+      sellers: [{ merchantId, items: [{ variantId: v, qty: 2, unitPriceMinor: 1000n }] }],
+    });
+    if (!created.ok) throw new Error("create falló");
+
+    // Aparece en la cola del comercio marcado "a aceptar", con cliente y mascota.
+    let queue = await db.withTenant(tenantId, (tx) => listSellerOrders(tx));
+    let q = queue.find((r) => r.orderId === created.value.orderId);
+    expect(q?.needsAcceptance).toBe(true);
+    expect(q?.orderStatus).toBe("pending_payment");
+    expect(q?.petName).toBe("Mishi");
+    expect(q?.customerName).toBe("Mishi Dueña");
+    expect(q?.paymentMethod).toBe("efectivo");
+
+    // Aceptar = confirmar el pedido (consume la reserva). Deja de necesitar aceptación.
+    expect((await confirmOrder(db, tenantId, created.value.orderId)).ok).toBe(true);
+    queue = await db.withTenant(tenantId, (tx) => listSellerOrders(tx));
+    q = queue.find((r) => r.orderId === created.value.orderId);
+    expect(q?.needsAcceptance).toBe(false);
+    expect(q?.orderStatus).toBe("confirmed");
+    expect(q?.paymentStatus).toBe("pendiente"); // se cobra al entregar
+  });
+
+  it("Eslabón 1: Rechazar conserva el pedido (historial) y lo saca de la cola", async () => {
+    const { customerId } = await db.withTenant(tenantId, (tx) =>
+      findOrCreateCustomerByPhone(tx, { tenantId, phone: "2447-9003" }),
+    );
+    const v = await variantWithStock(db, tenantId, merchantId, "E1C", 10);
+    const created = await createOrder(db, {
+      tenantId,
+      customerId,
+      paymentMethod: "transferencia",
+      channel: "whatsapp",
+      sellers: [{ merchantId, items: [{ variantId: v, qty: 1, unitPriceMinor: 1000n }] }],
+    });
+    if (!created.ok) throw new Error("create falló");
+    expect(await db.withTenant(tenantId, (tx) => getStock(tx, v))).toEqual({ available: 9, reserved: 1 });
+
+    // Rechazar = cancelar: libera stock, sale de la cola, PERO no se borra.
+    expect((await cancelOrder(db, tenantId, created.value.orderId)).ok).toBe(true);
+    expect(await db.withTenant(tenantId, (tx) => getStock(tx, v))).toEqual({ available: 10, reserved: 0 });
+    const queue = await db.withTenant(tenantId, (tx) => listSellerOrders(tx));
+    expect(queue.some((r) => r.orderId === created.value.orderId)).toBe(false);
+    // Sigue existiendo para historial/reportes.
+    const view = await db.withTenant(tenantId, (tx) => getOrder(tx, created.value.orderId));
+    expect(view?.status).toBe("cancelled");
   });
 });

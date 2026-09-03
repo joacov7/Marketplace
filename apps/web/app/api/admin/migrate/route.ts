@@ -109,6 +109,21 @@ async function seedTenant(slug: string) {
 
   const created: string[] = [];
   await db().withTenant(tenantId, async (tx) => {
+    // Backfill Eslabón 1 (corre con contexto de tenant, así que RLS lo permite):
+    //  - ficha de cliente por cada usuario registrado (id = user id), para que sus mascotas/
+    //    pedidos ya existentes queden bajo una ficha consultable.
+    //  - pedidos ya confirmados/pagados por webhook antes de esta migración → payment_status
+    //    'pagado' (los nuevos pagos online lo setean solos; el pago al recibir queda pendiente).
+    await tx.query(
+      `insert into customers (id, tenant_id, user_id, name)
+         select id, tenant_id, id, email from users
+        on conflict (id) do nothing`,
+    );
+    await tx.query(
+      `update orders set payment_status = 'pagado'
+        where status in ('confirmed','completed','partially_refunded','refunded') and payment_status = 'pendiente'`,
+    );
+
     let m = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
     let merchantId = m[0]?.id;
     if (!merchantId) {
