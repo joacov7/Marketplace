@@ -4,7 +4,7 @@ import { type TenantAwareDb, setConfigValue } from "@commerce/platform";
 import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
 import { createProduct, addVariant } from "../catalog/catalog.js";
 import { setStock, getStock } from "../inventory/inventory.js";
-import { createOrder, confirmOrder, cancelOrder, getOrder, listSellerOrders, transitionSellerOrder, listCustomerOrders } from "./orders.js";
+import { createOrder, confirmOrder, cancelOrder, completeOrder, getOrder, listSellerOrders, listDeliveryOrders, transitionSellerOrder, listCustomerOrders } from "./orders.js";
 import { findOrCreateCustomerByPhone } from "../customer/customer.js";
 
 async function variantWithStock(
@@ -291,5 +291,60 @@ describe("Orders — creación, reserva, confirmación, cancelación", () => {
     // Sigue existiendo para historial/reportes.
     const view = await db.withTenant(tenantId, (tx) => getOrder(tx, created.value.orderId));
     expect(view?.status).toBe("cancelled");
+  });
+
+  it("Eslabón 2: reparto — ready/in_transit aparecen con dirección, monto e ítems", async () => {
+    const { customerId } = await db.withTenant(tenantId, (tx) =>
+      findOrCreateCustomerByPhone(tx, { tenantId, phone: "2447-7001", name: "Dueño de Toby" }),
+    );
+    const v = await variantWithStock(db, tenantId, merchantId, "E2A", 10);
+    const created = await createOrder(db, {
+      tenantId,
+      customerId,
+      petName: "Toby",
+      paymentMethod: "efectivo",
+      channel: "web",
+      deliveryChargeMinor: 500n,
+      shippingAddress: { street: "San Martín 123", zone: "Centro", notes: "Timbre azul", phone: "2447-7001" },
+      sellers: [{ merchantId, items: [{ variantId: v, qty: 2, unitPriceMinor: 1000n }] }],
+    });
+    if (!created.ok) throw new Error("create falló");
+    const soId = created.value.sellerOrderIds[0]!;
+
+    // Todavía no está listo para repartir.
+    let queue = await db.withTenant(tenantId, (tx) => listDeliveryOrders(tx));
+    expect(queue.some((r) => r.sellerOrderId === soId)).toBe(false);
+
+    // Aceptar → preparar → listo: recién ahí entra a la cola de reparto.
+    await confirmOrder(db, tenantId, created.value.orderId);
+    await transitionSellerOrder(db, tenantId, soId, "preparing");
+    await transitionSellerOrder(db, tenantId, soId, "ready");
+    queue = await db.withTenant(tenantId, (tx) => listDeliveryOrders(tx));
+    const row = queue.find((r) => r.sellerOrderId === soId)!;
+    expect(row.petName).toBe("Toby");
+    expect(row.addressStreet).toBe("San Martín 123");
+    expect(row.addressNotes).toBe("Timbre azul");
+    expect(row.customerPhone).toBe("2447-7001");
+    expect(row.amountToCollectMinor).toBe(2500n); // 2×1000 + 500 envío
+    expect(row.items.reduce((a, it) => a + it.qty, 0)).toBe(2);
+
+    // En camino → sigue en la cola; entregado → sale.
+    await transitionSellerOrder(db, tenantId, soId, "in_transit");
+    expect((await db.withTenant(tenantId, (tx) => listDeliveryOrders(tx))).some((r) => r.sellerOrderId === soId)).toBe(true);
+    await transitionSellerOrder(db, tenantId, soId, "delivered");
+    expect((await db.withTenant(tenantId, (tx) => listDeliveryOrders(tx))).some((r) => r.sellerOrderId === soId)).toBe(false);
+  });
+
+  it("Eslabón 2: completeOrder cierra el pedido entregado (idempotente)", async () => {
+    const v = await variantWithStock(db, tenantId, merchantId, "E2B", 10);
+    const created = await createOrder(db, { tenantId, paymentMethod: "efectivo", sellers: [{ merchantId, items: [{ variantId: v, qty: 1, unitPriceMinor: 1000n }] }] });
+    if (!created.ok) throw new Error("create falló");
+    // No se puede completar sin aceptar (pending_payment → completed es inválido).
+    expect((await completeOrder(db, tenantId, created.value.orderId)).ok).toBe(false);
+    await confirmOrder(db, tenantId, created.value.orderId);
+    expect((await completeOrder(db, tenantId, created.value.orderId)).ok).toBe(true);
+    expect((await db.withTenant(tenantId, (tx) => getOrder(tx, created.value.orderId)))?.status).toBe("completed");
+    // Idempotente.
+    expect((await completeOrder(db, tenantId, created.value.orderId)).ok).toBe(true);
   });
 });

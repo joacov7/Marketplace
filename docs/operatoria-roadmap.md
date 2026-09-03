@@ -78,13 +78,12 @@
 - **Necesita cuenta del cliente**: **Mercado Pago** (para "Pagar ahora" online).
 
 ## Orden de construcción propuesto (cuando dé el OK)
-1. ✅ **Pago al recibir + Aceptar/Rechazar** (ya se opera de verdad, sin depender de nadie) +
-   **pedido manual/mostrador** (para no perder WhatsApp/teléfono) + **teléfono como ficha de
-   cliente** + **mascota protagonista**. **IMPLEMENTADO** (ver abajo). Falta solo el **cobro
-   al entregar**, que va con la pantalla de reparto (paso 2).
-2. **Pantalla de reparto (PWA)**: entregas del día, "Cómo llegar", WhatsApp, Entregado/Cobrado.
+1. ✅ **Pago al recibir + Aceptar/Rechazar** + **pedido manual/mostrador** + **teléfono como
+   ficha de cliente** + **mascota protagonista**. **IMPLEMENTADO** (ver abajo).
+2. ✅ **Pantalla de reparto (PWA)** + **cobro al entregar**: entregas del día, "Cómo llegar",
+   WhatsApp, En camino / Entregado + cobro (impacta ledger/reportes). **IMPLEMENTADO**.
 3. **Direcciones**: referencias + "compartir ubicación" opcional en checkout; botón "Cómo
-   llegar" en reparto; (más adelante) zonas de reparto.
+   llegar" en reparto ya usa la dirección escrita; falta ubicación GPS + zonas de reparto.
 4. **Mercado Pago** real: cuando el cliente tenga la cuenta, se suma "Pagar ahora".
 
 ### ✅ Eslabón 1 — implementado (la mascota en el centro)
@@ -112,6 +111,29 @@
   y UI en `storefront.tsx` + `merchant/page.tsx`. Tests: `customer.pglite.test.ts` +
   casos Eslabón 1 en `orders.pglite.test.ts`.
 
+### ✅ Eslabón 2 — implementado (reparto + cobro al entregar)
+- **Pantalla de reparto (PWA)** en `/reparto?tenant=<slug>`: mobile-first, instalable como
+  ícono (web manifest en `/reparto/manifest`, sin app nativa). Acceso con un código (por ahora
+  el mismo token de servicio; login por repartidor = paso siguiente). Se abre desde el panel
+  (botón "🛵 Reparto").
+- **Entregas del día**: seller_orders en `ready`/`in_transit`. Cada tarjeta muestra "Pedido de
+  Bruno", cliente, **dirección + referencias**, ventana horaria, ítems, y **monto a cobrar**
+  (mercadería + envío) con estado de pago.
+- **Acciones del cadete**: "Cómo llegar" (Google Maps con la dirección escrita — GPS aún no),
+  "WhatsApp" al cliente, **Salir a entregar** (→ en camino) y **Entregado** con selector de
+  cobro (efectivo / POS / transferencia / "ya había pagado").
+- **Cobro al entregar** (`settleCashOnDelivery`): al entregar se registra el pago 'captured' y
+  se postea el **ledger/allocations igual que un pago online** → recién ahí impacta
+  reportes/profitability. No reconfirma reservas (el stock se consumió al aceptar). El pedido
+  pasa a **`completed`** (`completeOrder`). Idempotente (no cobra dos veces; respeta el ya
+  pagado online).
+- El flujo de preparación (pending→preparing→ready) sigue en el panel; recién "listo" entra a
+  reparto.
+- Archivos clave: `orders.ts` (`completeOrder`, `listDeliveryOrders`), `payments.ts`
+  (`settleCashOnDelivery`), rutas `api/delivery/orders{,/[id]/status,/[id]/deliver}`,
+  UI `app/reparto/*`. Tests: casos Eslabón 2 en `orders.pglite.test.ts` y
+  `payments.pglite.test.ts`.
+
 ## Definiciones pendientes (a resolver al arrancar, no ahora)
 - **Acceso del repartidor**: link con PIN/código simple (recomendado para arrancar) vs.
   usuario por repartidor.
@@ -133,7 +155,7 @@ eslabón (no todo a la vez):
 | 1. **Perfil de mascota** | Nombre, peso, edad, alimento, etc. Personaliza recomendaciones. | ✅ Hecho (Mis mascotas) |
 | 2. **Compra rápida** | Elegís la mascota → su alimento habitual → "Repetir última compra" 1 clic + recomendaciones (snacks, higiene, antiparasitarios). | ⏳ Falta (hay calculadora/comparador; falta "repetir" y "su alimento habitual") |
 | 3. **Recompra inteligente** | Estima cuándo se termina el alimento → recordatorio ("A Bruno le quedan 5 días") → "Reponer ahora". Después: **suscripción recurrente** con beneficios. | ✅ Parcial (estimación in-app lista; recordatorio proactivo = follow-up) |
-| 4. **Entrega** | Confirmado → preparando → en camino → "a pocos minutos" → entregado ❤️. | ⏳ Parcial (estados listos; seguimiento en vivo = plan de operatoria) |
+| 4. **Entrega** | Confirmado → preparando → en camino → entregado ❤️ + cobro. | ✅ Operativa (pantalla de reparto + cobro al entregar); falta seguimiento en vivo para el cliente y GPS |
 | 5. **Referidos** | Amigo recibe descuento; vos recibís crédito. Niveles/embajadores. | ❌ Nuevo |
 | 6. **Adopción** | Mascotas de protectoras asociadas: empatía, comunidad, identidad de marca, alianzas. | ✅ Hecho (Adopciones/callejeritos) |
 

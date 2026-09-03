@@ -333,6 +333,109 @@ export async function transitionSellerOrder(
   }
 }
 
+/**
+ * Cierra el pedido al entregarse: pasa 'confirmed' → 'completed'. No toca reservas (ya se
+ * consumieron al aceptar/confirmar). El cobro real (ledger) lo hace el módulo Payments.
+ */
+export async function completeOrder(db: TenantAwareDb, tenantId: string, orderId: string): Promise<Result<true, string>> {
+  try {
+    await db.withTenant(tenantId, async (tx) => {
+      const status = await loadOrderStatus(tx, orderId);
+      if (status === null) throw new Error("order_not_found");
+      if (status === "completed") return; // idempotente
+      if (!canTransitionOrder(status as never, "completed")) throw new Error(`invalid_transition:${status}->completed`);
+      await tx.query(`update orders set status = 'completed', updated_at = now() where id = $1`, [orderId]);
+      await enqueueEvent(tx, { tenantId, type: "order.completed", payload: { orderId } });
+    });
+    return ok(true);
+  } catch (e) {
+    return err(e instanceof Error ? e.message : String(e));
+  }
+}
+
+export interface DeliveryOrderRow {
+  sellerOrderId: string;
+  orderId: string;
+  status: SellerOrderStatus;
+  petName: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  addressStreet: string | null;
+  addressZone: string | null;
+  addressNotes: string | null;
+  deliveryWindow: string | null;
+  amountToCollectMinor: bigint; // mercadería + envío
+  paymentMethod: string | null;
+  paymentStatus: string;
+  items: Array<{ name: string; variant: string; qty: number }>;
+  createdAt: string;
+}
+
+/**
+ * Cola de REPARTO: seller_orders listos para salir o en camino (ready / in_transit). Trae la
+ * dirección y referencias (del snapshot shipping_address), teléfono del cliente, mascota,
+ * monto a cobrar (mercadería + envío) y estado de pago. Corre con contexto de tenant (RLS).
+ */
+export async function listDeliveryOrders(db: Db, opts: { limit?: number } = {}): Promise<DeliveryOrderRow[]> {
+  const rows = await db.query<{
+    seller_order_id: string;
+    order_id: string;
+    status: SellerOrderStatus;
+    pet_name: string | null;
+    customer_name: string | null;
+    customer_phone: string | null;
+    street: string | null;
+    zone: string | null;
+    notes: string | null;
+    delivery_window: string | null;
+    amount_minor: string;
+    payment_method: string | null;
+    payment_status: string;
+    items: Array<{ name: string; variant: string; qty: number }> | string | null;
+    created_at: string;
+  }>(
+    `select so.id as seller_order_id, so.order_id, so.status,
+            o.pet_name, c.name as customer_name,
+            coalesce(o.shipping_address->>'phone', c.phone) as customer_phone,
+            o.shipping_address->>'street' as street,
+            o.shipping_address->>'zone'   as zone,
+            o.shipping_address->>'notes'  as notes,
+            o.delivery_window,
+            (o.total_minor + coalesce(o.delivery_charge_minor,0))::text as amount_minor,
+            o.payment_method, o.payment_status,
+            coalesce((select json_agg(json_build_object('name', p.name, 'variant', v.name, 'qty', oi.qty))
+                        from order_items oi
+                        join variants v on v.id = oi.variant_id
+                        join products p on p.id = v.product_id
+                       where oi.seller_order_id = so.id), '[]') as items,
+            o.created_at
+       from seller_orders so
+       join orders o on o.id = so.order_id
+       left join customers c on c.id = o.customer_id
+      where so.status in ('ready','in_transit')
+      order by o.created_at asc
+      limit $1`,
+    [opts.limit ?? 100],
+  );
+  return rows.map((r) => ({
+    sellerOrderId: r.seller_order_id,
+    orderId: r.order_id,
+    status: r.status,
+    petName: r.pet_name,
+    customerName: r.customer_name,
+    customerPhone: r.customer_phone,
+    addressStreet: r.street,
+    addressZone: r.zone,
+    addressNotes: r.notes,
+    deliveryWindow: r.delivery_window,
+    amountToCollectMinor: BigInt(r.amount_minor),
+    paymentMethod: r.payment_method,
+    paymentStatus: r.payment_status,
+    items: Array.isArray(r.items) ? r.items : typeof r.items === "string" ? JSON.parse(r.items) : [],
+    createdAt: new Date(r.created_at).toISOString(),
+  }));
+}
+
 export interface CustomerOrderRow {
   orderId: string;
   status: string;

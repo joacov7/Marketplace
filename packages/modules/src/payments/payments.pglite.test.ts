@@ -4,9 +4,9 @@ import type { TenantAwareDb } from "@commerce/platform";
 import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
 import { createProduct, addVariant } from "../catalog/catalog.js";
 import { setStock, getStock } from "../inventory/inventory.js";
-import { createOrder, getOrder } from "../orders/orders.js";
+import { createOrder, confirmOrder, getOrder } from "../orders/orders.js";
 import { FakePaymentProvider } from "./provider.js";
-import { createPaymentIntent, capturePayment, refundAllocation } from "./payments.js";
+import { createPaymentIntent, capturePayment, refundAllocation, settleCashOnDelivery } from "./payments.js";
 import { accountBalance, ledgerIsBalanced } from "./ledger.js";
 
 describe("Payments — captura, ledger de doble partida, idempotencia, refund parcial (#9)", () => {
@@ -149,5 +149,42 @@ describe("Payments — captura, ledger de doble partida, idempotencia, refund pa
     });
     expect(bad.ok).toBe(false);
     if (!bad.ok) expect(bad.error).toMatch(/refund_exceeds_allocation/);
+  });
+
+  it("cobro al entregar: postea ledger balanceado, marca pagado y es idempotente (Eslabón 2)", async () => {
+    const { orderId } = await newOrder(); // GMV 3.000.000
+    // El pedido se aceptó (pago al recibir): pending_payment → confirmed, sin cobrar aún.
+    await confirmOrder(db, tenantId, orderId);
+
+    const before = {
+      merchant: await db.withTenant(tenantId, (tx) => accountBalance(tx, "merchant", merchantId)),
+      commission: await db.withTenant(tenantId, (tx) => accountBalance(tx, "platform_commission")),
+    };
+
+    const paidBefore = await db.withTenant(tenantId, (tx) =>
+      tx.query<{ payment_status: string }>("select payment_status from orders where id = $1", [orderId]),
+    );
+    expect(paidBefore[0]!.payment_status).toBe("pendiente");
+
+    const settle = await settleCashOnDelivery(db, { tenantId, orderId, method: "efectivo" });
+    expect(settle.ok).toBe(true);
+    if (!settle.ok) return;
+    expect(settle.value.alreadyPaid).toBe(false);
+
+    // Impacta el ledger igual que un pago online: comisión 7% y payout al comercio.
+    expect((await db.withTenant(tenantId, (tx) => accountBalance(tx, "merchant", merchantId))) - before.merchant).toBe(2_790_000n);
+    expect((await db.withTenant(tenantId, (tx) => accountBalance(tx, "platform_commission"))) - before.commission).toBe(210_000n);
+    expect(await db.withTenant(tenantId, (tx) => ledgerIsBalanced(tx))).toBe(true);
+
+    const paidAfter = await db.withTenant(tenantId, (tx) =>
+      tx.query<{ payment_status: string }>("select payment_status from orders where id = $1", [orderId]),
+    );
+    expect(paidAfter[0]!.payment_status).toBe("pagado");
+
+    // Idempotente: cobrar de nuevo no duplica.
+    const again = await settleCashOnDelivery(db, { tenantId, orderId, method: "efectivo" });
+    expect(again.ok).toBe(true);
+    if (again.ok) expect(again.value.alreadyPaid).toBe(true);
+    expect((await db.withTenant(tenantId, (tx) => accountBalance(tx, "merchant", merchantId))) - before.merchant).toBe(2_790_000n);
   });
 });

@@ -154,6 +154,7 @@ export default function MerchantPanel() {
           <button onClick={newMerchant} className="mbtn" style={btnGhost}>+ Nuevo comercio</button>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <a href={`/reparto?tenant=${encodeURIComponent(tenant ?? "")}`} target="_blank" rel="noopener noreferrer" className="mbtn" style={{ ...btnGhost, textDecoration: "none", display: "inline-flex", alignItems: "center" }} title="Pantalla del repartidor (se abre en otra pestaña; instalable en el celular)">🛵 Reparto</a>
           <button onClick={runMigrate} disabled={migrating} className="mbtn" style={btnGhost} title="Aplica migraciones pendientes tras un deploy con cambios de esquema">
             {migrating ? "Migrando…" : "Migrar base"}
           </button>

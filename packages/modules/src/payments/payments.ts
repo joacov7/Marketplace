@@ -181,6 +181,65 @@ export async function capturePayment(
 }
 
 /**
+ * COBRO AL ENTREGAR (pago al recibir). Cuando el repartidor registra el cobro en la puerta,
+ * esto crea el pago 'captured' y postea el ledger/allocations igual que una captura online,
+ * para que impacte reportes/profitability. NO reconfirma reservas: el stock ya se consumió al
+ * ACEPTAR el pedido (confirmOrder). Idempotente por estado: si el pedido ya está pagado
+ * (p. ej. cobrado antes o pagado online), no duplica. Marca `payment_status = 'pagado'`.
+ */
+export async function settleCashOnDelivery(
+  db: TenantAwareDb,
+  input: { tenantId: string; orderId: string; method: "efectivo" | "pos" | "transferencia" },
+): Promise<Result<{ paymentId: string; alreadyPaid: boolean }, string>> {
+  try {
+    return ok(
+      await db.withTenant(input.tenantId, async (tx) => {
+        const [order] = await tx.query<{ payment_status: string }>(
+          `select payment_status from orders where id = $1`,
+          [input.orderId],
+        );
+        if (!order) throw new Error("order_not_found");
+        if (order.payment_status === "pagado") return { paymentId: "", alreadyPaid: true };
+
+        const quote = await quoteOrder(tx, input.tenantId, input.orderId);
+
+        const [p] = await tx.query<{ id: string }>(
+          `insert into payments (tenant_id, order_id, provider, provider_ref, status, amount_minor, currency)
+           values ($1,$2,$3,$4,'captured',$5,$6) returning id`,
+          [input.tenantId, input.orderId, `cod:${input.method}`, null, quote.total.toString(), quote.currency],
+        );
+        const paymentId = p!.id;
+
+        for (const a of quote.allocations) {
+          await tx.query(
+            `insert into payment_allocations (tenant_id, payment_id, seller_order_id, target_type, target_ref, amount_minor)
+             values ($1,$2,$3,$4,$5,$6)`,
+            [input.tenantId, paymentId, a.sellerOrderId ?? null, a.targetType, a.targetRef ?? null, a.amountMinor.toString()],
+          );
+        }
+
+        const entries: LedgerEntry[] = [
+          { account: CUSTOMER_ACCOUNT, debitMinor: quote.total, memo: "cobro al entregar" },
+          ...quote.allocations.map((a) => {
+            const acc = accountFor(a);
+            return { ...acc, creditMinor: a.amountMinor, memo: a.targetType };
+          }),
+        ];
+        const posted = await postLedger(tx, input.tenantId, paymentId, entries);
+        if (!posted.ok) throw new Error(posted.error);
+
+        await tx.query(`update orders set payment_status = 'pagado', updated_at = now() where id = $1`, [input.orderId]);
+        await enqueueEvent(tx, { tenantId: input.tenantId, type: "payment.captured", payload: { paymentId, orderId: input.orderId, method: `cod:${input.method}` } });
+
+        return { paymentId, alreadyPaid: false };
+      }),
+    );
+  } catch (e) {
+    return err(e instanceof Error ? e.message : String(e));
+  }
+}
+
+/**
  * Refund PARCIAL sobre UNA allocation: postea el reverso (HABER customer, DEBE la cuenta
  * de esa allocation) y NO toca las demás partidas (criterio de aceptación #9). Actualiza
  * el estado del pago/pedido a partially_refunded o refunded según corresponda.
