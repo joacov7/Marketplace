@@ -56,6 +56,10 @@ const PANEL_CSS = `
 .mbtn{transition:filter .15s ease, transform .05s ease;}
 .mbtn:hover{filter:brightness(1.05);}
 .mbtn:active{transform:scale(.98);}
+input,select,textarea{max-width:100%;}
+@media (max-width:560px){
+  .mform-grid{grid-template-columns:1fr !important;}
+}
 `;
 
 export default function MerchantPanel() {
@@ -616,7 +620,7 @@ function ManualOrderForm({ tenant, token, merchantId, onClose, onCreated, onErro
 
         {/* 1. Cliente por teléfono */}
         <label style={lbl}>1 · Cliente (teléfono)</label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <div className="mform-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <input style={input} placeholder="Teléfono / WhatsApp" value={phone} onChange={(e) => setPhone(e.target.value)} />
           <input style={input} placeholder="Nombre del cliente" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
         </div>
@@ -640,7 +644,7 @@ function ManualOrderForm({ tenant, token, merchantId, onClose, onCreated, onErro
           </div>
         )}
         {addingNew && (
-          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", gap: 8 }}>
+          <div className="mform-grid" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", gap: 8 }}>
             <input style={input} placeholder="Nombre (ej: Bruno)" value={newPet.name} onChange={(e) => setNewPet({ ...newPet, name: e.target.value })} />
             <select style={input} value={newPet.species} onChange={(e) => setNewPet({ ...newPet, species: e.target.value })}>
               <option value="perro">🐶 Perro</option><option value="gato">🐱 Gato</option><option value="otro">🐾 Otro</option>
@@ -679,14 +683,14 @@ function ManualOrderForm({ tenant, token, merchantId, onClose, onCreated, onErro
 
         {/* 4. Entrega (opcional) */}
         <label style={lbl}>4 · Entrega (opcional — vacío = retira en mostrador)</label>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8 }}>
+        <div className="mform-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8 }}>
           <input style={input} placeholder="Calle y número" value={addr.street} onChange={(e) => setAddr({ ...addr, street: e.target.value })} />
           <input style={input} placeholder="Barrio / zona" value={addr.zone} onChange={(e) => setAddr({ ...addr, zone: e.target.value })} />
         </div>
 
         {/* 5 y 6. Pago + canal */}
         <label style={lbl}>5 · Pago y canal</label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+        <div className="mform-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
           <select style={input} value={method} onChange={(e) => setMethod(e.target.value)}>
             <option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="pos">Tarjeta (POS)</option>
           </select>

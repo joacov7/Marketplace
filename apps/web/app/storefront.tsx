@@ -321,6 +321,37 @@ export default function Storefront(props: {
         .sf-btn:active{transform:translateY(1px);}
         .sf-a{cursor:pointer;}
         *{box-sizing:border-box;}
+        img{max-width:100%;}
+        /* ── Responsive: tablet ── */
+        @media (max-width:900px){
+          .sf-hero{grid-template-columns:1fr !important;padding:34px 24px !important;}
+          .sf-hero-art{display:none !important;}
+          .sf-listwrap{grid-template-columns:1fr !important;}
+          .sf-detail{grid-template-columns:1fr !important;gap:26px !important;}
+          .sf-checkout{grid-template-columns:1fr !important;}
+          .sf-checkout-sum{position:static !important;}
+          .sf-cats{grid-template-columns:repeat(3,1fr) !important;}
+          .sf-featured,.sf-list{grid-template-columns:repeat(3,1fr) !important;}
+          .sf-benefits{grid-template-columns:repeat(2,1fr) !important;}
+          .sf-footer{grid-template-columns:1fr 1fr !important;gap:24px !important;}
+        }
+        /* ── Responsive: teléfono ── */
+        @media (max-width:640px){
+          .sf-header{gap:12px !important;padding:11px 14px !important;flex-wrap:wrap !important;}
+          .sf-nav{display:none !important;}
+          .sf-search input{width:100% !important;}
+          .sf-search{flex:1 1 140px !important;}
+          .sf-right{flex:1 1 100% !important;}
+          .sf-main{padding:18px 14px 60px !important;}
+          .sf-cats,.sf-featured,.sf-list{grid-template-columns:repeat(2,1fr) !important;gap:12px !important;}
+          .sf-benefits{grid-template-columns:1fr !important;}
+          .sf-checkout-grid2{grid-template-columns:1fr !important;}
+          .sf-footer{grid-template-columns:1fr !important;}
+          .sf-hero h1{font-size:32px !important;}
+        }
+        @media (max-width:380px){
+          .sf-cats,.sf-featured,.sf-list{grid-template-columns:1fr !important;}
+        }
       `}</style>
 
       {/* Barra promocional */}
@@ -346,7 +377,7 @@ export default function Storefront(props: {
         waLink={waLink()}
       />
 
-      <main style={{ maxWidth: view === "checkout" ? 1000 : view === "done" ? 620 : 1180, margin: "0 auto", padding: view === "done" ? "90px 24px 120px" : "28px 24px 80px" }}>
+      <main className="sf-main" style={{ maxWidth: view === "checkout" ? 1000 : view === "done" ? 620 : 1180, margin: "0 auto", padding: view === "done" ? "90px 24px 120px" : "28px 24px 80px" }}>
         {view === "home" && (
           <HomeView
             G={G} products={products} categories={categories} config={config} threshold={threshold} content={props.content}
@@ -491,7 +522,7 @@ function Header(props: {
 }) {
   const { G } = props;
   return (
-    <header style={{ position: "sticky", top: 0, zIndex: 40, background: C.white, borderBottom: `1px solid ${C.border}`, padding: "14px 24px", display: "flex", gap: 32, alignItems: "center" }}>
+    <header className="sf-header" style={{ position: "sticky", top: 0, zIndex: 40, background: C.white, borderBottom: `1px solid ${C.border}`, padding: "14px 24px", display: "flex", gap: 32, alignItems: "center" }}>
       {/* Logo */}
       <div className="sf-a" onClick={props.onHome} style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
         {props.logoUrl ? (
@@ -509,7 +540,7 @@ function Header(props: {
       </div>
 
       {/* Nav */}
-      <nav style={{ flex: 1, display: "flex", gap: 26, fontSize: 14, flexWrap: "wrap" }}>
+      <nav className="sf-nav" style={{ flex: 1, display: "flex", gap: 26, fontSize: 14, flexWrap: "wrap" }}>
         <NavItem label="Inicio" active={props.activeCat === "" && !props.query} onClick={props.onHome} G={G} />
         {props.categories.map((c) => (
           <NavItem key={c.name} label={c.name} active={props.activeCat === c.name} onClick={() => props.onCategory(c.name)} G={G} />
@@ -520,8 +551,8 @@ function Header(props: {
       </nav>
 
       {/* Derecha */}
-      <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 999, padding: "7px 14px" }}>
+      <div className="sf-right" style={{ display: "flex", gap: 18, alignItems: "center" }}>
+        <div className="sf-search" style={{ display: "flex", alignItems: "center", gap: 8, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 999, padding: "7px 14px" }}>
           <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={C.mute} strokeWidth={2} aria-hidden><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeLinecap="round" /></svg>
           <input value={props.query} onChange={(e) => props.onSearch(e.target.value)} placeholder="Buscar productos" style={{ border: "none", outline: "none", background: "transparent", fontSize: 13, width: 150, fontFamily: FONT, color: C.text }} />
         </div>
@@ -586,7 +617,7 @@ function HomeView(props: {
   return (
     <>
       {/* Hero */}
-      <section style={{ background: C.beige, borderRadius: 20, padding: "52px 0 52px 52px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, alignItems: "center", overflow: "hidden" }}>
+      <section className="sf-hero" style={{ background: C.beige, borderRadius: 20, padding: "52px 0 52px 52px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, alignItems: "center", overflow: "hidden" }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 46, fontWeight: 700, lineHeight: 1.1, letterSpacing: "-.02em", maxWidth: 460 }}>
             {content.heroTitle} {content.heroHighlight && <span style={{ color: G }}>{content.heroHighlight}</span>}
@@ -610,7 +641,7 @@ function HomeView(props: {
             </div>
           )}
         </div>
-        <div style={{ position: "relative" }}>
+        <div className="sf-hero-art" style={{ position: "relative" }}>
           <Img alt="banner principal" radius="16px 0 0 16px" label="banner principal 1080 × 450" hero />
           <div style={{ position: "absolute", left: -46, top: "50%", transform: "translateY(-50%)", width: 132, height: 132, borderRadius: "50%", background: G, color: C.white, boxShadow: "0 8px 24px rgba(46,125,50,.28)", display: "grid", placeItems: "center", textAlign: "center", padding: 10 }}>
             <span><span style={{ display: "block", fontSize: 17, fontWeight: 700 }}>Envíos GRATIS</span><span style={{ display: "block", fontSize: 9.5, opacity: .9 }}>en compras superiores a {money(props.threshold)}</span></span>
@@ -620,7 +651,7 @@ function HomeView(props: {
 
       {/* Franja de beneficios */}
       {benefits.length > 0 && (
-        <div style={{ marginTop: 18, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 24px", display: "grid", gridTemplateColumns: `repeat(${Math.min(5, benefits.length)},1fr)`, gap: 20 }}>
+        <div className="sf-benefits" style={{ marginTop: 18, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 24px", display: "grid", gridTemplateColumns: `repeat(${Math.min(5, benefits.length)},1fr)`, gap: 20 }}>
           {benefits.map((b, i) => (
             <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
               <span style={{ width: 34, height: 34, borderRadius: "50%", background: C.iconBg, color: G, display: "grid", placeItems: "center", fontWeight: 700, fontSize: 15, flexShrink: 0 }}>★</span>
@@ -637,7 +668,7 @@ function HomeView(props: {
       {props.categories.length > 0 && (
         <>
           <SectionHead G={G} title="Categorías" action="Ver todas →" onAction={props.onSeeList} />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 16 }}>
+          <div className="sf-cats" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 16 }}>
             {props.categories.slice(0, 10).map((c) => (
               <div key={c.name} className="sf-a" onClick={() => props.onCategory(c.name)} style={{ textAlign: "center" }}>
                 <div style={{ aspectRatio: "1", borderRadius: 16, background: PH_BG, display: "grid", placeItems: "center" }}><span style={{ fontFamily: "monospace", fontSize: 11, color: C.ph }}>512 × 512</span></div>
@@ -651,7 +682,7 @@ function HomeView(props: {
       {/* Destacados */}
       <SectionHead G={G} title="Productos destacados" action="Ver todos →" onAction={props.onSeeList} />
       {featured.length === 0 ? <p style={{ color: C.mute }}>Todavía no hay productos cargados.</p> : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 18 }}>
+        <div className="sf-featured" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 18 }}>
           {featured.map((p) => <ProductCard key={p.productId} G={G} p={p} onOpen={() => props.onOpen(p)} onAdd={() => props.onAdd(p)} />)}
         </div>
       )}
@@ -680,7 +711,7 @@ function ListView(props: {
         <h1 style={{ margin: 0, fontSize: 32, fontWeight: 700, letterSpacing: "-.02em" }}>{title}</h1>
         <span style={{ fontSize: 13, color: C.mute }}>{list.length} productos</span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "230px 1fr", gap: 28, alignItems: "start", marginTop: 20 }}>
+      <div className="sf-listwrap" style={{ display: "grid", gridTemplateColumns: "230px 1fr", gap: 28, alignItems: "start", marginTop: 20 }}>
         {/* Sidebar */}
         <aside style={{ border: `1px solid ${C.border}`, borderRadius: 16, padding: 18 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: C.mute, letterSpacing: ".06em", marginBottom: 12 }}>CATEGORÍAS</div>
@@ -704,7 +735,7 @@ function ListView(props: {
 
         {/* Grid */}
         {list.length === 0 ? <p style={{ color: C.mute }}>No hay productos en esta categoría.</p> : (
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${props.columns},1fr)`, gap: 18 }}>
+          <div className="sf-list" style={{ display: "grid", gridTemplateColumns: `repeat(${props.columns},1fr)`, gap: 18 }}>
             {list.map((p) => <ProductCard key={p.productId} G={G} p={p} listRow onOpen={() => props.onOpen(p)} onAdd={() => props.onAdd(p)} />)}
           </div>
         )}
@@ -727,7 +758,7 @@ function DetailView(props: {
       <div style={{ fontSize: 12.5, color: C.mute, marginBottom: 14 }}>
         Inicio / <span className="sf-a" onClick={props.onBackCat}>{p.category || "Productos"}</span> / {p.name}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "start" }}>
+      <div className="sf-detail" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "start" }}>
         <Img src={p.imageUrl} alt={p.name} ratio="1" radius={20} label="foto producto 1080 × 1080" />
         <div>
           {p.category && <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".1em", color: C.lightGreen }}>{p.category.toUpperCase()}</div>}
@@ -814,11 +845,11 @@ function CheckoutView(props: {
   return (
     <>
       <h1 style={{ margin: "0 0 26px", fontSize: 32, fontWeight: 700, letterSpacing: "-.02em" }}>Finalizar compra</h1>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 28, alignItems: "start" }}>
+      <div className="sf-checkout" style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 28, alignItems: "start" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <div style={card}>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Dirección de envío</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="sf-checkout-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <input style={{ ...input, gridColumn: "1 / -1" }} placeholder="Calle y número" value={form.street} onChange={(e) => setForm({ ...form, street: e.target.value })} />
               <input style={input} placeholder="Barrio / zona" value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value })} />
               <input style={input} placeholder="Teléfono / WhatsApp" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
@@ -858,7 +889,7 @@ function CheckoutView(props: {
             )}
 
             {addingNew && (
-              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", gap: 10 }}>
+              <div className="sf-checkout-grid2" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", gap: 10 }}>
                 <input style={input} placeholder="Nombre (ej: Bruno)" value={props.newPet.name} onChange={(e) => props.setNewPet({ ...props.newPet, name: e.target.value })} />
                 <select style={input} value={props.newPet.species} onChange={(e) => props.setNewPet({ ...props.newPet, species: e.target.value })}>
                   <option value="perro">🐶 Perro</option>
@@ -897,7 +928,7 @@ function CheckoutView(props: {
         </div>
 
         {/* Resumen */}
-        <div style={{ position: "sticky", top: 96, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 16, padding: 22 }}>
+        <div className="sf-checkout-sum" style={{ position: "sticky", top: 96, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 16, padding: 22 }}>
           <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Resumen</div>
           {props.items.map(([id, l]) => (
             <div key={id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, color: C.text2, padding: "4px 0" }}>
@@ -1370,7 +1401,7 @@ function Footer({ G, displayName, blurb, categories, onCategory, onHome }: { G: 
   const link: React.CSSProperties = { fontSize: 13, color: C.mute, cursor: "pointer", marginBottom: 7 };
   return (
     <footer style={{ background: C.beige, borderTop: `1px solid ${C.border}`, padding: "44px 24px" }}>
-      <div style={{ maxWidth: 1180, margin: "0 auto", display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", gap: 32 }}>
+      <div className="sf-footer" style={{ maxWidth: 1180, margin: "0 auto", display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", gap: 32 }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 700, color: G }}>{displayName.toUpperCase()}</div>
           {blurb && <p style={{ fontSize: 13, color: C.mute, lineHeight: 1.7, marginTop: 10 }}>{blurb}</p>}
