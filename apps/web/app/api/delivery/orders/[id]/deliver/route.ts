@@ -3,7 +3,7 @@ import { transitionSellerOrder, completeOrder } from "@commerce/modules/orders";
 import { settleCashOnDelivery } from "@commerce/modules/payments";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { requireDeliveryAccess } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +19,9 @@ const COD_METHODS = new Set(["efectivo", "pos", "transferencia"]);
  * `params.id` = sellerOrderId. Gated por token de servicio. Corre bajo RLS por tenant.
  */
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  if (!(await requireDeliveryAccess(tenant.tenantId))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   let body: { collect?: string };
   try {

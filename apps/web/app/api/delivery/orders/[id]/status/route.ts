@@ -2,18 +2,18 @@ import { NextResponse } from "next/server";
 import { transitionSellerOrder } from "@commerce/modules/orders";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { requireDeliveryAccess } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 /**
  * El repartidor marca "En camino" (in_transit) o "No se pudo entregar" (delivery_failed).
- * `params.id` = sellerOrderId. La entrega + cobro va por /deliver. Gated por token de servicio.
+ * `params.id` = sellerOrderId. La entrega + cobro va por /deliver. Acceso por PIN de reparto.
  */
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  if (!(await requireDeliveryAccess(tenant.tenantId))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   let body: { to?: string };
   try {

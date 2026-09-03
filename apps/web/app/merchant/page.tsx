@@ -363,7 +363,28 @@ function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | nu
   const [orders, setOrders] = useState<SellerOrder[]>([]);
   const [loading, setLoading] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinSaved, setPinSaved] = useState<string | null>(null);
   const auth = { authorization: `Bearer ${token}` };
+
+  // PIN de reparto (config del tenant): el cadete entra con esto, no con el token de admin.
+  useEffect(() => {
+    if (!tenant) return;
+    fetch(`/api/merchant/delivery-pin?tenant=${encodeURIComponent(tenant)}`, { headers: auth })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) { setPin(d.pin ?? ""); setPinSaved(d.pin ?? ""); } })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token]);
+
+  async function savePin() {
+    const res = await fetch(`/api/merchant/delivery-pin?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ pin }),
+    });
+    const d = await res.json();
+    if (!res.ok) { onError(d.error ?? "error"); return; }
+    setPinSaved(d.pin ?? "");
+  }
 
   const load = useCallback(async () => {
     if (!tenant) return;
@@ -400,9 +421,20 @@ function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | nu
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         <button onClick={() => setShowNew(true)} className="mbtn" style={btn}>＋ Nuevo pedido</button>
         <button onClick={load} className="mbtn" style={btnGhost}>{loading ? "…" : "Actualizar"}</button>
+      </div>
+
+      {/* PIN de reparto: lo usa el cadete para entrar a /reparto (sin el token del panel). */}
+      <div style={{ ...card, marginBottom: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 13.5, fontWeight: 600 }}>🛵 PIN de reparto:</span>
+        <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="ej: 2468" maxLength={32}
+          style={{ ...input, width: 130 }} />
+        <button onClick={savePin} className="mbtn" style={btn} disabled={pin === pinSaved}>Guardar</button>
+        <span style={{ fontSize: 12.5, color: "#6b7280" }}>
+          {pinSaved ? "El cadete entra a Reparto con este PIN." : "Sin PIN: reparto solo abre con el token de admin."}
+        </span>
       </div>
 
       {showNew && (

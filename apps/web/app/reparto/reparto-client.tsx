@@ -99,9 +99,9 @@ export default function RepartoClient() {
         <div style={{ background: C.white, borderRadius: 16, padding: 26, width: "100%", maxWidth: 360, boxShadow: "0 4px 24px rgba(0,0,0,.08)" }}>
           <div style={{ fontSize: 34, textAlign: "center" }}>🛵</div>
           <h1 style={{ fontSize: 22, textAlign: "center", margin: "8px 0 4px", color: C.ink }}>Reparto</h1>
-          <p style={{ color: C.mut, fontSize: 13.5, textAlign: "center", marginTop: 0 }}>Ingresá tu código de acceso.</p>
+          <p style={{ color: C.mut, fontSize: 13.5, textAlign: "center", marginTop: 0 }}>Ingresá tu PIN de reparto.</p>
           <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveToken()}
-            placeholder="Código" type="password" style={{ width: "100%", padding: 14, borderRadius: 11, border: `1px solid ${C.line}`, fontSize: 16 }} />
+            placeholder="PIN" inputMode="numeric" type="password" style={{ width: "100%", padding: 14, borderRadius: 11, border: `1px solid ${C.line}`, fontSize: 16 }} />
           <button onClick={saveToken} style={{ width: "100%", marginTop: 12, padding: 14, borderRadius: 11, border: "none", background: C.green, color: "white", fontWeight: 700, fontSize: 15 }}>Entrar</button>
         </div>
       </div>

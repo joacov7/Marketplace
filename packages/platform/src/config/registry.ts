@@ -318,6 +318,14 @@ export const CONFIG_KEYS = {
     sensitive: false,
     description: "Mensaje prellenado al abrir WhatsApp desde la tienda.",
   },
+  "ops.deliveryPin": {
+    key: "ops.deliveryPin",
+    jsonSchema: { type: "string", maxLength: 32 },
+    defaultValue: "",
+    category: "ops",
+    sensitive: true,
+    description: "PIN de acceso a la pantalla de reparto (lo usa el repartidor en vez del token de admin). Vacío = solo el token de admin abre reparto.",
+  },
   "tenant.vertical": {
     key: "tenant.vertical",
     jsonSchema: { type: "string", minLength: 1 },
