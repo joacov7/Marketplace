@@ -4,7 +4,8 @@ import { type TenantAwareDb, setConfigValue } from "@commerce/platform";
 import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
 import { createProduct, addVariant } from "../catalog/catalog.js";
 import { setStock, getStock } from "../inventory/inventory.js";
-import { createOrder, confirmOrder, cancelOrder, completeOrder, getOrder, listSellerOrders, listDeliveryOrders, transitionSellerOrder, listCustomerOrders, deliveryStage, getOrderTracking } from "./orders.js";
+import { createOrder, confirmOrder, cancelOrder, completeOrder, getOrder, listSellerOrders, listDeliveryOrders, transitionSellerOrder, listCustomerOrders, deliveryStage, getOrderTracking, lastReorder } from "./orders.js";
+import { setPrice } from "../catalog/catalog.js";
 import { findOrCreateCustomerByPhone } from "../customer/customer.js";
 
 async function variantWithStock(
@@ -333,6 +334,34 @@ describe("Orders — creación, reserva, confirmación, cancelación", () => {
     expect((await db.withTenant(tenantId, (tx) => listDeliveryOrders(tx))).some((r) => r.sellerOrderId === soId)).toBe(true);
     await transitionSellerOrder(db, tenantId, soId, "delivered");
     expect((await db.withTenant(tenantId, (tx) => listDeliveryOrders(tx))).some((r) => r.sellerOrderId === soId)).toBe(false);
+  });
+
+  it("Compra rápida: lastReorder trae la última compra con precio y stock actuales", async () => {
+    const customerId = "88888888-8888-8888-8888-888888888888";
+    const v = await variantWithStock(db, tenantId, merchantId, "RE1", 10);
+    await db.withTenant(tenantId, (tx) => setPrice(tx, { tenantId, variantId: v, amountMinor: 3500n }));
+    const first = await createOrder(db, {
+      tenantId, customerId, petName: "Rex",
+      sellers: [{ merchantId, items: [{ variantId: v, qty: 2, unitPriceMinor: 3000n }] }],
+    });
+    if (!first.ok) throw new Error("create falló");
+
+    const r = await db.withTenant(tenantId, (tx) => lastReorder(tx, customerId));
+    expect(r?.petName).toBe("Rex");
+    expect(r?.items.length).toBe(1);
+    expect(r?.items[0]!.variantId).toBe(v);
+    expect(r?.items[0]!.qty).toBe(2);
+    expect(r?.items[0]!.priceMinor).toBe(3500n); // precio ACTUAL, no el de la compra (3000)
+    expect(r?.items[0]!.available).toBe(8); // 10 - 2 reservados
+
+    // Un pedido cancelado no se toma como "última compra".
+    const cancelled = await createOrder(db, { tenantId, customerId, sellers: [{ merchantId, items: [{ variantId: v, qty: 1, unitPriceMinor: 3000n }] }] });
+    if (cancelled.ok) await cancelOrder(db, tenantId, cancelled.value.orderId);
+    const r2 = await db.withTenant(tenantId, (tx) => lastReorder(tx, customerId));
+    expect(r2?.orderId).toBe(first.value.orderId); // sigue siendo el primero (no el cancelado)
+
+    // Cliente sin compras → null.
+    expect(await db.withTenant(tenantId, (tx) => lastReorder(tx, "99999999-9999-9999-9999-999999999999"))).toBeNull();
   });
 
   it("Eslabón 3: deliveryStage traduce (pedido, cumplimiento) → semáforo del cliente", () => {

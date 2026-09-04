@@ -52,6 +52,7 @@ export interface StoreConfig {
   listColumns: 2 | 3 | 4;
   foodCalculator: boolean;
   foodComparator: boolean;
+  quickReorder: boolean;
   nutritionFactors: Record<string, number>;
 }
 
@@ -105,6 +106,8 @@ type CartLine = { name: string; sub: string; priceMinor: number; qty: number };
 type Cart = Record<string, CartLine>; // key = variantId
 type PayMethod = "transferencia" | "efectivo" | "pos" | "mercadopago";
 type StorePetLite = { id: string; name: string; species: string };
+type ReorderItem = { variantId: string; name: string; size: string; qty: number; priceMinor: string | null; available: number };
+type Reorder = { orderId: string; petName: string | null; createdAt: string; items: ReorderItem[] };
 
 interface Quote {
   gmvMinor: string;
@@ -158,6 +161,8 @@ export default function Storefront(props: {
   const [greetName, setGreetName] = useState<string | null>(null);
   const [petSel, setPetSel] = useState<string>(""); // id de mascota elegida, o "" (ninguna/nueva)
   const [newPet, setNewPet] = useState({ name: "", species: "perro", weight: "" });
+  // Compra rápida: última compra del cliente reconocido (para "repetir en 1 clic").
+  const [reorder, setReorder] = useState<Reorder | null>(null);
   // Zonas de reparto del comercio (costo/tiempo por barrio). Vacío = envío plano.
   const [zones, setZones] = useState<Array<{ name: string; customerChargeMinor: string; etaMinutes: number | null }>>([]);
   // Ubicación opcional del cliente (GPS del navegador, gratis, sin API key).
@@ -232,6 +237,30 @@ export default function Storefront(props: {
       if (q <= 0) { const { [variantId]: _d, ...rest } = c; return rest; }
       return { ...c, [variantId]: { ...c[variantId]!, qty: q } };
     });
+  }
+
+  // Compra rápida: buscamos la última compra del cliente reconocido (logueado).
+  useEffect(() => {
+    if (!config.quickReorder) return;
+    fetch("/api/account/reorder")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.reorder?.items?.length) setReorder(d.reorder as Reorder); })
+      .catch(() => {});
+  }, [config.quickReorder]);
+
+  // Repite la última compra: agrega al carrito lo disponible (precio actual).
+  function repeatReorder() {
+    if (!reorder) return;
+    setCart((c) => {
+      const next = { ...c };
+      for (const it of reorder.items) {
+        if (it.available <= 0 || it.priceMinor == null) continue;
+        next[it.variantId] = { name: it.name, sub: it.size, priceMinor: Number(it.priceMinor), qty: Math.min(it.qty, it.available) };
+      }
+      return next;
+    });
+    setDone(null);
+    setCartOpen(true);
   }
 
   // ── Quote del servidor (al entrar al checkout y al cambiar entrega/pago) ──────
@@ -402,6 +431,9 @@ export default function Storefront(props: {
       />
 
       <main className="sf-main" style={{ maxWidth: view === "checkout" ? 1000 : view === "done" ? 620 : 1180, margin: "0 auto", padding: view === "done" ? "90px 24px 120px" : "28px 24px 80px" }}>
+        {view === "home" && reorder && reorder.items.some((it) => it.available > 0) && (
+          <QuickReorder G={G} reorder={reorder} onRepeat={repeatReorder} />
+        )}
         {view === "home" && (
           <HomeView
             G={G} products={products} categories={categories} config={config} threshold={threshold} content={props.content}
@@ -629,6 +661,30 @@ function SectionHead({ G, title, action, onAction }: { G: string; title: string;
       <h2 style={{ margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: "-.01em", borderBottom: `3px solid ${G}`, paddingBottom: 8 }}>{title}</h2>
       {action && <span className="sf-a" onClick={onAction} style={{ fontSize: 13.5, fontWeight: 600, color: G }}>{action}</span>}
     </div>
+  );
+}
+
+// ── Compra rápida: repetir la última compra en 1 clic ─────────────────────────────
+function QuickReorder({ G, reorder, onRepeat }: { G: string; reorder: Reorder; onRepeat: () => void }) {
+  const items = reorder.items.filter((it) => it.available > 0);
+  const total = items.reduce((a, it) => a + (it.priceMinor ? Number(it.priceMinor) * Math.min(it.qty, it.available) : 0), 0);
+  const forPet = reorder.petName?.trim();
+  return (
+    <section style={{ background: C.tint, border: `1px solid ${C.border}`, borderRadius: 18, padding: "20px 22px", marginBottom: 26, display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ flex: 1, minWidth: 220 }}>
+        <div style={{ fontSize: 12.5, color: G, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}>Compra rápida 🔁</div>
+        <div style={{ fontSize: 19, fontWeight: 700, marginTop: 3 }}>
+          {forPet ? <>¿Repetimos lo de {forPet}?</> : <>¿Repetimos tu última compra?</>}
+        </div>
+        <div style={{ fontSize: 13.5, color: C.text2, marginTop: 4 }}>
+          {items.slice(0, 3).map((it) => `${it.qty}× ${it.name}`).join(" · ")}{items.length > 3 ? ` +${items.length - 3}` : ""}
+        </div>
+      </div>
+      <div style={{ textAlign: "right" }}>
+        {total > 0 && <div style={{ fontSize: 20, fontWeight: 800, color: G }}>{money(total)}</div>}
+        <button className="sf-btn" onClick={onRepeat} style={{ ...primaryBtn(G), padding: "12px 22px", marginTop: 6 }}>REPETIR COMPRA</button>
+      </div>
+    </section>
   );
 }
 

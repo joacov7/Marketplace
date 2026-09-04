@@ -211,6 +211,14 @@ export const CONFIG_KEYS = {
     sensitive: false,
     description: "Habilita el comparador de alimentos (costo por día / conveniencia).",
   },
+  "features.quickReorder": {
+    key: "features.quickReorder",
+    jsonSchema: { type: "boolean" },
+    defaultValue: true,
+    category: "features",
+    sensitive: false,
+    description: "Habilita la compra rápida: 'Repetir última compra' en 1 clic para clientes reconocidos.",
+  },
   "nutrition.factors": {
     key: "nutrition.factors",
     jsonSchema: {

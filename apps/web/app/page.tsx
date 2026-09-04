@@ -75,7 +75,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       featuredCount, listColumns,
       promoText, heroTitle, heroHighlight, heroSubtitle, footerBlurb, perks, benefits,
       adoptionsEnabled, adoptionsTitle,
-      foodCalculator, foodComparator, nutritionFactors,
+      foodCalculator, foodComparator, quickReorder, nutritionFactors,
       catalog0,
     ] = await Promise.all([
       cfg<string>("branding.primaryColor"),
@@ -101,6 +101,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<string>("storefront.adoptionsTitle"),
       cfg<boolean>("features.foodCalculator"),
       cfg<boolean>("features.foodComparator"),
+      cfg<boolean>("features.quickReorder"),
       cfg<Record<string, number>>("nutrition.factors"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
@@ -171,6 +172,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       listColumns: [2, 3, 4].includes(num(listColumns, 3)) ? (num(listColumns, 3) as 2 | 3 | 4) : 3,
       foodCalculator: foodCalculator !== false,
       foodComparator: foodComparator !== false,
+      quickReorder: quickReorder !== false,
       nutritionFactors: (nutritionFactors && typeof nutritionFactors === "object" ? nutritionFactors : {}) as Record<string, number>,
     };
 

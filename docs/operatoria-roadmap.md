@@ -183,7 +183,7 @@ eslabón (no todo a la vez):
 | Pieza | Qué es | Estado |
 |---|---|---|
 | 1. **Perfil de mascota** | Nombre, peso, edad, alimento, etc. Personaliza recomendaciones. | ✅ Hecho (Mis mascotas) |
-| 2. **Compra rápida** | Elegís la mascota → su alimento habitual → "Repetir última compra" 1 clic + recomendaciones (snacks, higiene, antiparasitarios). | ⏳ Falta (hay calculadora/comparador; falta "repetir" y "su alimento habitual") |
+| 2. **Compra rápida** | Elegís la mascota → su alimento habitual → "Repetir última compra" 1 clic + recomendaciones (snacks, higiene, antiparasitarios). | ✅ Parcial: "Repetir última compra" (1 clic, precio/stock actuales) activable por el comercio (`features.quickReorder`). Falta "su alimento habitual" y recomendaciones |
 | 3. **Recompra inteligente** | Estima cuándo se termina el alimento → recordatorio ("A Bruno le quedan 5 días") → "Reponer ahora". Después: **suscripción recurrente** con beneficios. | ✅ Parcial (estimación in-app lista; recordatorio proactivo = follow-up) |
 | 4. **Entrega** | Confirmado → preparando → en camino → entregado ❤️ + cobro. | ✅ Operativa: reparto + cobro al entregar + **seguimiento en vivo del cliente** + ubicación GPS. Falta zonas de reparto |
 | 5. **Referidos** | Amigo recibe descuento; vos recibís crédito. Niveles/embajadores. | ❌ Nuevo |
@@ -197,6 +197,14 @@ eslabón (no todo a la vez):
 - **Un eslabón a la vez**, midiendo que cada uno convierta antes de seguir.
 - **Config por tenant**: el perfil de mascota es del vertical pet; entrega/recompra/
   referidos/suscripción son genéricos (sirven para otros verticales, p. ej. limpieza).
+
+### Decisión de diseño: activable vs. lo decide el cliente (en capas)
+- **Que la función exista** → la decide el **comercio** (feature flag por tenant), como el resto
+  de las funciones. Compra rápida usa `features.quickReorder`.
+- **Recibir avisos proactivos** (recompra por WhatsApp) → lo decide el **cliente** (opt-in),
+  porque le escribimos. Va cuando construyamos el recordatorio proactivo.
+- La **compra rápida** no necesita opt-in del cliente: es un atajo que se muestra en la tienda,
+  no invade. Por eso quedó solo con el flag del comercio.
 
 ### Agregado a la visión: suscripción recurrente
 Auto-envío del alimento cada X días con un beneficio. Es la evolución natural de la recompra

@@ -515,6 +515,80 @@ export async function listDeliveryOrders(db: Db, opts: { limit?: number } = {}):
   }));
 }
 
+// ── Compra rápida: "repetir última compra" ──────────────────────────────────────────
+export interface ReorderItem {
+  variantId: string;
+  name: string;
+  size: string;
+  qty: number;
+  priceMinor: bigint | null; // precio ACTUAL (puede haber cambiado)
+  available: number;
+}
+export interface Reorder {
+  orderId: string;
+  petName: string | null;
+  createdAt: string;
+  items: ReorderItem[];
+}
+
+/**
+ * Items de un pedido para repetirlo (precio y stock ACTUALES, no los de la compra vieja). Por
+ * defecto toma el último pedido no cancelado del cliente; con `orderId` toma ese. Corre con
+ * contexto de tenant (RLS) → solo ve pedidos del cliente en ese tenant.
+ */
+export async function lastReorder(db: Db, customerId: string, orderId?: string): Promise<Reorder | null> {
+  const [order] = orderId
+    ? await db.query<{ id: string; pet_name: string | null; created_at: string }>(
+        `select id, pet_name, created_at from orders where id = $1 and customer_id = $2`,
+        [orderId, customerId],
+      )
+    : await db.query<{ id: string; pet_name: string | null; created_at: string }>(
+        `select id, pet_name, created_at from orders
+          where customer_id = $1 and status <> 'cancelled'
+          order by created_at desc limit 1`,
+        [customerId],
+      );
+  if (!order) return null;
+
+  const rows = await db.query<{
+    variant_id: string;
+    product_name: string;
+    variant_name: string;
+    qty: number;
+    amount_minor: string | null;
+    available: number;
+  }>(
+    `select oi.variant_id, pr.name as product_name, v.name as variant_name, oi.qty,
+            p.amount_minor, coalesce(inv.available,0) as available
+       from order_items oi
+       join seller_orders so on so.id = oi.seller_order_id
+       join variants v on v.id = oi.variant_id
+       join products pr on pr.id = v.product_id
+       left join lateral (
+         select amount_minor from prices where variant_id = v.id and effective_from <= now()
+         order by effective_from desc limit 1
+       ) p on true
+       left join inventory inv on inv.variant_id = v.id
+      where so.order_id = $1
+      order by pr.name, v.name`,
+    [order.id],
+  );
+
+  return {
+    orderId: order.id,
+    petName: order.pet_name,
+    createdAt: new Date(order.created_at).toISOString(),
+    items: rows.map((r) => ({
+      variantId: r.variant_id,
+      name: r.product_name,
+      size: r.variant_name,
+      qty: r.qty,
+      priceMinor: r.amount_minor != null ? BigInt(r.amount_minor) : null,
+      available: r.available,
+    })),
+  };
+}
+
 export interface CustomerOrderRow {
   orderId: string;
   status: string;
