@@ -1,6 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  PawPrint, Bike, MapPin, Pencil, X, Plus, Package, Tags, BarChart3, Palette, Dog, Cat,
+} from "lucide-react";
+
+/** Icono de especie con lucide (Dog / Cat / PawPrint). Nunca emoji. */
+function PetSpeciesIcon({ species, size = 15 }: { species: string; size?: number }) {
+  if (species === "perro") return <Dog size={size} strokeWidth={1.8} />;
+  if (species === "gato") return <Cat size={size} strokeWidth={1.8} />;
+  return <PawPrint size={size} strokeWidth={1.8} />;
+}
 
 interface Merchant { id: string; slug: string; name: string }
 interface SellerOrder { sellerOrderId: string; orderId: string; orderStatus: string; status: string; subtotalMinor: string; currency: string; itemCount: number; petName: string | null; customerName: string | null; customerPhone: string | null; paymentMethod: string | null; paymentStatus: string; channel: string; needsAcceptance: boolean; createdAt: string }
@@ -46,7 +56,7 @@ const NEXT: Record<string, string[]> = {
 };
 const LABEL: Record<string, string> = { preparing: "Preparar", ready: "Listo", in_transit: "En camino", delivered: "Entregado", delivery_failed: "Falló", rejected: "Rechazar" };
 const COLOR: Record<string, string> = { pending: "#b26a00", preparing: "#1a73e8", ready: "#8e24aa", in_transit: "#00796b", delivered: "#2e7d32", delivery_failed: "#c62828", rejected: "#c62828", cancelled: "#777" };
-const CHANNEL_LABEL: Record<string, string> = { web: "🛒 Web", whatsapp: "💬 WhatsApp", telefono: "📞 Teléfono", mostrador: "🏪 Mostrador" };
+const CHANNEL_LABEL: Record<string, string> = { web: "Web", whatsapp: "WhatsApp", telefono: "Teléfono", mostrador: "Mostrador" };
 const METHOD_LABEL: Record<string, string> = { online: "Online", efectivo: "Efectivo", pos: "Tarjeta (POS)", transferencia: "Transferencia" };
 
 // ── Design tokens del panel (identidad Pet Shop: verde de marca + neutros cálidos) ──
@@ -150,7 +160,7 @@ export default function MerchantPanel() {
       <div style={{ background: `radial-gradient(1200px 500px at 50% -10%, ${A_SOFT}, ${SURF})`, minHeight: "100vh", display: "grid", placeItems: "center", padding: 16, fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", color: INK }}>
         <style>{PANEL_CSS}</style>
         <div style={{ ...card, maxWidth: 400, width: "100%", padding: 28, textAlign: "center", boxShadow: "0 12px 40px rgba(16,24,40,.10)" }}>
-          <div style={{ width: 58, height: 58, borderRadius: 16, background: A_SOFT, display: "grid", placeItems: "center", margin: "0 auto 14px", fontSize: 28 }}>🐾</div>
+          <div style={{ width: 58, height: 58, borderRadius: 16, background: A_SOFT, color: A, display: "grid", placeItems: "center", margin: "0 auto 14px" }}><PawPrint size={28} strokeWidth={1.8} /></div>
           <h1 style={{ fontSize: 22, margin: "0 0 4px", letterSpacing: "-.01em" }}>Panel del comercio</h1>
           <p style={{ color: MUT, fontSize: 13.5, marginTop: 0, lineHeight: 1.5 }}>Ingresá tu código de acceso para administrar la tienda.</p>
           <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveToken()} placeholder="Código de acceso" type="password" style={{ ...input, width: "100%", marginTop: 6, padding: 13, textAlign: "center" }} />
@@ -160,9 +170,9 @@ export default function MerchantPanel() {
     );
   }
 
-  const TABS: Array<[typeof tab, string, string]> = [
-    ["catalogo", "🏷️", "Catálogo"], ["pedidos", "📦", "Pedidos"], ["reportes", "📊", "Reportes"],
-    ["diseno", "🎨", "Diseño"], ["adopciones", "🐶", "Adopciones"],
+  const TABS: Array<[typeof tab, typeof Tags, string]> = [
+    ["catalogo", Tags, "Catálogo"], ["pedidos", Package, "Pedidos"], ["reportes", BarChart3, "Reportes"],
+    ["diseno", Palette, "Diseño"], ["adopciones", PawPrint, "Adopciones"],
   ];
 
   return (
@@ -173,7 +183,7 @@ export default function MerchantPanel() {
       <header style={{ position: "sticky", top: 0, zIndex: 20, background: "rgba(255,255,255,.85)", backdropFilter: "blur(8px)", borderBottom: `1px solid ${LINE}` }}>
         <div style={{ maxWidth: 960, margin: "0 auto", padding: "11px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ width: 34, height: 34, borderRadius: 10, background: A_SOFT, display: "grid", placeItems: "center", fontSize: 18 }}>🐾</span>
+            <span style={{ width: 34, height: 34, borderRadius: 10, background: A_SOFT, color: A, display: "grid", placeItems: "center" }}><PawPrint size={18} strokeWidth={1.9} /></span>
             <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
               <span style={{ fontSize: 10.5, color: MUT, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600 }}>Comercio</span>
               <select value={merchantId} onChange={(e) => setMerchantId(e.target.value)} style={{ ...input, fontWeight: 700, padding: "5px 8px", border: "none", background: "transparent", fontSize: 15 }}>
@@ -183,7 +193,7 @@ export default function MerchantPanel() {
             <button onClick={newMerchant} className="mbtn" style={{ ...btnGhost, padding: "6px 10px", fontSize: 12.5 }}>+ Comercio</button>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <a href={`/reparto?tenant=${encodeURIComponent(tenant ?? "")}`} target="_blank" rel="noopener noreferrer" className="mbtn" style={{ ...btnGhost, textDecoration: "none", display: "inline-flex", alignItems: "center", color: A, borderColor: A_SOFT }} title="Pantalla del repartidor (se abre en otra pestaña; instalable en el celular)">🛵 Reparto</a>
+            <a href={`/reparto?tenant=${encodeURIComponent(tenant ?? "")}`} target="_blank" rel="noopener noreferrer" className="mbtn" style={{ ...btnGhost, textDecoration: "none", display: "inline-flex", alignItems: "center", color: A, borderColor: A_SOFT }} title="Pantalla del repartidor (se abre en otra pestaña; instalable en el celular)"><Bike size={16} strokeWidth={1.8} style={{marginRight:6}} />Reparto</a>
             <button onClick={runMigrate} disabled={migrating} className="mbtn" style={btnGhost} title="Aplica migraciones pendientes tras un deploy con cambios de esquema">
               {migrating ? "Migrando…" : "Migrar base"}
             </button>
@@ -194,9 +204,9 @@ export default function MerchantPanel() {
 
       <main style={{ maxWidth: 960, margin: "0 auto", padding: "18px 16px 48px" }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#eceeef", padding: 5, borderRadius: 12, width: "fit-content", maxWidth: "100%", flexWrap: "wrap" }}>
-        {TABS.map(([t, icon, label]) => (
-          <button key={t} onClick={() => setTab(t)} className={`mbtn mtab${tab === t ? " mtab-on" : ""}`}>
-            <span style={{ marginRight: 6 }}>{icon}</span>{label}
+        {TABS.map(([t, Ico, label]) => (
+          <button key={t} onClick={() => setTab(t)} className={`mbtn mtab${tab === t ? " mtab-on" : ""}`} style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+            <Ico size={16} strokeWidth={1.9} />{label}
           </button>
         ))}
       </div>
@@ -302,8 +312,8 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
             {cats.map((c) => (
               <span key={c.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#eef0f3", borderRadius: 999, padding: "4px 6px 4px 12px", fontSize: 13, fontWeight: 600, color: "#445" }}>
                 {c.name}
-                <button onClick={() => renameCategory(c.id, c.name)} title="Renombrar" style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 12, padding: "0 2px" }}>✏️</button>
-                <button onClick={() => removeCategory(c.id, c.name)} title="Borrar" style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 12, padding: "0 2px", color: "#c62828" }}>✕</button>
+                <button onClick={() => renameCategory(c.id, c.name)} title="Renombrar" style={{ border: "none", background: "transparent", cursor: "pointer", padding: "0 2px", display: "inline-flex" }}><Pencil size={13} strokeWidth={1.9} /></button>
+                <button onClick={() => removeCategory(c.id, c.name)} title="Borrar" style={{ border: "none", background: "transparent", cursor: "pointer", padding: "0 2px", color: "#c62828", display: "inline-flex" }}><X size={13} strokeWidth={2} /></button>
               </span>
             ))}
           </div>
@@ -361,7 +371,7 @@ function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; o
           {it.imageUrl
             // eslint-disable-next-line @next/next/no-img-element
             ? <img src={it.imageUrl} alt={it.productName} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #eee" }} />
-            : <span style={{ width: 40, height: 40, borderRadius: 6, background: "#f2f2f2", display: "grid", placeItems: "center", fontSize: 16 }}>🐾</span>}
+            : <span style={{ width: 40, height: 40, borderRadius: 6, background: "#f2f2f2", color: "#9aa2ab", display: "grid", placeItems: "center" }}><Package size={18} strokeWidth={1.7} /></span>}
           <span><strong>{it.productName}</strong> <span style={{ color: "#999", fontSize: 13 }}>{it.variantName} · {it.sku}</span></span>
         </span>
         <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -381,7 +391,7 @@ function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; o
         <div style={{ display: "grid", gap: 8 }}>
           <textarea placeholder="Descripción del producto" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} style={{ ...input, width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ fontSize: 12, color: "#777" }}>🍖 Alimento:</span>
+            <span style={{ fontSize: 12, color: "#777" }}>Alimento:</span>
             <label style={{ fontSize: 12, color: "#777" }}>kcal/kg <input value={kcal} onChange={(e) => setKcal(e.target.value.replace(/[^0-9]/g, ""))} placeholder="3600" style={{ ...input, width: 90 }} /></label>
             <label style={{ fontSize: 12, color: "#777" }}>Proteína % <input value={protein} onChange={(e) => setProtein(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="26" style={{ ...input, width: 70 }} /></label>
             <label style={{ fontSize: 12, color: "#777" }}>kg del paquete <input value={netKg} onChange={(e) => setNetKg(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="15" style={{ ...input, width: 70 }} /></label>
@@ -455,13 +465,13 @@ function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | nu
   return (
     <div>
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <button onClick={() => setShowNew(true)} className="mbtn" style={btn}>＋ Nuevo pedido</button>
+        <button onClick={() => setShowNew(true)} className="mbtn" style={{ ...btn, display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={15} strokeWidth={2} />Nuevo pedido</button>
         <button onClick={load} className="mbtn" style={btnGhost}>{loading ? "…" : "Actualizar"}</button>
       </div>
 
       {/* PIN de reparto: lo usa el cadete para entrar a /reparto (sin el token del panel). */}
       <div style={{ ...card, marginBottom: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 13.5, fontWeight: 600 }}>🛵 PIN de reparto:</span>
+        <span style={{ fontSize: 13.5, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}><Bike size={16} strokeWidth={1.8} />PIN de reparto:</span>
         <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="ej: 2468" maxLength={32}
           style={{ ...input, width: 130 }} />
         <button onClick={savePin} className="mbtn" style={btn} disabled={pin === pinSaved}>Guardar</button>
@@ -591,7 +601,7 @@ function DeliveryZonesBar({ tenant, token, onError }: { tenant: string | null; t
   return (
     <div style={{ ...card, marginBottom: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setOpen((v) => !v)}>
-        <span style={{ fontSize: 13.5, fontWeight: 600 }}>📍 Zonas de reparto {zones.length > 0 && <span style={{ color: MUT, fontWeight: 400 }}>({zones.length})</span>}</span>
+        <span style={{ fontSize: 13.5, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}><MapPin size={15} strokeWidth={1.8} />Zonas de reparto {zones.length > 0 && <span style={{ color: MUT, fontWeight: 400 }}>({zones.length})</span>}</span>
         <span style={{ color: MUT }}>{open ? "▲" : "▼"}</span>
       </div>
       {open && (
@@ -620,7 +630,7 @@ function ZoneRow({ z, onSave, onDelete }: { z: Zone; onSave: (z: Zone, price: st
       <input value={eta} onChange={(e) => setEta(e.target.value.replace(/[^0-9]/g, ""))} placeholder="min" style={input} title="Tiempo estimado" />
       <span style={{ display: "flex", gap: 6 }}>
         <button onClick={() => onSave(z, price, eta)} className="mbtn" style={{ ...btn, opacity: dirty ? 1 : 0.5 }} disabled={!dirty}>✓</button>
-        <button onClick={() => onDelete(z)} className="mbtn" style={btnDanger}>✕</button>
+        <button onClick={() => onDelete(z)} className="mbtn" style={{ ...btnDanger, display: "inline-flex", alignItems: "center" }} aria-label="Eliminar"><X size={15} strokeWidth={2} /></button>
       </span>
     </div>
   );
@@ -738,7 +748,7 @@ function ManualOrderForm({ tenant, token, merchantId, onClose, onCreated, onErro
           <input style={input} placeholder="Teléfono / WhatsApp" value={phone} onChange={(e) => setPhone(e.target.value)} />
           <input style={input} placeholder="Nombre del cliente" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
         </div>
-        {greetName && <div style={{ fontSize: 12.5, color: "#2e7d32", fontWeight: 600, marginTop: 6 }}>Cliente conocido: {greetName} 🐾</div>}
+        {greetName && <div style={{ fontSize: 12.5, color: "#2e7d32", fontWeight: 600, marginTop: 6 }}>Cliente conocido: {greetName}</div>}
 
         {/* 2. Mascota */}
         <label style={lbl}>2 · ¿Para quién es el pedido?</label>
@@ -750,18 +760,18 @@ function ManualOrderForm({ tenant, token, merchantId, onClose, onCreated, onErro
                 <button key={p.id} type="button" onClick={() => setPetSel(on ? "" : p.id)}
                   style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 999, cursor: "pointer",
                     border: `1.5px solid ${on ? "#2e7d32" : "#d4d6dc"}`, background: on ? "#e6f4ea" : "white", fontSize: 13, fontWeight: 600 }}>
-                  {({ perro: "🐶", gato: "🐱" } as Record<string, string>)[p.species] ?? "🐾"} {p.name}
+                  <PetSpeciesIcon species={p.species} /> {p.name}
                 </button>
               );
             })}
-            <button type="button" onClick={() => setPetSel("")} style={{ padding: "7px 12px", borderRadius: 999, cursor: "pointer", border: `1.5px dashed ${addingNew ? "#2e7d32" : "#d4d6dc"}`, background: "white", fontSize: 13, fontWeight: 600, color: "#5b6270" }}>＋ Mascota</button>
+            <button type="button" onClick={() => setPetSel("")} style={{ padding: "7px 12px", borderRadius: 999, cursor: "pointer", border: `1.5px dashed ${addingNew ? "#2e7d32" : "#d4d6dc"}`, background: "white", fontSize: 13, fontWeight: 600, color: "#5b6270", display: "inline-flex", alignItems: "center", gap: 5 }}><Plus size={14} strokeWidth={2} />Mascota</button>
           </div>
         )}
         {addingNew && (
           <div className="mform-grid" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", gap: 8 }}>
             <input style={input} placeholder="Nombre (ej: Bruno)" value={newPet.name} onChange={(e) => setNewPet({ ...newPet, name: e.target.value })} />
             <select style={input} value={newPet.species} onChange={(e) => setNewPet({ ...newPet, species: e.target.value })}>
-              <option value="perro">🐶 Perro</option><option value="gato">🐱 Gato</option><option value="otro">🐾 Otro</option>
+              <option value="perro">Perro</option><option value="gato">Gato</option><option value="otro">Otro</option>
             </select>
             <input style={input} placeholder="Peso kg (opc.)" value={newPet.weight} onChange={(e) => setNewPet({ ...newPet, weight: e.target.value })} />
           </div>
@@ -812,7 +822,7 @@ function ManualOrderForm({ tenant, token, merchantId, onClose, onCreated, onErro
             <option value="pendiente">Pago pendiente</option><option value="pagado">Ya pagó</option>
           </select>
           <select style={input} value={channel} onChange={(e) => setChannel(e.target.value)}>
-            <option value="whatsapp">💬 WhatsApp</option><option value="telefono">📞 Teléfono</option><option value="mostrador">🏪 Mostrador</option>
+            <option value="whatsapp">WhatsApp</option><option value="telefono">Teléfono</option><option value="mostrador">Mostrador</option>
           </select>
         </div>
 
@@ -1235,7 +1245,7 @@ function AdoptionsTab({ tenant, token, onError }: { tenant: string | null; token
                 {a.imageUrl
                   // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={a.imageUrl} alt={a.name} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, border: "1px solid #eee" }} />
-                  : <span style={{ width: 44, height: 44, borderRadius: 8, background: "#f2f2f2", display: "grid", placeItems: "center", fontSize: 18 }}>🐾</span>}
+                  : <span style={{ width: 44, height: 44, borderRadius: 8, background: "#f2f2f2", color: "#9aa2ab", display: "grid", placeItems: "center" }}><PawPrint size={20} strokeWidth={1.7} /></span>}
                 <span>
                   <strong>{a.name}</strong> <span style={{ color: "#999", fontSize: 13 }}>{a.species}{a.age ? ` · ${a.age}` : ""}</span>
                   {a.status === "adopted" && <span style={{ marginLeft: 8, background: "#e6f4ea", color: "#2e7d32", borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 600 }}>Adoptado</span>}

@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ShoppingCart, Check as LuCheck, Search, Menu, User, MapPin, Plus, RotateCcw,
+  Truck, Package, Scale, Tag, PawPrint, HeartHandshake, BarChart3, Dog, Cat,
+} from "lucide-react";
 
 // ── Tipos que provee el server component (page.tsx) ────────────────────────────
 export interface StoreVariant {
@@ -563,20 +567,12 @@ function WaIcon({ size = 20 }: { size?: number }) {
     </svg>
   );
 }
+// Envuelven lucide-react para no tocar los call-sites existentes (misma familia de iconos).
 function CartIcon({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="9" cy="20" r="1.3" /><circle cx="18" cy="20" r="1.3" />
-      <path d="M2 3h2.2l2 12.5h11l2-9H6.3" />
-    </svg>
-  );
+  return <ShoppingCart size={size} strokeWidth={1.9} aria-hidden />;
 }
-function Check({ size = 16, sw = 2.4 }: { size?: number; sw?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M4 12.5l5 5L20 6.5" />
-    </svg>
-  );
+function Check({ size = 16, sw = 2 }: { size?: number; sw?: number }) {
+  return <LuCheck size={size} strokeWidth={sw} aria-hidden />;
 }
 
 // ── Placeholder de imagen (foto real cuando exista) ─────────────────────────────
@@ -625,7 +621,7 @@ function Header(props: {
     <img src={props.logoUrl} alt={props.displayName} style={{ height: 46, width: "auto", maxWidth: 190, objectFit: "contain", display: "block" }} />
   ) : (
     <>
-      <span style={{ width: 42, height: 42, borderRadius: 12, background: C.iconBg, color: G, display: "grid", placeItems: "center", flexShrink: 0 }}><IconHeartPaw s={26} /></span>
+      <span style={{ width: 42, height: 42, borderRadius: 12, background: C.iconBg, color: G, display: "grid", placeItems: "center", flexShrink: 0 }}><PawPrint size={24} strokeWidth={1.9} /></span>
       <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.05 }}>
         <span style={{ fontSize: 19, fontWeight: 800, color: G, letterSpacing: ".01em" }}>{props.displayName.replace(/gualeguay/i, "").trim().toUpperCase() || "PET SHOP"}</span>
         <span style={{ fontSize: 10.5, fontWeight: 500, color: C.mute, marginTop: 3 }}>Más que mascotas, familia</span>
@@ -636,7 +632,7 @@ function Header(props: {
     <header className="sf-header" style={{ position: "sticky", top: 0, zIndex: 40, background: C.white, borderBottom: `1px solid ${C.border}`, padding: "12px 24px", display: "flex", gap: 28, alignItems: "center" }}>
       {/* Hamburguesa (solo mobile) */}
       <button className="sf-burger" onClick={() => setMenu((v) => !v)} aria-label="Menú" style={{ display: "none", border: "none", background: "transparent", cursor: "pointer", color: C.text, padding: 4 }}>
-        <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+        <Menu size={24} strokeWidth={2} />
       </button>
 
       {/* Logo */}
@@ -656,7 +652,7 @@ function Header(props: {
       {/* Derecha */}
       <div className="sf-right" style={{ display: "flex", gap: 16, alignItems: "center" }}>
         <div className="sf-search" style={{ display: "flex", alignItems: "center", gap: 8, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 999, padding: "7px 14px" }}>
-          <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={C.mute} strokeWidth={2} aria-hidden><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeLinecap="round" /></svg>
+          <Search size={16} strokeWidth={2} color={C.mute} aria-hidden />
           <input value={props.query} onChange={(e) => props.onSearch(e.target.value)} placeholder="Buscar productos" style={{ border: "none", outline: "none", background: "transparent", fontSize: 13, width: 150, fontFamily: FONT, color: C.text }} />
         </div>
         <AccountMenu G={G} tenant={props.tenant} showPets={props.showPets} factors={props.factors} />
@@ -749,7 +745,7 @@ function QuickReorder({ G, reorder, onRepeat }: { G: string; reorder: Reorder; o
   return (
     <section style={{ background: C.tint, border: `1px solid ${C.border}`, borderRadius: 18, padding: "20px 22px", marginBottom: 26, display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
       <div style={{ flex: 1, minWidth: 220 }}>
-        <div style={{ fontSize: 12.5, color: G, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}>Compra rápida 🔁</div>
+        <div style={{ fontSize: 12.5, color: G, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}><RotateCcw size={13} strokeWidth={2} style={{verticalAlign:"-2px",marginRight:5}} />Compra rápida</div>
         <div style={{ fontSize: 19, fontWeight: 700, marginTop: 3 }}>
           {forPet ? <>¿Repetimos lo de {forPet}?</> : <>¿Repetimos tu última compra?</>}
         </div>
@@ -765,21 +761,14 @@ function QuickReorder({ G, reorder, onRepeat }: { G: string; reorder: Reorder; o
   );
 }
 
-// Íconos lineales (permitidos en beneficios / adopciones / comparador; nunca reemplazan fotos).
-function IconTruck({ s = 26 }: { s?: number }) { return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h13v10H1z" /><path d="M14 6h4l3 3v4h-7z" /><circle cx="5.5" cy="17" r="2" /><circle cx="17.5" cy="17" r="2" /></svg>; }
-function IconMoon({ s = 26 }: { s?: number }) { return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>; }
-function IconShield({ s = 26 }: { s?: number }) { return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V5z" /><path d="M9 12l2 2 4-4" /></svg>; }
-function IconHeadset({ s = 26 }: { s?: number }) { return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M4 13v-1a8 8 0 0 1 16 0v1" /><path d="M4 13a2 2 0 0 1 2 2v2a2 2 0 0 1-4 0v-2a2 2 0 0 1 2-2z" /><path d="M20 13a2 2 0 0 1 2 2v2a2 2 0 0 1-4 0v-2a2 2 0 0 1 2-2z" /><path d="M20 17v1a3 3 0 0 1-3 3h-3" /></svg>; }
-function IconHeartPaw({ s = 44 }: { s?: number }) { return <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-8-5.2-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 5.8-8 11-8 11z" opacity=".18" /><path fill="none" stroke="currentColor" strokeWidth={1.5} d="M12 20.3S4.8 15.6 4.8 10.4A3.9 3.9 0 0 1 12 8.1a3.9 3.9 0 0 1 7.2 2.3c0 5.2-7.2 9.9-7.2 9.9z" /><g fill="currentColor"><circle cx="10" cy="10.4" r="1" /><circle cx="14" cy="10.4" r="1" /><circle cx="8.6" cy="12.4" r=".9" /><circle cx="15.4" cy="12.4" r=".9" /><path d="M12 12.8c-1.5 0-2.7 1.1-2.7 2.3 0 .9.8 1.3 2.7 1.3s2.7-.4 2.7-1.3c0-1.2-1.2-2.3-2.7-2.3z" /></g></svg>; }
-function IconBowl({ s = 40 }: { s?: number }) { return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><path d="M3 11h18" /><path d="M4 11a8 8 0 0 0 16 0" /><path d="M12 11V7" /><path d="M9 7c0-1.7 1.3-3 3-3s3 1.3 3 3" /></svg>; }
-
+// Beneficios: textos por defecto + icono de lucide por posición (misma familia de iconos).
 const DEFAULT_BENEFITS: Array<{ t: string; s: string }> = [
-  { t: "Envíos en el mismo día", s: "Pedidos antes de las 18 hs" },
-  { t: "Envío de Auxilio", s: "Nocturno y feriados" },
-  { t: "Compra 100% segura", s: "Mercado Pago" },
-  { t: "Atención personalizada", s: "Te asesoramos siempre" },
+  { t: "Envío de Auxilio", s: "Emergencias 20:00–23:00, feriados 10:00–22:00" },
+  { t: "Bolsas cerradas", s: "10 / 15 kg – las mejores marcas" },
+  { t: "Fraccionado por kilo", s: "1,5 / 3 / 5 kg" },
+  { t: "Ofertas todas las semanas", s: "Precios especiales" },
 ];
-const BENEFIT_ICONS = [IconTruck, IconMoon, IconShield, IconHeadset];
+const BENEFIT_ICONS = [Truck, Package, Scale, Tag];
 
 function HomeView(props: {
   G: string; products: StoreProduct[]; categories: { name: string; count: number; imageUrl?: string }[]; config: StoreConfig; threshold: number; content: StoreContent;
@@ -814,7 +803,7 @@ function HomeView(props: {
             onError={(e) => onImgError(e, "hero-petshop", 1080, 900)} />
           <div style={{ position: "absolute", right: 22, bottom: 22, width: 128, height: 128, borderRadius: "50%", background: G, color: C.white, boxShadow: "0 10px 28px rgba(0,0,0,.22)", display: "grid", placeItems: "center", textAlign: "center", padding: 12 }}>
             <span>
-              <span style={{ display: "block" }}><IconTruck s={20} /></span>
+              <span style={{ display: "block" }}><Truck size={20} strokeWidth={1.9} /></span>
               <span style={{ display: "block", fontSize: 15, fontWeight: 800, marginTop: 2, lineHeight: 1 }}>ENVÍOS<br />GRATIS</span>
               <span style={{ display: "block", fontSize: 8.5, opacity: .92, marginTop: 3 }}>en compras superiores<br />a {money(props.threshold)}</span>
             </span>
@@ -822,13 +811,13 @@ function HomeView(props: {
         </div>
       </section>
 
-      {/* Beneficios (íconos SVG lineales) */}
+      {/* Beneficios (íconos lucide, verde, lineal) */}
       <div className="sf-benefits" style={{ marginTop: 18, background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: "18px 24px", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 18 }}>
         {benefits.map((b, i) => {
           const Ico = BENEFIT_ICONS[i % BENEFIT_ICONS.length]!;
           return (
             <div key={i} style={{ display: "flex", gap: 12, alignItems: "center" }}>
-              <span style={{ color: G, flexShrink: 0 }}><Ico s={26} /></span>
+              <span style={{ color: G, flexShrink: 0 }}><Ico size={24} strokeWidth={1.9} /></span>
               <span style={{ display: "flex", flexDirection: "column" }}>
                 <span style={{ fontSize: 13.5, fontWeight: 700 }}>{b.t}</span>
                 <span style={{ fontSize: 12, color: C.mute }}>{b.s}</span>
@@ -867,7 +856,7 @@ function HomeView(props: {
       {props.adoptionsLabel && (
         <section className="sf-adopt" style={{ marginTop: 56, background: C.beige, borderRadius: 20, display: "grid", gridTemplateColumns: "1fr 1fr", alignItems: "stretch", overflow: "hidden" }}>
           <div style={{ padding: "40px 46px", display: "flex", gap: 22, alignItems: "center" }}>
-            <span style={{ color: G, flexShrink: 0 }}><IconHeartPaw s={68} /></span>
+            <span style={{ color: G, flexShrink: 0 }}><HeartHandshake size={58} strokeWidth={1.6} /></span>
             <div>
               <h2 style={{ margin: 0, fontSize: 27, fontWeight: 800, letterSpacing: "-.01em" }}>También podés ayudar</h2>
               <p style={{ fontSize: 15, color: C.text2, marginTop: 6 }}>Conocé mascotas que buscan un hogar</p>
@@ -886,7 +875,7 @@ function HomeView(props: {
       {props.comparatorEnabled && (
         <section style={{ marginTop: 22, background: C.tint, borderRadius: 20, padding: "34px 40px", display: "flex", gap: 22, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-            <span style={{ color: G, flexShrink: 0 }}><IconBowl s={40} /></span>
+            <span style={{ color: G, flexShrink: 0 }}><BarChart3 size={38} strokeWidth={1.8} /></span>
             <div>
               <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>¿No sabés qué alimento elegir?</h2>
               <p style={{ fontSize: 14.5, color: C.text2, marginTop: 5, maxWidth: 560 }}>Compará alimentos por el costo por día según el peso y las necesidades de tu mascota.</p>
@@ -1030,7 +1019,12 @@ function RadioCard({ G, on, title, sub, price, onClick }: { G: string; on: boole
   );
 }
 
-const SPECIES_EMOJI: Record<string, string> = { perro: "🐶", gato: "🐱", otro: "🐾" };
+// Icono de especie con lucide (Dog / Cat / PawPrint). Nunca emoji.
+function SpeciesIcon({ species, size = 16 }: { species: string; size?: number }) {
+  if (species === "perro") return <Dog size={size} strokeWidth={1.8} />;
+  if (species === "gato") return <Cat size={size} strokeWidth={1.8} />;
+  return <PawPrint size={size} strokeWidth={1.8} />;
+}
 
 function CheckoutView(props: {
   G: string; items: [string, CartLine][]; config: StoreConfig; quote: Quote | null;
@@ -1085,7 +1079,7 @@ function CheckoutView(props: {
               ) : (
                 <button type="button" onClick={props.onShareLocation} disabled={props.geoBusy}
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1.5px dashed ${C.border}`, background: C.white, borderRadius: 10, padding: "10px 14px", fontSize: 13.5, fontWeight: 600, color: C.text, cursor: "pointer", fontFamily: FONT }}>
-                  📍 {props.geoBusy ? "Obteniendo ubicación…" : "Compartir mi ubicación (opcional)"}
+                  <MapPin size={16} strokeWidth={1.9} />{props.geoBusy ? "Obteniendo ubicación…" : "Compartir mi ubicación (opcional)"}
                 </button>
               )}
               <div style={{ fontSize: 11.5, color: C.mute, marginTop: 6 }}>Ayuda al repartidor a llegar exacto. No es obligatorio.</div>
@@ -1096,9 +1090,9 @@ function CheckoutView(props: {
               mostramos sus mascotas. Si no, capturamos el nombre de forma natural (no obligatorio). */}
           <div style={card}>
             {props.greetName && (
-              <div style={{ fontSize: 13.5, color: G, fontWeight: 600, marginBottom: 8 }}>¡Hola de nuevo, {props.greetName}! 🐾</div>
+              <div style={{ fontSize: 13.5, color: G, fontWeight: 600, marginBottom: 8 }}>¡Hola de nuevo, {props.greetName}!</div>
             )}
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{hasPets ? "¿Para quién compramos hoy? 🐾" : "¿Cómo se llama tu mascota? 🐾"}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{hasPets ? "¿Para quién compramos hoy?" : "¿Cómo se llama tu mascota?"}</div>
             <div style={{ fontSize: 12.5, color: C.mute, marginBottom: 14 }}>
               {hasPets ? "Elegí la mascota del pedido (o sumá una nueva)." : "Nos ayuda a cuidarla mejor y a avisarte cuando se le esté por acabar el alimento."}
             </div>
@@ -1111,14 +1105,14 @@ function CheckoutView(props: {
                     <button key={p.id} type="button" onClick={() => props.setPetSel(on ? "" : p.id)}
                       style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", borderRadius: 999, cursor: "pointer",
                         border: `1.5px solid ${on ? G : C.border}`, background: on ? C.tint : C.white, fontSize: 13.5, fontWeight: 600, color: on ? G : C.text }}>
-                      <span style={{ fontSize: 16 }}>{SPECIES_EMOJI[p.species] ?? "🐾"}</span>{p.name}
+                      <SpeciesIcon species={p.species} size={16} />{p.name}
                     </button>
                   );
                 })}
                 <button type="button" onClick={() => props.setPetSel("")}
                   style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 999, cursor: "pointer",
                     border: `1.5px dashed ${addingNew ? G : C.border}`, background: C.white, fontSize: 13.5, fontWeight: 600, color: addingNew ? G : C.mute }}>
-                  ＋ Agregar mascota
+                  <Plus size={15} strokeWidth={2} /> Agregar mascota
                 </button>
               </div>
             )}
@@ -1127,9 +1121,9 @@ function CheckoutView(props: {
               <div className="sf-checkout-grid2" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", gap: 10 }}>
                 <input style={input} placeholder="Nombre (ej: Bruno)" value={props.newPet.name} onChange={(e) => props.setNewPet({ ...props.newPet, name: e.target.value })} />
                 <select style={input} value={props.newPet.species} onChange={(e) => props.setNewPet({ ...props.newPet, species: e.target.value })}>
-                  <option value="perro">🐶 Perro</option>
-                  <option value="gato">🐱 Gato</option>
-                  <option value="otro">🐾 Otro</option>
+                  <option value="perro">Perro</option>
+                  <option value="gato">Gato</option>
+                  <option value="otro">Otro</option>
                 </select>
                 <input style={input} placeholder="Peso kg (opcional)" inputMode="decimal" value={props.newPet.weight} onChange={(e) => props.setNewPet({ ...props.newPet, weight: e.target.value })} />
               </div>
@@ -1206,11 +1200,11 @@ function DoneView({ G, tenant, orderId, totalMinor, petName, onHome }: { G: stri
     <div style={{ textAlign: "center" }}>
       <div style={{ width: 74, height: 74, borderRadius: "50%", background: C.iconBg, color: G, display: "grid", placeItems: "center", margin: "0 auto" }}><Check size={34} sw={2.6} /></div>
       <h1 style={{ fontSize: 32, fontWeight: 700, marginTop: 24 }}>
-        {forPet ? <>¡Listo! El pedido de {forPet} está confirmado ❤️</> : <>¡Pedido confirmado! ❤️</>}
+        {forPet ? <>¡Listo! El pedido de {forPet} está confirmado</> : <>¡Pedido confirmado!</>}
       </h1>
       <p style={{ fontSize: 15.5, color: C.text2, lineHeight: 1.65 }}>Pedido <b>#{orderId.slice(0, 8)}</b> por <b>{money(totalMinor)}</b>. Te escribimos por WhatsApp para coordinar la entrega en Gualeguay.</p>
       <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginTop: 28 }}>
-        <a className="sf-btn" href={trackUrl} style={{ ...primaryBtn(G), padding: "14px 30px", textDecoration: "none" }}>SEGUIR MI PEDIDO 🐾</a>
+        <a className="sf-btn" href={trackUrl} style={{ ...primaryBtn(G), padding: "14px 30px", textDecoration: "none" }}>SEGUIR MI PEDIDO</a>
         <button className="sf-btn" onClick={onHome} style={{ ...outlineBtn(G), padding: "14px 30px" }}>SEGUIR COMPRANDO</button>
       </div>
     </div>
@@ -1385,7 +1379,7 @@ function FoodCalculator({ G, kcalPerKg, netWeightKg, factors }: { G: string; kca
 
   return (
     <div style={{ marginTop: 24, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, background: C.surf }}>
-      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>🍖 ¿Cuánto le dura?</div>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>¿Cuánto le dura?</div>
       <div style={{ fontSize: 12.5, color: C.mute, marginBottom: 10 }}>Calculamos el consumo según el peso y la etapa de tu mascota.</div>
       {pets.length > 0 && (
         <select onChange={(e) => pickPet(e.target.value)} defaultValue="" style={{ ...input, marginBottom: 8 }}>
@@ -1411,7 +1405,7 @@ function FoodCalculator({ G, kcalPerKg, netWeightKg, factors }: { G: string; kca
 }
 
 // ── Adopciones / callejeritos ────────────────────────────────────────────────────
-const SPECIES_LABEL: Record<string, string> = { perro: "🐶 Perro", gato: "🐱 Gato", otro: "🐾 Mascota" };
+const SPECIES_LABEL: Record<string, string> = { perro: "Perro", gato: "Gato", otro: "Mascota" };
 
 function AdoptionsView({ G, title, adoptions, storeWhatsapp }: { G: string; title: string; adoptions: StoreAdoption[]; storeWhatsapp: string }) {
   return (
@@ -1477,7 +1471,7 @@ function AccountMenu({ G, tenant, showPets, factors }: { G: string; tenant: stri
   return (
     <span style={{ position: "relative" }}>
       <button onClick={() => setOpen((v) => !v)} aria-label="Cuenta" style={{ border: "none", background: "transparent", cursor: "pointer", padding: 0, display: "grid", placeItems: "center" }}>
-        <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={C.nav} strokeWidth={1.8} aria-hidden><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" strokeLinecap="round" /></svg>
+        <User size={22} strokeWidth={1.8} color={C.nav} aria-hidden />
       </button>
       {open && (
         <div style={{ position: "absolute", right: 0, top: 34, background: "white", color: C.text, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12, width: 240, zIndex: 45, boxShadow: "0 10px 30px rgba(0,0,0,.14)" }}>
@@ -1485,7 +1479,7 @@ function AccountMenu({ G, tenant, showPets, factors }: { G: string; tenant: stri
             <>
               <div style={{ fontSize: 13, color: C.mute, marginBottom: 8, wordBreak: "break-all" }}>{email}</div>
               <button onClick={() => { setModal("orders"); setOpen(false); }} style={{ ...primaryBtn(G), width: "100%", padding: 10, marginBottom: 6 }}>Mis pedidos</button>
-              {showPets && <button onClick={() => { setModal("pets"); setOpen(false); }} style={{ ...outlineBtn(G), width: "100%", padding: 10, marginBottom: 6 }}>🐾 Mis mascotas</button>}
+              {showPets && <button onClick={() => { setModal("pets"); setOpen(false); }} style={{ ...outlineBtn(G), width: "100%", padding: 10, marginBottom: 6 }}><PawPrint size={15} strokeWidth={1.8} style={{verticalAlign:"-3px",marginRight:6}} />Mis mascotas</button>}
               <button onClick={logout} style={{ border: "none", background: "transparent", color: C.mute, cursor: "pointer", fontSize: 13, width: "100%", padding: 6 }}>Cerrar sesión</button>
             </>
           ) : (

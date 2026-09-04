@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  Bike, RefreshCw, CheckCircle2, Check, MapPin, StickyNote, Clock,
+  Navigation, MessageCircle, Banknote, CreditCard, Landmark,
+} from "lucide-react";
 
 interface DeliveryItem { name: string; variant: string; qty: number }
 interface DeliveryOrder {
@@ -95,7 +99,7 @@ export default function RepartoClient() {
   const waLink = (o: DeliveryOrder) => {
     const digits = (o.customerPhone ?? "").replace(/\D+/g, "");
     if (!digits) return null;
-    const msg = `¡Hola${o.customerName ? " " + o.customerName : ""}! Soy del Pet Shop, estoy llevando ${o.petName ? "el pedido de " + o.petName : "tu pedido"} 🐾`;
+    const msg = `¡Hola${o.customerName ? " " + o.customerName : ""}! Soy del Pet Shop, estoy llevando ${o.petName ? "el pedido de " + o.petName : "tu pedido"}`;
     return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
   };
 
@@ -103,7 +107,7 @@ export default function RepartoClient() {
     return (
       <div style={{ fontFamily: "system-ui, sans-serif", background: C.bg, minHeight: "100vh", display: "grid", placeItems: "center", padding: 20 }}>
         <div style={{ background: C.white, borderRadius: 16, padding: 26, width: "100%", maxWidth: 360, boxShadow: "0 4px 24px rgba(0,0,0,.08)" }}>
-          <div style={{ fontSize: 34, textAlign: "center" }}>🛵</div>
+          <div style={{ textAlign: "center", color: C.green }}><Bike size={34} strokeWidth={1.8} /></div>
           <h1 style={{ fontSize: 22, textAlign: "center", margin: "8px 0 4px", color: C.ink }}>Reparto</h1>
           <p style={{ color: C.mut, fontSize: 13.5, textAlign: "center", marginTop: 0 }}>Ingresá tu PIN de reparto.</p>
           <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveToken()}
@@ -118,17 +122,17 @@ export default function RepartoClient() {
     <div style={{ fontFamily: "system-ui, sans-serif", background: C.bg, minHeight: "100vh", color: C.ink }}>
       <header style={{ position: "sticky", top: 0, zIndex: 10, background: C.green, color: "white", padding: "16px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>Entregas de hoy 🐾</div>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>Entregas de hoy</div>
           <div style={{ fontSize: 12.5, opacity: 0.9 }}>{orders.length} para repartir</div>
         </div>
-        <button onClick={load} style={{ background: "rgba(255,255,255,.2)", color: "white", border: "none", borderRadius: 10, padding: "9px 14px", fontWeight: 600, fontSize: 14 }}>{loading ? "…" : "↻"}</button>
+        <button onClick={load} style={{ background: "rgba(255,255,255,.2)", color: "white", border: "none", borderRadius: 10, padding: "9px 14px", fontWeight: 600, fontSize: 14 }} aria-label="Actualizar">{loading ? "…" : <RefreshCw size={16} strokeWidth={2} />}</button>
       </header>
 
       <main style={{ padding: 14, maxWidth: 560, margin: "0 auto" }}>
         {error && <div style={{ background: "#fdecea", color: "#b3261e", borderRadius: 10, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>{error}</div>}
         {orders.length === 0 && !loading ? (
           <div style={{ textAlign: "center", color: C.mut, padding: "60px 20px" }}>
-            <div style={{ fontSize: 40 }}>✅</div>
+            <div style={{ color: C.green }}><CheckCircle2 size={40} strokeWidth={1.7} /></div>
             <p>No hay entregas pendientes.<br />Los pedidos aparecen acá cuando el local los marca <b>Listos</b>.</p>
           </div>
         ) : (
@@ -150,9 +154,9 @@ export default function RepartoClient() {
 
                     {/* Dirección + referencias */}
                     <div style={{ marginTop: 12, fontSize: 14, lineHeight: 1.5 }}>
-                      <div>📍 <b>{o.addressStreet ?? "Sin dirección"}</b>{o.addressZone ? ` · ${o.addressZone}` : ""}{o.addressLat != null && <span style={{ color: C.green, fontWeight: 600 }}> · ubicación exacta ✓</span>}</div>
-                      {o.addressNotes && <div style={{ color: C.mut, fontSize: 13 }}>📝 {o.addressNotes}</div>}
-                      {o.deliveryWindow && <div style={{ color: C.mut, fontSize: 12.5, marginTop: 2 }}>🕒 {o.deliveryWindow}</div>}
+                      <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}><MapPin size={16} strokeWidth={1.9} style={{flexShrink:0,marginTop:2}} /><span><b>{o.addressStreet ?? "Sin dirección"}</b>{o.addressZone ? ` · ${o.addressZone}` : ""}{o.addressLat != null && <span style={{ color: C.green, fontWeight: 600 }}> · ubicación exacta</span>}</span></div>
+                      {o.addressNotes && <div style={{ color: C.mut, fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}><StickyNote size={14} strokeWidth={1.8} style={{flexShrink:0}} />{o.addressNotes}</div>}
+                      {o.deliveryWindow && <div style={{ color: C.mut, fontSize: 12.5, marginTop: 2, display: "flex", gap: 6, alignItems: "center" }}><Clock size={13} strokeWidth={1.8} style={{flexShrink:0}} />{o.deliveryWindow}</div>}
                     </div>
 
                     {/* Items */}
@@ -167,35 +171,36 @@ export default function RepartoClient() {
                       <span style={{ fontSize: 13, color: C.mut }}>A cobrar</span>
                       <span style={{ fontSize: 20, fontWeight: 800, color: C.green }}>{money(o.amountToCollectMinor)}</span>
                     </div>
-                    <div style={{ fontSize: 12.5, marginTop: 2, color: paid ? C.green : C.warn, fontWeight: 600 }}>
-                      {paid ? `✓ Ya pagó${o.paymentMethod ? ` (${METHOD[o.paymentMethod] ?? o.paymentMethod})` : ""}` : `Pago pendiente${o.paymentMethod ? ` · ${METHOD[o.paymentMethod] ?? o.paymentMethod}` : ""}`}
+                    <div style={{ fontSize: 12.5, marginTop: 2, color: paid ? C.green : C.warn, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                      {paid && <Check size={14} strokeWidth={2.2} />}
+                      {paid ? `Ya pagó${o.paymentMethod ? ` (${METHOD[o.paymentMethod] ?? o.paymentMethod})` : ""}` : `Pago pendiente${o.paymentMethod ? ` · ${METHOD[o.paymentMethod] ?? o.paymentMethod}` : ""}`}
                     </div>
                   </div>
 
                   {/* Acciones */}
                   <div style={{ borderTop: `1px solid ${C.line}`, padding: 12, display: "grid", gap: 8 }}>
                     <div style={{ display: "grid", gridTemplateColumns: wa ? "1fr 1fr" : "1fr", gap: 8 }}>
-                      <a href={mapsLink(o)} target="_blank" rel="noopener noreferrer" style={btn(C.blue)}>🧭 Cómo llegar</a>
-                      {wa && <a href={wa} target="_blank" rel="noopener noreferrer" style={btn("#25D366")}>💬 WhatsApp</a>}
+                      <a href={mapsLink(o)} target="_blank" rel="noopener noreferrer" style={btn(C.blue)}><Navigation size={16} style={{verticalAlign:"-3px",marginRight:6}} />Cómo llegar</a>
+                      {wa && <a href={wa} target="_blank" rel="noopener noreferrer" style={btn("#25D366")}><MessageCircle size={16} style={{verticalAlign:"-3px",marginRight:6}} />WhatsApp</a>}
                     </div>
 
                     {o.status === "ready" && (
-                      <button onClick={() => toTransit(o.sellerOrderId)} style={{ ...btn(C.green), border: "none", cursor: "pointer", width: "100%" }}>🛵 Salir a entregar</button>
+                      <button onClick={() => toTransit(o.sellerOrderId)} style={{ ...btn(C.green), border: "none", cursor: "pointer", width: "100%" }}><Bike size={16} style={{verticalAlign:"-3px",marginRight:6}} />Salir a entregar</button>
                     )}
 
                     {o.status === "in_transit" && !collecting && (
                       <button onClick={() => (paid ? deliver(o.sellerOrderId, "ya_pago") : setCollectFor(o.sellerOrderId))}
-                        style={{ ...btn(C.green), border: "none", cursor: "pointer", width: "100%" }}>✅ Marcar entregado</button>
+                        style={{ ...btn(C.green), border: "none", cursor: "pointer", width: "100%" }}><CheckCircle2 size={16} style={{verticalAlign:"-3px",marginRight:6}} />Marcar entregado</button>
                     )}
 
                     {o.status === "in_transit" && collecting && (
                       <div style={{ background: C.bg, borderRadius: 10, padding: 12 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>¿Cómo cobraste {money(o.amountToCollectMinor)}?</div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                          <button onClick={() => deliver(o.sellerOrderId, "efectivo")} style={collectBtn}>💵 Efectivo</button>
-                          <button onClick={() => deliver(o.sellerOrderId, "pos")} style={collectBtn}>💳 Tarjeta (POS)</button>
-                          <button onClick={() => deliver(o.sellerOrderId, "transferencia")} style={collectBtn}>🏦 Transferencia</button>
-                          <button onClick={() => deliver(o.sellerOrderId, "ya_pago")} style={collectBtn}>✓ Ya había pagado</button>
+                          <button onClick={() => deliver(o.sellerOrderId, "efectivo")} style={collectBtn}><Banknote size={15} style={{verticalAlign:"-3px",marginRight:6}} />Efectivo</button>
+                          <button onClick={() => deliver(o.sellerOrderId, "pos")} style={collectBtn}><CreditCard size={15} style={{verticalAlign:"-3px",marginRight:6}} />Tarjeta (POS)</button>
+                          <button onClick={() => deliver(o.sellerOrderId, "transferencia")} style={collectBtn}><Landmark size={15} style={{verticalAlign:"-3px",marginRight:6}} />Transferencia</button>
+                          <button onClick={() => deliver(o.sellerOrderId, "ya_pago")} style={collectBtn}><Check size={15} style={{verticalAlign:"-3px",marginRight:6}} />Ya había pagado</button>
                         </div>
                         <button onClick={() => setCollectFor(null)} style={{ ...collectBtn, marginTop: 8, width: "100%", background: "transparent", color: C.mut, border: "none" }}>Cancelar</button>
                       </div>

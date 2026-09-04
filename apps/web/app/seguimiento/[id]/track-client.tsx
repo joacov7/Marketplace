@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { ClipboardList, PackageCheck, Bike, PartyPopper, PawPrint } from "lucide-react";
 
 interface Track {
   stage: "recibido" | "preparando" | "en_camino" | "entregado" | "cancelado";
@@ -16,11 +17,11 @@ interface Track {
 
 const C = { green: "#2e7d32", soft: "#e9f4ea", ink: "#1f2a2e", mut: "#6b7280", line: "#e7e9ec", bg: "#f4f6f5", white: "#fff", red: "#c0392b" };
 const money = (m: string, c = "ARS") => (Number(m) / 100).toLocaleString("es-AR", { style: "currency", currency: c });
-const STEPS = [
-  { key: "recibido", label: "Recibido", icon: "📝" },
-  { key: "preparando", label: "En preparación", icon: "📦" },
-  { key: "en_camino", label: "En camino", icon: "🛵" },
-  { key: "entregado", label: "Entregado", icon: "❤️" },
+const STEPS: Array<{ key: string; label: string; Icon: typeof ClipboardList }> = [
+  { key: "recibido", label: "Recibido", Icon: ClipboardList },
+  { key: "preparando", label: "En preparación", Icon: PackageCheck },
+  { key: "en_camino", label: "En camino", Icon: Bike },
+  { key: "entregado", label: "Entregado", Icon: PartyPopper },
 ];
 
 export default function TrackClient({ id, tenant }: { id: string; tenant: string }) {
@@ -52,7 +53,7 @@ export default function TrackClient({ id, tenant }: { id: string; tenant: string
     <div style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", background: C.bg, minHeight: "100vh", color: C.ink }}>
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "28px 18px 60px" }}>
         <div style={{ textAlign: "center", marginBottom: 22 }}>
-          <div style={{ fontSize: 30 }}>🐾</div>
+          <div style={{ color: C.green, display: "flex", justifyContent: "center" }}><PawPrint size={30} strokeWidth={1.8} /></div>
           <h1 style={{ fontSize: 22, margin: "8px 0 2px", letterSpacing: "-.01em" }}>
             {pet ? <>Pedido de {pet}</> : <>Tu pedido</>}
           </h1>
@@ -79,9 +80,9 @@ export default function TrackClient({ id, tenant }: { id: string; tenant: string
                     return (
                       <div key={s.key} style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                          <div style={{ width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 17,
+                          <div style={{ width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center",
                             background: done ? C.green : C.soft, color: done ? "white" : C.mut,
-                            boxShadow: current ? `0 0 0 4px ${C.soft}` : "none", transition: "all .2s" }}>{done ? s.icon : "•"}</div>
+                            boxShadow: current ? `0 0 0 4px ${C.soft}` : "none", transition: "all .2s" }}><s.Icon size={18} strokeWidth={1.9} /></div>
                           {i < STEPS.length - 1 && <div style={{ width: 2, height: 26, background: i < t.step ? C.green : C.line }} />}
                         </div>
                         <div style={{ paddingTop: 8 }}>
@@ -102,7 +103,7 @@ export default function TrackClient({ id, tenant }: { id: string; tenant: string
             </div>
 
             <p style={{ textAlign: "center", color: C.mut, fontSize: 11.5, marginTop: 18 }}>
-              Se actualiza solo. Te avisamos por WhatsApp cuando salga a entregar 🐾
+              Se actualiza solo. Te avisamos por WhatsApp cuando salga a entregar.
             </p>
           </>
         ) : null}
