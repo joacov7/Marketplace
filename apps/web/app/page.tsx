@@ -76,6 +76,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       promoText, heroTitle, heroHighlight, heroSubtitle, footerBlurb, perks, benefits,
       adoptionsEnabled, adoptionsTitle,
       foodCalculator, foodComparator, quickReorder, nutritionFactors,
+      heroImageUrl, adoptionsBannerImageUrl,
       catalog0,
     ] = await Promise.all([
       cfg<string>("branding.primaryColor"),
@@ -103,6 +104,8 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<boolean>("features.foodComparator"),
       cfg<boolean>("features.quickReorder"),
       cfg<Record<string, number>>("nutrition.factors"),
+      cfg<string>("storefront.heroImageUrl"),
+      cfg<string>("storefront.adoptionsBannerImageUrl"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
         const adoptions = await listAdoptions(tx);
@@ -131,12 +134,12 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
         };
         byProduct.set(v.productId, p);
       }
-      p.variants.push({ variantId: v.variantId, size: v.name, priceMinor: v.price.amountMinor.toString(), currency: v.price.currency, netWeightKg: v.netWeightKg ?? null });
+      p.variants.push({ variantId: v.variantId, size: v.name, priceMinor: v.price.amountMinor.toString(), currency: v.price.currency, netWeightKg: v.netWeightKg ?? null, listPriceMinor: v.listPriceMinor != null ? v.listPriceMinor.toString() : null });
     }
     const products = [...byProduct.values()].filter((p) => p.variants.length > 0);
 
     const storeCategories: StoreCategory[] = catRows
-      .map((c) => ({ name: c.name, position: c.position }))
+      .map((c) => ({ name: c.name, position: c.position, imageUrl: safeUrl(c.imageUrl ?? "") }))
       .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
 
     const cleanPairs = (v: unknown): Array<{ t: string; s: string }> =>
@@ -190,6 +193,8 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
         config={config}
         adoptions={adoptions}
         adoptionsTitle={cleanText(adoptionsTitle, "Adopciones")}
+        heroImageUrl={safeUrl(heroImageUrl)}
+        adoptionsBannerImageUrl={safeUrl(adoptionsBannerImageUrl)}
       />
     );
   } catch (e) {

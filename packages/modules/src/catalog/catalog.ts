@@ -180,6 +180,8 @@ export interface VariantWithPrice {
   sku: string;
   name: string;
   price: Money | null;
+  /** Precio anterior / de lista (para el badge de oferta). Null = sin oferta. */
+  listPriceMinor?: bigint | null;
 }
 
 /** Variante + su precio ACTUAL (último vigente a `at`). Base para re-cotizar recompras ([U2]). */
@@ -235,6 +237,7 @@ export interface CatalogAdminRow {
   variantName: string;
   sku: string;
   priceMinor: bigint | null;
+  listPriceMinor: bigint | null;
   currency: CurrencyCode | null;
   available: number;
 }
@@ -259,13 +262,14 @@ export async function listCatalogAdmin(db: Db, merchantId: string): Promise<Cata
     variant_name: string;
     sku: string;
     amount_minor: string | null;
+    list_price_minor: string | null;
     currency: CurrencyCode | null;
     available: number;
   }>(
     `select v.id as variant_id, v.product_id, pr.name as product_name, pr.status as product_status,
             pr.image_url, pr.category_id, cat.name as category_name, pr.description,
             pr.kcal_per_kg, pr.protein_pct, v.net_weight_kg,
-            v.name as variant_name, v.sku, p.amount_minor, p.currency, coalesce(inv.available,0) as available
+            v.name as variant_name, v.sku, p.amount_minor, v.list_price_minor, p.currency, coalesce(inv.available,0) as available
        from variants v
        join products pr on pr.id = v.product_id
        left join categories cat on cat.id = pr.category_id
@@ -293,6 +297,7 @@ export async function listCatalogAdmin(db: Db, merchantId: string): Promise<Cata
     variantName: r.variant_name,
     sku: r.sku,
     priceMinor: r.amount_minor !== null ? BigInt(r.amount_minor) : null,
+    listPriceMinor: r.list_price_minor !== null ? BigInt(r.list_price_minor) : null,
     currency: r.currency,
     available: r.available,
   }));
@@ -319,10 +324,12 @@ export async function listCatalog(
     name: string;
     amount_minor: string | null;
     currency: CurrencyCode | null;
+    list_price_minor: string | null;
   }>(
     `select v.id as variant_id, v.product_id, pr.name as product_name, pr.image_url,
             pr.category_id, cat.name as category_name, pr.description,
-            pr.kcal_per_kg, pr.protein_pct, v.net_weight_kg, v.sku, v.name, p.amount_minor, p.currency
+            pr.kcal_per_kg, pr.protein_pct, v.net_weight_kg, v.sku, v.name, p.amount_minor, p.currency,
+            v.list_price_minor
        from variants v
        join products pr on pr.id = v.product_id and pr.status = 'active'
        left join categories cat on cat.id = pr.category_id
@@ -352,5 +359,17 @@ export async function listCatalog(
       row.amount_minor !== null
         ? { amountMinor: BigInt(row.amount_minor), currency: row.currency ?? "ARS" }
         : null,
+    listPriceMinor: row.list_price_minor !== null ? BigInt(row.list_price_minor) : null,
   }));
+}
+
+/** Precio anterior / de lista de una variante (para el badge de oferta). Null = quitar oferta. */
+export async function setListPrice(
+  db: Db,
+  input: { tenantId: string; variantId: string; listPriceMinor: bigint | null },
+): Promise<void> {
+  await db.query(`update variants set list_price_minor = $2 where id = $1`, [
+    input.variantId,
+    input.listPriceMinor !== null ? input.listPriceMinor.toString() : null,
+  ]);
 }

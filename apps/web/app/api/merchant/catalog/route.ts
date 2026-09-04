@@ -32,6 +32,7 @@ export async function GET(req: Request) {
       proteinPct: r.proteinPct,
       netWeightKg: r.netWeightKg,
       priceMinor: r.priceMinor !== null ? r.priceMinor.toString() : null,
+      listPriceMinor: r.listPriceMinor !== null ? r.listPriceMinor.toString() : null,
       currency: r.currency,
       available: r.available,
       status: r.productStatus,

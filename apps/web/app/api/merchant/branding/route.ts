@@ -20,6 +20,8 @@ const THEME_KEYS = [
   "contact.whatsapp",
   "contact.whatsappMessage",
   "storefront.promoText",
+  "storefront.heroImageUrl",
+  "storefront.adoptionsBannerImageUrl",
   "storefront.heroTitle",
   "storefront.heroHighlight",
   "storefront.heroSubtitle",

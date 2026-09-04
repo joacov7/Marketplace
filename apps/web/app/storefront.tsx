@@ -9,6 +9,7 @@ export interface StoreVariant {
   priceMinor: string;
   currency: string;
   netWeightKg: number | null; // peso neto de la bolsa (alimentos)
+  listPriceMinor: string | null; // precio anterior (oferta), null = sin oferta
 }
 export interface StoreProduct {
   productId: string;
@@ -23,6 +24,7 @@ export interface StoreProduct {
 export interface StoreCategory {
   name: string;
   position: number;
+  imageUrl: string;
 }
 export interface StoreAdoption {
   id: string;
@@ -58,12 +60,12 @@ export interface StoreConfig {
 
 // ── Design tokens (handoff) ────────────────────────────────────────────────────
 const C = {
-  greenD: "#256428",
+  greenD: "#087A50",
   lightGreen: "#66BB6A",
-  beige: "#F5F1E8",
+  beige: "#F7F3EA",
   surf: "#F7F6F2",
-  tint: "#F3F8F1",
-  iconBg: "#E8F0E4",
+  tint: "#EAF5EE",
+  iconBg: "#E4F2EA",
   text: "#222222",
   text2: "#5A594F",
   nav: "#4A4A44",
@@ -80,6 +82,17 @@ const FONT = "'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, sans-seri
 
 // Placeholder rayado para imágenes ausentes (mientras no haya foto real).
 const PH_BG = "repeating-linear-gradient(45deg,#F0ECE0 0 9px,#F7F4EB 9px 18px)";
+
+// URL de imagen placeholder VÁLIDA (foto real) mientras no cargue la definitiva desde el panel.
+// Determinista por `seed` para que cada categoría/producto tenga una foto estable.
+function phImg(seed: string, w: number, h: number): string {
+  return `https://picsum.photos/seed/${encodeURIComponent(seed || "petshop")}/${w}/${h}`;
+}
+function onImgError(e: React.SyntheticEvent<HTMLImageElement>, seed: string, w: number, h: number) {
+  const img = e.currentTarget;
+  const fallback = phImg(seed, w, h);
+  if (img.src !== fallback) img.src = fallback; // si la URL del panel falla, caemos al placeholder
+}
 
 const pesos = (minor: number | string) => Math.round(Number(minor) / 100);
 const money = (minor: number | string) => "$" + pesos(minor).toLocaleString("es-AR");
@@ -131,6 +144,8 @@ export default function Storefront(props: {
   config: StoreConfig;
   adoptions: StoreAdoption[];
   adoptionsTitle: string;
+  heroImageUrl: string;
+  adoptionsBannerImageUrl: string;
 }) {
   const { tenant, primary, products, config } = props;
   const G = primary; // verde de marca (config)
@@ -196,9 +211,9 @@ export default function Storefront(props: {
     for (const p of products) if (p.category) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
     const ordered = props.categories
       .filter((c) => (counts.get(c.name) ?? 0) > 0)
-      .map((c) => ({ name: c.name, count: counts.get(c.name)! }));
+      .map((c) => ({ name: c.name, count: counts.get(c.name)!, imageUrl: c.imageUrl }));
     // Fallback: categorías presentes en productos pero no en la lista provista.
-    for (const [name, count] of counts) if (!props.categories.some((c) => c.name === name)) ordered.push({ name, count });
+    for (const [name, count] of counts) if (!props.categories.some((c) => c.name === name)) ordered.push({ name, count, imageUrl: "" });
     return ordered;
   }, [products, props.categories]);
 
@@ -375,15 +390,23 @@ export default function Storefront(props: {
         .sf-a{cursor:pointer;}
         *{box-sizing:border-box;}
         img{max-width:100%;}
-        /* ── Responsive: tablet ── */
+        .sf-img{display:block;}
+        /* ── Responsive: tablet / nav a hamburguesa ── */
+        @media (max-width:960px){
+          .sf-nav{display:none !important;}
+          .sf-burger{display:inline-flex !important;}
+        }
         @media (max-width:900px){
-          .sf-hero{grid-template-columns:1fr !important;padding:34px 24px !important;}
-          .sf-hero-art{display:none !important;}
+          .sf-hero{grid-template-columns:1fr !important;}
+          .sf-hero>div:first-child{padding:34px 26px !important;}
+          .sf-hero-art{min-height:280px !important;order:-1;}
+          .sf-adopt{grid-template-columns:1fr !important;}
+          .sf-adopt-art{min-height:220px !important;order:-1;}
           .sf-listwrap{grid-template-columns:1fr !important;}
           .sf-detail{grid-template-columns:1fr !important;gap:26px !important;}
           .sf-checkout{grid-template-columns:1fr !important;}
           .sf-checkout-sum{position:static !important;}
-          .sf-cats{grid-template-columns:repeat(3,1fr) !important;}
+          .sf-cats{grid-template-columns:repeat(4,1fr) !important;}
           .sf-featured,.sf-list{grid-template-columns:repeat(3,1fr) !important;}
           .sf-benefits{grid-template-columns:repeat(2,1fr) !important;}
           .sf-footer{grid-template-columns:1fr 1fr !important;gap:24px !important;}
@@ -391,28 +414,36 @@ export default function Storefront(props: {
         /* ── Responsive: teléfono ── */
         @media (max-width:640px){
           .sf-header{gap:12px !important;padding:11px 14px !important;flex-wrap:wrap !important;}
-          .sf-nav{display:none !important;}
           .sf-search input{width:100% !important;}
-          .sf-search{flex:1 1 140px !important;}
+          .sf-search{flex:1 1 120px !important;}
           .sf-right{flex:1 1 100% !important;}
           .sf-main{padding:18px 14px 60px !important;}
+          .sf-topbar-help{display:none !important;}
+          .sf-topbar{justify-content:center !important;padding:7px 14px !important;}
           .sf-cats,.sf-featured,.sf-list{grid-template-columns:repeat(2,1fr) !important;gap:12px !important;}
-          .sf-benefits{grid-template-columns:1fr !important;}
+          .sf-benefits{grid-template-columns:repeat(2,1fr) !important;}
           .sf-checkout-grid2{grid-template-columns:1fr !important;}
           .sf-footer{grid-template-columns:1fr !important;}
-          .sf-hero h1{font-size:32px !important;}
+          .sf-hero h1{font-size:31px !important;}
         }
         @media (max-width:380px){
-          .sf-cats,.sf-featured,.sf-list{grid-template-columns:1fr !important;}
+          .sf-featured,.sf-list{grid-template-columns:1fr !important;}
         }
       `}</style>
 
-      {/* Barra promocional */}
-      {props.content.promoText && (
-        <div style={{ background: G, color: C.white, fontSize: 13, padding: "9px 24px", textAlign: "center", letterSpacing: ".01em" }}>
-          {props.content.promoText}
+      {/* Barra superior: envío gratis (config) + ayuda/WhatsApp */}
+      <div style={{ background: G, color: C.white, fontSize: 12.5, fontWeight: 500 }}>
+        <div className="sf-topbar" style={{ maxWidth: 1280, margin: "0 auto", padding: "7px 24px", display: "flex", alignItems: "center", justifyContent: "center", gap: 16, position: "relative" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <WaIcon size={14} />Envíos gratis en Gualeguay en compras superiores a {money(threshold)}
+          </span>
+          {props.whatsapp && (
+            <a href={waLink()!} target="_blank" rel="noopener noreferrer" className="sf-topbar-help" style={{ position: "absolute", right: 24, display: "inline-flex", alignItems: "center", gap: 8, color: C.white, textDecoration: "none", fontWeight: 500 }}>
+              ¿Necesitás ayuda? <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 600 }}><WaIcon size={14} />{props.whatsapp}</span>
+            </a>
+          )}
         </div>
-      )}
+      </div>
 
       <Header
         G={G} tenant={tenant} logoUrl={props.logoUrl} displayName={props.displayName}
@@ -430,13 +461,16 @@ export default function Storefront(props: {
         waLink={waLink()}
       />
 
-      <main className="sf-main" style={{ maxWidth: view === "checkout" ? 1000 : view === "done" ? 620 : 1180, margin: "0 auto", padding: view === "done" ? "90px 24px 120px" : "28px 24px 80px" }}>
+      <main className="sf-main" style={{ maxWidth: view === "checkout" ? 1000 : view === "done" ? 620 : 1280, margin: "0 auto", padding: view === "done" ? "90px 24px 120px" : "28px 24px 80px" }}>
         {view === "home" && reorder && reorder.items.some((it) => it.available > 0) && (
           <QuickReorder G={G} reorder={reorder} onRepeat={repeatReorder} />
         )}
         {view === "home" && (
           <HomeView
             G={G} products={products} categories={categories} config={config} threshold={threshold} content={props.content}
+            heroImageUrl={props.heroImageUrl} adoptionsBannerImageUrl={props.adoptionsBannerImageUrl}
+            adoptionsLabel={props.adoptions.length > 0 ? props.adoptionsTitle : ""} onAdoptions={() => go("adopciones")}
+            comparatorEnabled={config.foodComparator && foodProducts.length >= 2} onComparar={() => go("comparar")}
             waLink={waLink("¡Hola! Quiero hacer un pedido.")}
             onSeeList={() => { setCategory(""); setQuery(""); go("list"); }}
             onCategory={(c) => { setCategory(c); setQuery(""); go("list"); }}
@@ -546,17 +580,22 @@ function Check({ size = 16, sw = 2.4 }: { size?: number; sw?: number }) {
 }
 
 // ── Placeholder de imagen (foto real cuando exista) ─────────────────────────────
-function Img({ src, alt, ratio, radius, label, hero }: { src?: string; alt: string; ratio?: string; radius: React.CSSProperties["borderRadius"]; label: string; hero?: boolean }) {
-  const base: React.CSSProperties = { width: "100%", borderRadius: radius, objectFit: "cover", display: "block", ...(ratio ? { aspectRatio: ratio } : {}), ...(hero ? { height: 340 } : {}) };
-  if (src) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img className="sf-img" src={src} alt={alt} style={base} />;
-  }
-  return (
-    <div style={{ ...base, background: PH_BG, display: "grid", placeItems: "center", ...(ratio ? {} : hero ? { height: 340 } : { height: 180 }) }}>
-      <span style={{ fontFamily: "monospace", fontSize: 12, color: C.ph }}>{label}</span>
-    </div>
-  );
+/**
+ * Imagen REAL de la tienda. Siempre renderiza <img> con una URL: la definitiva (del panel) o,
+ * si está vacía, una placeholder VÁLIDA (foto real, estable por `seed`). Nunca una caja/emoji.
+ * `w`×`h` definen el tamaño del placeholder (512×512 categorías, 1080×450 hero, etc.).
+ */
+function Img({ src, alt, ratio, radius, seed, w = 512, h = 512, fit = "cover", height }: {
+  src?: string; alt: string; ratio?: string; radius: React.CSSProperties["borderRadius"];
+  seed: string; w?: number; h?: number; fit?: "cover" | "contain"; height?: number;
+}) {
+  const url = src && src.length > 0 ? src : phImg(seed, w, h);
+  const style: React.CSSProperties = {
+    width: "100%", borderRadius: radius, objectFit: fit, display: "block",
+    background: C.beige, ...(ratio ? { aspectRatio: ratio } : {}), ...(height ? { height } : {}),
+  };
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img className="sf-img" src={url} alt={alt} loading="lazy" style={style} onError={(e) => onImgError(e, seed, w, h)} />;
 }
 
 // ── Botones reutilizables ────────────────────────────────────────────────────────
@@ -579,26 +618,32 @@ function Header(props: {
   onHome: () => void; onCategory: (c: string) => void; onSearch: (q: string) => void; onAdoptions: () => void; onComparar: () => void; onCart: () => void; waLink: string | null;
 }) {
   const { G } = props;
+  const [menu, setMenu] = useState(false);
+  const nav = (fn: () => void) => { setMenu(false); fn(); };
+  const Logo = () => props.logoUrl ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={props.logoUrl} alt={props.displayName} style={{ height: 46, width: "auto", maxWidth: 190, objectFit: "contain", display: "block" }} />
+  ) : (
+    <>
+      <span style={{ width: 42, height: 42, borderRadius: 12, background: C.iconBg, color: G, display: "grid", placeItems: "center", flexShrink: 0 }}><IconHeartPaw s={26} /></span>
+      <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.05 }}>
+        <span style={{ fontSize: 19, fontWeight: 800, color: G, letterSpacing: ".01em" }}>{props.displayName.replace(/gualeguay/i, "").trim().toUpperCase() || "PET SHOP"}</span>
+        <span style={{ fontSize: 10.5, fontWeight: 500, color: C.mute, marginTop: 3 }}>Más que mascotas, familia</span>
+      </span>
+    </>
+  );
   return (
-    <header className="sf-header" style={{ position: "sticky", top: 0, zIndex: 40, background: C.white, borderBottom: `1px solid ${C.border}`, padding: "14px 24px", display: "flex", gap: 32, alignItems: "center" }}>
-      {/* Logo */}
-      <div className="sf-a" onClick={props.onHome} style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        {props.logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={props.logoUrl} alt={props.displayName} style={{ height: 44, width: "auto", maxWidth: 180, objectFit: "contain", display: "block" }} />
-        ) : (
-          <>
-            <span style={{ width: 42, height: 42, borderRadius: "50%", border: `2px solid ${G}`, display: "grid", placeItems: "center", flexShrink: 0 }}><span style={{ width: 16, height: 16, borderRadius: "50%", background: G, display: "block" }} /></span>
-            <span style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
-              <span style={{ fontSize: 19, fontWeight: 700, color: G, letterSpacing: ".02em" }}>{props.displayName.replace(/gualeguay/i, "").trim().toUpperCase() || "PET SHOP"}</span>
-              <span style={{ fontSize: 9, fontWeight: 500, color: C.mute, letterSpacing: ".34em", marginTop: 3 }}>{/gualeguay/i.test(props.displayName) ? "GUALEGUAY" : ""}</span>
-            </span>
-          </>
-        )}
-      </div>
+    <header className="sf-header" style={{ position: "sticky", top: 0, zIndex: 40, background: C.white, borderBottom: `1px solid ${C.border}`, padding: "12px 24px", display: "flex", gap: 28, alignItems: "center" }}>
+      {/* Hamburguesa (solo mobile) */}
+      <button className="sf-burger" onClick={() => setMenu((v) => !v)} aria-label="Menú" style={{ display: "none", border: "none", background: "transparent", cursor: "pointer", color: C.text, padding: 4 }}>
+        <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+      </button>
 
-      {/* Nav */}
-      <nav className="sf-nav" style={{ flex: 1, display: "flex", gap: 26, fontSize: 14, flexWrap: "wrap" }}>
+      {/* Logo */}
+      <div className="sf-a" onClick={props.onHome} style={{ display: "flex", alignItems: "center", gap: 11, flexShrink: 0 }}><Logo /></div>
+
+      {/* Nav (desktop) */}
+      <nav className="sf-nav" style={{ flex: 1, display: "flex", gap: "10px 22px", fontSize: 13.5, flexWrap: "wrap", alignContent: "center" }}>
         <NavItem label="Inicio" active={props.activeCat === "" && !props.query} onClick={props.onHome} G={G} />
         {props.categories.map((c) => (
           <NavItem key={c.name} label={c.name} active={props.activeCat === c.name} onClick={() => props.onCategory(c.name)} G={G} />
@@ -609,7 +654,7 @@ function Header(props: {
       </nav>
 
       {/* Derecha */}
-      <div className="sf-right" style={{ display: "flex", gap: 18, alignItems: "center" }}>
+      <div className="sf-right" style={{ display: "flex", gap: 16, alignItems: "center" }}>
         <div className="sf-search" style={{ display: "flex", alignItems: "center", gap: 8, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 999, padding: "7px 14px" }}>
           <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={C.mute} strokeWidth={2} aria-hidden><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeLinecap="round" /></svg>
           <input value={props.query} onChange={(e) => props.onSearch(e.target.value)} placeholder="Buscar productos" style={{ border: "none", outline: "none", background: "transparent", fontSize: 13, width: 150, fontFamily: FONT, color: C.text }} />
@@ -619,8 +664,31 @@ function Header(props: {
           <CartIcon size={18} /><span style={{ fontSize: 14, fontWeight: 600 }}>{money(props.subtotal)}</span>
         </button>
       </div>
+
+      {/* Menú móvil */}
+      {menu && (
+        <div style={{ position: "fixed", inset: 0, top: 0, zIndex: 60 }} onClick={() => setMenu(false)}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(20,22,20,.4)" }} />
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 280, maxWidth: "85vw", background: C.white, boxShadow: "8px 0 40px rgba(0,0,0,.18)", padding: "18px 20px", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <span style={{ fontWeight: 800, fontSize: 16, color: G }}>Menú</span>
+              <button onClick={() => setMenu(false)} aria-label="Cerrar" style={{ border: "none", background: "transparent", fontSize: 24, color: C.mute, cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <MobileLink label="Inicio" onClick={() => nav(props.onHome)} />
+              {props.categories.map((c) => <MobileLink key={c.name} label={c.name} onClick={() => nav(() => props.onCategory(c.name))} />)}
+              {props.comparatorLabel && <MobileLink label={props.comparatorLabel} onClick={() => nav(props.onComparar)} />}
+              {props.adoptionsLabel && <MobileLink label={props.adoptionsLabel} onClick={() => nav(props.onAdoptions)} />}
+              {props.waLink && <a href={props.waLink} target="_blank" rel="noopener noreferrer" onClick={() => setMenu(false)} style={{ padding: "12px 6px", fontSize: 15, color: C.text, textDecoration: "none", borderTop: `1px solid ${C.border}` }}>Contacto por WhatsApp</a>}
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
+}
+function MobileLink({ label, onClick }: { label: string; onClick: () => void }) {
+  return <button onClick={onClick} style={{ textAlign: "left", padding: "12px 6px", fontSize: 15, fontWeight: 500, color: C.text, background: "transparent", border: "none", borderTop: `1px solid ${C.border}`, cursor: "pointer", fontFamily: FONT }}>{label}</button>;
 }
 function NavItem({ label, active, onClick, G }: { label: string; active: boolean; onClick: () => void; G: string }) {
   return (
@@ -630,25 +698,34 @@ function NavItem({ label, active, onClick, G }: { label: string; active: boolean
 
 // ── Product card ─────────────────────────────────────────────────────────────────
 function ProductCard({ G, p, listRow, onOpen, onAdd }: { G: string; p: StoreProduct; listRow?: boolean; onOpen: () => void; onAdd: () => void }) {
-  const price = Number(p.variants[p.variants.length - 1]!.priceMinor);
-  const sub = p.variants[p.variants.length - 1]!.size;
+  const v = p.variants[p.variants.length - 1]!;
+  const price = Number(v.priceMinor);
+  const listPrice = v.listPriceMinor != null ? Number(v.listPriceMinor) : null;
+  const onSale = listPrice != null && listPrice > price;
+  const discount = onSale ? Math.round((1 - price / listPrice!) * 100) : 0;
+  const sub = v.size;
   return (
-    <div className="sf-card" style={{ border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, background: C.white, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div className="sf-a" onClick={onOpen}><Img src={p.imageUrl} alt={p.name} ratio="1" radius={12} label="512 × 512" /></div>
+    <div className="sf-card" style={{ border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, background: C.white, display: "flex", flexDirection: "column", gap: 11 }}>
+      <div className="sf-a" onClick={onOpen} style={{ position: "relative" }}>
+        <Img src={p.imageUrl} alt={p.name} ratio="1" radius={12} seed={p.productId} />
+        {onSale && (
+          <span style={{ position: "absolute", top: 10, right: 10, background: G, color: C.white, fontSize: 12, fontWeight: 700, borderRadius: 8, padding: "3px 9px", boxShadow: "0 2px 8px rgba(0,0,0,.12)" }}>−{discount}%</span>
+        )}
+      </div>
       <div className="sf-a" onClick={onOpen} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <span style={{ fontSize: listRow ? 15 : 14.5, fontWeight: 600, lineHeight: 1.3 }}>{p.name}</span>
         <span style={{ fontSize: 12, color: C.mute }}>{sub}{p.category ? ` · ${p.category}` : ""}</span>
       </div>
+      <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: listRow ? 20 : 21, fontWeight: 700, color: G }}>{money(price)}</span>
+        {onSale && <span style={{ fontSize: 13, color: C.mute, textDecoration: "line-through" }}>{money(listPrice!)}</span>}
+      </div>
       {listRow ? (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto" }}>
-          <span style={{ fontSize: 20, fontWeight: 700, color: G }}>{money(price)}</span>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
           <button className="sf-btn" onClick={onAdd} style={{ background: G, color: C.white, border: "none", borderRadius: 9, padding: "10px 15px", fontSize: 12, fontWeight: 600, letterSpacing: ".04em", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: FONT }}><CartIcon size={15} />AGREGAR</button>
         </div>
       ) : (
-        <>
-          <span style={{ fontSize: 21, fontWeight: 700, color: G, marginTop: "auto" }}>{money(price)}</span>
-          <button className="sf-btn" onClick={onAdd} style={{ background: G, color: C.white, border: "none", borderRadius: 9, padding: 11, fontSize: 12.5, fontWeight: 600, letterSpacing: ".04em", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: FONT }}><CartIcon size={15} />AGREGAR</button>
-        </>
+        <button className="sf-btn" onClick={onAdd} style={{ background: G, color: C.white, border: "none", borderRadius: 9, padding: 11, fontSize: 12.5, fontWeight: 600, letterSpacing: ".04em", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: FONT }}><CartIcon size={15} />AGREGAR</button>
       )}
     </div>
   );
@@ -688,85 +765,135 @@ function QuickReorder({ G, reorder, onRepeat }: { G: string; reorder: Reorder; o
   );
 }
 
+// Íconos lineales (permitidos en beneficios / adopciones / comparador; nunca reemplazan fotos).
+function IconTruck({ s = 26 }: { s?: number }) { return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h13v10H1z" /><path d="M14 6h4l3 3v4h-7z" /><circle cx="5.5" cy="17" r="2" /><circle cx="17.5" cy="17" r="2" /></svg>; }
+function IconMoon({ s = 26 }: { s?: number }) { return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>; }
+function IconShield({ s = 26 }: { s?: number }) { return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V5z" /><path d="M9 12l2 2 4-4" /></svg>; }
+function IconHeadset({ s = 26 }: { s?: number }) { return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M4 13v-1a8 8 0 0 1 16 0v1" /><path d="M4 13a2 2 0 0 1 2 2v2a2 2 0 0 1-4 0v-2a2 2 0 0 1 2-2z" /><path d="M20 13a2 2 0 0 1 2 2v2a2 2 0 0 1-4 0v-2a2 2 0 0 1 2-2z" /><path d="M20 17v1a3 3 0 0 1-3 3h-3" /></svg>; }
+function IconHeartPaw({ s = 44 }: { s?: number }) { return <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-8-5.2-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 5.8-8 11-8 11z" opacity=".18" /><path fill="none" stroke="currentColor" strokeWidth={1.5} d="M12 20.3S4.8 15.6 4.8 10.4A3.9 3.9 0 0 1 12 8.1a3.9 3.9 0 0 1 7.2 2.3c0 5.2-7.2 9.9-7.2 9.9z" /><g fill="currentColor"><circle cx="10" cy="10.4" r="1" /><circle cx="14" cy="10.4" r="1" /><circle cx="8.6" cy="12.4" r=".9" /><circle cx="15.4" cy="12.4" r=".9" /><path d="M12 12.8c-1.5 0-2.7 1.1-2.7 2.3 0 .9.8 1.3 2.7 1.3s2.7-.4 2.7-1.3c0-1.2-1.2-2.3-2.7-2.3z" /></g></svg>; }
+function IconBowl({ s = 40 }: { s?: number }) { return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><path d="M3 11h18" /><path d="M4 11a8 8 0 0 0 16 0" /><path d="M12 11V7" /><path d="M9 7c0-1.7 1.3-3 3-3s3 1.3 3 3" /></svg>; }
+
+const DEFAULT_BENEFITS: Array<{ t: string; s: string }> = [
+  { t: "Envíos en el mismo día", s: "Pedidos antes de las 18 hs" },
+  { t: "Envío de Auxilio", s: "Nocturno y feriados" },
+  { t: "Compra 100% segura", s: "Mercado Pago" },
+  { t: "Atención personalizada", s: "Te asesoramos siempre" },
+];
+const BENEFIT_ICONS = [IconTruck, IconMoon, IconShield, IconHeadset];
+
 function HomeView(props: {
-  G: string; products: StoreProduct[]; categories: { name: string; count: number }[]; config: StoreConfig; threshold: number; content: StoreContent;
+  G: string; products: StoreProduct[]; categories: { name: string; count: number; imageUrl?: string }[]; config: StoreConfig; threshold: number; content: StoreContent;
+  heroImageUrl: string; adoptionsBannerImageUrl: string;
+  adoptionsLabel: string; onAdoptions: () => void; comparatorEnabled: boolean; onComparar: () => void;
   waLink: string | null; onSeeList: () => void; onCategory: (c: string) => void; onOpen: (p: StoreProduct) => void; onAdd: (p: StoreProduct) => void;
 }) {
   const { G, content } = props;
-  const perks = content.perks;
-  const benefits = content.benefits;
-  const featured = props.products.slice(0, props.config.featuredCount);
+  const benefits = content.benefits.length >= 3 ? content.benefits.slice(0, 4) : DEFAULT_BENEFITS;
+  // Ofertas primero, después el resto, hasta llenar la fila.
+  const onSale = (p: StoreProduct) => { const v = p.variants[p.variants.length - 1]!; return v.listPriceMinor != null && Number(v.listPriceMinor) > Number(v.priceMinor); };
+  const featured = [...props.products].sort((a, b) => Number(onSale(b)) - Number(onSale(a))).slice(0, Math.max(props.config.featuredCount, 6));
+  const cats = props.categories.slice(0, 8);
   return (
     <>
       {/* Hero */}
-      <section className="sf-hero" style={{ background: C.beige, borderRadius: 20, padding: "52px 0 52px 52px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, alignItems: "center", overflow: "hidden" }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 46, fontWeight: 700, lineHeight: 1.1, letterSpacing: "-.02em", maxWidth: 460 }}>
+      <section className="sf-hero" style={{ background: C.beige, borderRadius: 20, padding: 0, display: "grid", gridTemplateColumns: "1fr 1fr", alignItems: "stretch", overflow: "hidden" }}>
+        <div style={{ padding: "52px 46px" }}>
+          <h1 style={{ margin: 0, fontSize: 44, fontWeight: 800, lineHeight: 1.08, letterSpacing: "-.02em", maxWidth: 460 }}>
             {content.heroTitle} {content.heroHighlight && <span style={{ color: G }}>{content.heroHighlight}</span>}
           </h1>
-          {content.heroSubtitle && <p style={{ fontSize: 16, color: C.text2, lineHeight: 1.6, marginTop: 18, maxWidth: 460 }}>{content.heroSubtitle}</p>}
+          {content.heroSubtitle && <p style={{ fontSize: 16, color: C.text2, lineHeight: 1.6, marginTop: 18, maxWidth: 440 }}>{content.heroSubtitle}</p>}
           <div style={{ display: "flex", gap: 12, marginTop: 28, flexWrap: "wrap" }}>
-            {props.waLink && <a className="sf-btn" href={props.waLink} target="_blank" rel="noopener noreferrer" style={{ ...primaryBtn(G), textDecoration: "none" }}><WaIcon size={17} />HACÉ TU PEDIDO POR WHATSAPP</a>}
-            <button className="sf-btn" onClick={props.onSeeList} style={outlineBtn(G)}>VER PRODUCTOS</button>
+            {props.waLink && <a className="sf-btn" href={props.waLink} target="_blank" rel="noopener noreferrer" style={{ ...primaryBtn(G), textDecoration: "none" }}><WaIcon size={17} />Hacé tu pedido por WhatsApp</a>}
+            <button className="sf-btn" onClick={props.onSeeList} style={outlineBtn(G)}>Ver productos</button>
           </div>
-          {perks.length > 0 && (
-            <div style={{ display: "flex", gap: 30, marginTop: 34, flexWrap: "wrap" }}>
-              {perks.map((p, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                  <span style={{ color: G, marginTop: 1 }}><Check size={16} /></span>
-                  <span style={{ display: "flex", flexDirection: "column", fontSize: 12.5 }}>
-                    <span style={{ color: C.nav, fontWeight: 600 }}>{p.t}</span>
-                    <span style={{ color: C.mute }}>{p.s}</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
-        <div className="sf-hero-art" style={{ position: "relative" }}>
-          <Img alt="banner principal" radius="16px 0 0 16px" label="banner principal 1080 × 450" hero />
-          <div style={{ position: "absolute", left: -46, top: "50%", transform: "translateY(-50%)", width: 132, height: 132, borderRadius: "50%", background: G, color: C.white, boxShadow: "0 8px 24px rgba(46,125,50,.28)", display: "grid", placeItems: "center", textAlign: "center", padding: 10 }}>
-            <span><span style={{ display: "block", fontSize: 17, fontWeight: 700 }}>Envíos GRATIS</span><span style={{ display: "block", fontSize: 9.5, opacity: .9 }}>en compras superiores a {money(props.threshold)}</span></span>
+        {/* Imagen REAL del hero (URL desde config) + badge de envío gratis */}
+        <div className="sf-hero-art" style={{ position: "relative", minHeight: 320 }}>
+          <img className="sf-img" src={props.heroImageUrl && props.heroImageUrl.length > 0 ? props.heroImageUrl : phImg("hero-petshop", 1080, 900)} alt="Mascotas felices"
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            onError={(e) => onImgError(e, "hero-petshop", 1080, 900)} />
+          <div style={{ position: "absolute", right: 22, bottom: 22, width: 128, height: 128, borderRadius: "50%", background: G, color: C.white, boxShadow: "0 10px 28px rgba(0,0,0,.22)", display: "grid", placeItems: "center", textAlign: "center", padding: 12 }}>
+            <span>
+              <span style={{ display: "block" }}><IconTruck s={20} /></span>
+              <span style={{ display: "block", fontSize: 15, fontWeight: 800, marginTop: 2, lineHeight: 1 }}>ENVÍOS<br />GRATIS</span>
+              <span style={{ display: "block", fontSize: 8.5, opacity: .92, marginTop: 3 }}>en compras superiores<br />a {money(props.threshold)}</span>
+            </span>
           </div>
         </div>
       </section>
 
-      {/* Franja de beneficios */}
-      {benefits.length > 0 && (
-        <div className="sf-benefits" style={{ marginTop: 18, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 24px", display: "grid", gridTemplateColumns: `repeat(${Math.min(5, benefits.length)},1fr)`, gap: 20 }}>
-          {benefits.map((b, i) => (
-            <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-              <span style={{ width: 34, height: 34, borderRadius: "50%", background: C.iconBg, color: G, display: "grid", placeItems: "center", fontWeight: 700, fontSize: 15, flexShrink: 0 }}>★</span>
+      {/* Beneficios (íconos SVG lineales) */}
+      <div className="sf-benefits" style={{ marginTop: 18, background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: "18px 24px", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 18 }}>
+        {benefits.map((b, i) => {
+          const Ico = BENEFIT_ICONS[i % BENEFIT_ICONS.length]!;
+          return (
+            <div key={i} style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <span style={{ color: G, flexShrink: 0 }}><Ico s={26} /></span>
               <span style={{ display: "flex", flexDirection: "column" }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600 }}>{b.t}</span>
-                <span style={{ fontSize: 11.5, color: C.mute }}>{b.s}</span>
+                <span style={{ fontSize: 13.5, fontWeight: 700 }}>{b.t}</span>
+                <span style={{ fontSize: 12, color: C.mute }}>{b.s}</span>
               </span>
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
 
-      {/* Categorías */}
-      {props.categories.length > 0 && (
+      {/* Categorías (imágenes REALES 512×512) */}
+      {cats.length > 0 && (
         <>
-          <SectionHead G={G} title="Categorías" action="Ver todas →" onAction={props.onSeeList} />
-          <div className="sf-cats" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 16 }}>
-            {props.categories.slice(0, 10).map((c) => (
+          <SectionHead G={G} title="Nuestras categorías" action="Ver todas →" onAction={props.onSeeList} />
+          <div className="sf-cats" style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(8, cats.length)},1fr)`, gap: 16 }}>
+            {cats.map((c) => (
               <div key={c.name} className="sf-a" onClick={() => props.onCategory(c.name)} style={{ textAlign: "center" }}>
-                <div style={{ aspectRatio: "1", borderRadius: 16, background: PH_BG, display: "grid", placeItems: "center" }}><span style={{ fontFamily: "monospace", fontSize: 11, color: C.ph }}>512 × 512</span></div>
-                <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 10 }}>{c.name}</div>
+                <div style={{ background: C.beige, borderRadius: 16, padding: 10 }}>
+                  <Img src={c.imageUrl} alt={c.name} ratio="1" radius={12} seed={c.name} />
+                </div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 10, lineHeight: 1.25 }}>{c.name}</div>
               </div>
             ))}
           </div>
         </>
       )}
 
-      {/* Destacados */}
-      <SectionHead G={G} title="Productos destacados" action="Ver todos →" onAction={props.onSeeList} />
+      {/* Ofertas destacadas (productos reales, imagen + badge + precio anterior + Agregar) */}
+      <SectionHead G={G} title="Ofertas destacadas" action="Ver todas →" onAction={props.onSeeList} />
       {featured.length === 0 ? <p style={{ color: C.mute }}>Todavía no hay productos cargados.</p> : (
-        <div className="sf-featured" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 18 }}>
+        <div className="sf-featured" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 18 }}>
           {featured.map((p) => <ProductCard key={p.productId} G={G} p={p} onOpen={() => props.onOpen(p)} onAdd={() => props.onAdd(p)} />)}
         </div>
+      )}
+
+      {/* Banner de adopciones (imagen REAL desde config) */}
+      {props.adoptionsLabel && (
+        <section className="sf-adopt" style={{ marginTop: 56, background: C.beige, borderRadius: 20, display: "grid", gridTemplateColumns: "1fr 1fr", alignItems: "stretch", overflow: "hidden" }}>
+          <div style={{ padding: "40px 46px", display: "flex", gap: 22, alignItems: "center" }}>
+            <span style={{ color: G, flexShrink: 0 }}><IconHeartPaw s={68} /></span>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 27, fontWeight: 800, letterSpacing: "-.01em" }}>También podés ayudar</h2>
+              <p style={{ fontSize: 15, color: C.text2, marginTop: 6 }}>Conocé mascotas que buscan un hogar</p>
+              <button className="sf-btn" onClick={props.onAdoptions} style={{ ...outlineBtn(G), marginTop: 16 }}>Ver adopciones →</button>
+            </div>
+          </div>
+          <div className="sf-adopt-art" style={{ position: "relative", minHeight: 240 }}>
+            <div style={{ position: "absolute", inset: 0 }}>
+              <Img src={props.adoptionsBannerImageUrl} alt="Mascotas en adopción" seed="adopciones" w={1080} h={600} radius={0} fit="cover" />
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Comparador de alimentos */}
+      {props.comparatorEnabled && (
+        <section style={{ marginTop: 22, background: C.tint, borderRadius: 20, padding: "34px 40px", display: "flex", gap: 22, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+            <span style={{ color: G, flexShrink: 0 }}><IconBowl s={40} /></span>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>¿No sabés qué alimento elegir?</h2>
+              <p style={{ fontSize: 14.5, color: C.text2, marginTop: 5, maxWidth: 560 }}>Compará alimentos por el costo por día según el peso y las necesidades de tu mascota.</p>
+            </div>
+          </div>
+          <button className="sf-btn" onClick={props.onComparar} style={outlineBtn(G)}>Comparar alimentos</button>
+        </section>
       )}
     </>
   );
@@ -841,7 +968,7 @@ function DetailView(props: {
         Inicio / <span className="sf-a" onClick={props.onBackCat}>{p.category || "Productos"}</span> / {p.name}
       </div>
       <div className="sf-detail" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "start" }}>
-        <Img src={p.imageUrl} alt={p.name} ratio="1" radius={20} label="foto producto 1080 × 1080" />
+        <Img src={p.imageUrl} alt={p.name} ratio="1" radius={20} seed={p.productId} w={1080} h={1080} />
         <div>
           {p.category && <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".1em", color: C.lightGreen }}>{p.category.toUpperCase()}</div>}
           <h1 style={{ margin: "6px 0 0", fontSize: 34, fontWeight: 700, letterSpacing: "-.02em" }}>{p.name}</h1>
@@ -1304,7 +1431,7 @@ function AdoptionsView({ G, title, adoptions, storeWhatsapp }: { G: string; titl
               : null;
             return (
               <div key={a.id} className="sf-card" style={{ border: `1px solid ${C.border}`, borderRadius: 16, background: C.white, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                <Img src={a.imageUrl} alt={a.name} ratio="1" radius={0} label="foto mascota" />
+                <Img src={a.imageUrl} alt={a.name} ratio="1" radius={0} seed={a.id} />
                 <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <strong style={{ fontSize: 17 }}>{a.name}</strong>

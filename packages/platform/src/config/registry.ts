@@ -113,6 +113,22 @@ export const CONFIG_KEYS = {
     sensitive: false,
     description: "Texto descriptivo del footer.",
   },
+  "storefront.heroImageUrl": {
+    key: "storefront.heroImageUrl",
+    jsonSchema: { type: "string", maxLength: 500 },
+    defaultValue: "",
+    category: "branding",
+    sensitive: false,
+    description: "URL de la imagen principal del hero de la home (aprox. 1080×450). Vacío = placeholder.",
+  },
+  "storefront.adoptionsBannerImageUrl": {
+    key: "storefront.adoptionsBannerImageUrl",
+    jsonSchema: { type: "string", maxLength: 500 },
+    defaultValue: "",
+    category: "branding",
+    sensitive: false,
+    description: "URL de la imagen del banner de Adopciones en la home. Vacío = placeholder.",
+  },
   "storefront.perks": {
     key: "storefront.perks",
     jsonSchema: {

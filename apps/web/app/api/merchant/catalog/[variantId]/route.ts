@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { setPrice, setProductImageByVariant, setProductCategoryByVariant, setProductDescriptionByVariant, setFoodNutritionByVariant, setVariantNetWeight } from "@commerce/modules/catalog";
+import { setPrice, setListPrice, setProductImageByVariant, setProductCategoryByVariant, setProductDescriptionByVariant, setFoodNutritionByVariant, setVariantNetWeight } from "@commerce/modules/catalog";
 import { setStock } from "@commerce/modules/inventory";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
@@ -14,7 +14,7 @@ export async function PATCH(req: Request, { params }: { params: { variantId: str
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
-  let body: { priceMinor?: string | number; stock?: number; imageUrl?: string; categoryId?: string | null; description?: string; kcalPerKg?: number | null; proteinPct?: number | null; netWeightKg?: number | null };
+  let body: { priceMinor?: string | number; listPriceMinor?: string | number | null; stock?: number; imageUrl?: string; categoryId?: string | null; description?: string; kcalPerKg?: number | null; proteinPct?: number | null; netWeightKg?: number | null };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -25,6 +25,10 @@ export async function PATCH(req: Request, { params }: { params: { variantId: str
   await db().withTenant(tenant.tenantId, async (tx) => {
     if (body.priceMinor !== undefined) {
       await setPrice(tx, { tenantId: tenant.tenantId, variantId: params.variantId, amountMinor: BigInt(body.priceMinor!) });
+    }
+    if (body.listPriceMinor !== undefined) {
+      const lp = body.listPriceMinor === null || body.listPriceMinor === "" ? null : BigInt(Math.round(Number(body.listPriceMinor)));
+      await setListPrice(tx, { tenantId: tenant.tenantId, variantId: params.variantId, listPriceMinor: lp && lp > 0n ? lp : null });
     }
     if (body.stock !== undefined) {
       await setStock(tx, { tenantId: tenant.tenantId, variantId: params.variantId, available: Number(body.stock) });

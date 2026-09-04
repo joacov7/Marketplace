@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 interface Merchant { id: string; slug: string; name: string }
 interface SellerOrder { sellerOrderId: string; orderId: string; orderStatus: string; status: string; subtotalMinor: string; currency: string; itemCount: number; petName: string | null; customerName: string | null; customerPhone: string | null; paymentMethod: string | null; paymentStatus: string; channel: string; needsAcceptance: boolean; createdAt: string }
-interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; categoryId: string | null; categoryName: string | null; description: string | null; kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null; priceMinor: string | null; currency: string | null; available: number; status: string }
+interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; categoryId: string | null; categoryName: string | null; description: string | null; kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null; priceMinor: string | null; listPriceMinor: string | null; currency: string | null; available: number; status: string }
 interface Category { id: string; slug: string; name: string; imageUrl: string | null; position: number }
 interface AdoptionItem { id: string; name: string; species: string; age: string | null; description: string | null; imageUrl: string | null; contactWhatsapp: string | null; status: string; createdAt: string }
 interface ReportSummary { paidOrders: number; gmvMinor: string; deliveryRevenueMinor: string; commissionMinor: string; merchantPayoutMinor: string; refundsMinor: string; avgTicketMinor: string }
@@ -25,6 +25,8 @@ interface Theme {
   "contact.whatsapp": string;
   "contact.whatsappMessage": string;
   "storefront.promoText": string;
+  "storefront.heroImageUrl": string;
+  "storefront.adoptionsBannerImageUrl": string;
   "storefront.heroTitle": string;
   "storefront.heroHighlight": string;
   "storefront.heroSubtitle": string;
@@ -283,10 +285,10 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
     await load();
   }
 
-  async function save(variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string, food: { kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null }) {
+  async function save(variantId: string, priceMinor: number | null, listPriceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string, food: { kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null }) {
     await fetch(`/api/merchant/catalog/${variantId}?tenant=${encodeURIComponent(tenant ?? "")}`, {
       method: "PATCH", headers: { ...auth, "content-type": "application/json" },
-      body: JSON.stringify({ ...(priceMinor !== null ? { priceMinor } : {}), stock, imageUrl, categoryId, description, ...food }),
+      body: JSON.stringify({ ...(priceMinor !== null ? { priceMinor } : {}), listPriceMinor, stock, imageUrl, categoryId, description, ...food }),
     });
     await load();
   }
@@ -339,8 +341,9 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
   );
 }
 
-function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; onSave: (variantId: string, priceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string, food: { kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null }) => void }) {
+function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; onSave: (variantId: string, priceMinor: number | null, listPriceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string, food: { kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null }) => void }) {
   const [price, setPrice] = useState(it.priceMinor ? String(Number(it.priceMinor) / 100) : "");
+  const [listPrice, setListPrice] = useState(it.listPriceMinor ? String(Number(it.listPriceMinor) / 100) : "");
   const [stock, setStock] = useState(String(it.available));
   const [imageUrl, setImageUrl] = useState(it.imageUrl ?? "");
   const [categoryId, setCategoryId] = useState(it.categoryId ?? "");
@@ -350,7 +353,7 @@ function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; o
   const [netKg, setNetKg] = useState(it.netWeightKg != null ? String(it.netWeightKg) : "");
   const [openDesc, setOpenDesc] = useState(false);
   const numN = (s: string): number | null => { const n = Number(s); return Number.isFinite(n) && n > 0 ? n : null; };
-  const doSave = () => onSave(it.variantId, price ? Math.round(Number(price) * 100) : null, Number(stock), imageUrl.trim(), categoryId, description.trim(), { kcalPerKg: numN(kcal), proteinPct: numN(protein), netWeightKg: numN(netKg) });
+  const doSave = () => onSave(it.variantId, price ? Math.round(Number(price) * 100) : null, listPrice ? Math.round(Number(listPrice) * 100) : null, Number(stock), imageUrl.trim(), categoryId, description.trim(), { kcalPerKg: numN(kcal), proteinPct: numN(protein), netWeightKg: numN(netKg) });
   return (
     <li style={{ ...card, display: "grid", gap: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
@@ -363,6 +366,7 @@ function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; o
         </span>
         <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <label style={{ fontSize: 12, color: "#777" }}>$ <input value={price} onChange={(e) => setPrice(e.target.value)} style={{ ...input, width: 90 }} /></label>
+          <label style={{ fontSize: 12, color: "#777" }} title="Precio anterior (oferta). Vacío = sin oferta.">antes $ <input value={listPrice} onChange={(e) => setListPrice(e.target.value)} placeholder="—" style={{ ...input, width: 80 }} /></label>
           <label style={{ fontSize: 12, color: "#777" }}>Stock <input value={stock} onChange={(e) => setStock(e.target.value)} style={{ ...input, width: 70 }} /></label>
           <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={{ ...input, width: 150 }}>
             <option value="">Sin categoría</option>
@@ -929,6 +933,8 @@ const DEFAULT_THEME: Theme = {
   "contact.whatsapp": "",
   "contact.whatsappMessage": "¡Hola! Quiero hacer un pedido.",
   "storefront.promoText": "",
+  "storefront.heroImageUrl": "",
+  "storefront.adoptionsBannerImageUrl": "",
   "storefront.heroTitle": "",
   "storefront.heroHighlight": "",
   "storefront.heroSubtitle": "",
@@ -947,6 +953,24 @@ function Field({ label, children, hint }: { label: string; children: React.React
       {children}
       {hint && <span style={{ display: "block", fontSize: 11, color: "#aaa", marginTop: 2 }}>{hint}</span>}
     </label>
+  );
+}
+
+/** Preview de una URL de imagen: valida que cargue y la muestra; si falla, avisa. */
+function UrlPreview({ url, ratio }: { url: string; ratio: string }) {
+  const [err, setErr] = useState(false);
+  useEffect(() => { setErr(false); }, [url]);
+  const ok = /^https?:\/\/\S+$/i.test(url.trim());
+  if (!ok) return null;
+  return (
+    <div style={{ marginTop: 8 }}>
+      {err ? (
+        <div style={{ fontSize: 12, color: "#c0392b" }}>No se pudo cargar la imagen de esa URL.</div>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="preview" onError={() => setErr(true)} style={{ width: "100%", maxWidth: 320, aspectRatio: ratio, objectFit: "cover", borderRadius: 10, border: `1px solid ${LINE}`, display: "block" }} />
+      )}
+    </div>
   );
 }
 
@@ -1029,6 +1053,14 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
         </Field>
         <Field label="Imagen del banner (URL)" hint="http/https. Vacío = fondo de color.">
           <input value={theme["branding.bannerImageUrl"]} onChange={(e) => set("branding.bannerImageUrl", e.target.value)} placeholder="https://…/banner.jpg" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        </Field>
+        <Field label="Imagen del hero (URL)" hint="Foto principal de la home, aprox. 1080×450. Vacío = placeholder.">
+          <input value={theme["storefront.heroImageUrl"]} onChange={(e) => set("storefront.heroImageUrl", e.target.value)} placeholder="https://…/hero.jpg" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+          <UrlPreview url={theme["storefront.heroImageUrl"]} ratio="1080 / 450" />
+        </Field>
+        <Field label="Imagen del banner de Adopciones (URL)" hint="Foto del bloque de adopciones. Vacío = placeholder.">
+          <input value={theme["storefront.adoptionsBannerImageUrl"]} onChange={(e) => set("storefront.adoptionsBannerImageUrl", e.target.value)} placeholder="https://…/adopciones.jpg" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+          <UrlPreview url={theme["storefront.adoptionsBannerImageUrl"]} ratio="1080 / 540" />
         </Field>
         <Field label="Disposición del catálogo">
           <select value={theme["branding.layout"]} onChange={(e) => set("branding.layout", e.target.value)} style={{ ...input, width: "100%" }}>
