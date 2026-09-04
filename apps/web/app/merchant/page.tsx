@@ -466,6 +466,9 @@ function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | nu
         </span>
       </div>
 
+      <DeliveryZonesBar tenant={tenant} token={token} onError={onError} />
+
+
       {showNew && (
         <ManualOrderForm tenant={tenant} token={token} merchantId={merchantId} onError={onError}
           onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); void load(); }} />
@@ -536,6 +539,88 @@ function OrderHead({ o, title }: { o: SellerOrder; title: string }) {
 
 type PetLite = { id: string; name: string; species: string };
 type ManualLine = { variantId: string; name: string; priceMinor: number; qty: number };
+type Zone = { id: string; name: string; customerChargeMinor: string; etaMinutes: number | null };
+
+/**
+ * Zonas de reparto: costo (y tiempo) por barrio. Cuando hay zonas, en el checkout el cliente
+ * elige su zona y el envío toma ese costo (en vez del plano). Editable acá.
+ */
+function DeliveryZonesBar({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const auth = { authorization: `Bearer ${token}` };
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [open, setOpen] = useState(false);
+  const [nf, setNf] = useState({ name: "", price: "", eta: "" });
+
+  const load = useCallback(async () => {
+    if (!tenant) return;
+    const res = await fetch(`/api/merchant/zones?tenant=${encodeURIComponent(tenant)}`, { headers: auth });
+    if (res.ok) setZones((await res.json()).zones);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function add() {
+    if (!nf.name.trim()) return;
+    const res = await fetch(`/api/merchant/zones?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "POST", headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ name: nf.name.trim(), customerChargeMinor: Math.round(Number(nf.price || 0) * 100), etaMinutes: Number(nf.eta) || undefined }),
+    });
+    if (!res.ok) { onError((await res.json()).error ?? "error"); return; }
+    setNf({ name: "", price: "", eta: "" });
+    await load();
+  }
+  async function saveZone(z: Zone, price: string, eta: string) {
+    const res = await fetch(`/api/merchant/zones/${z.id}?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "PATCH", headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ customerChargeMinor: Math.round(Number(price || 0) * 100), etaMinutes: eta ? Number(eta) : null }),
+    });
+    if (!res.ok) { onError((await res.json()).error ?? "error"); return; }
+    await load();
+  }
+  async function del(z: Zone) {
+    if (!confirm(`¿Eliminar la zona "${z.name}"?`)) return;
+    const res = await fetch(`/api/merchant/zones/${z.id}?tenant=${encodeURIComponent(tenant ?? "")}`, { method: "DELETE", headers: auth });
+    if (!res.ok) { onError((await res.json()).error ?? "error"); return; }
+    await load();
+  }
+
+  return (
+    <div style={{ ...card, marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setOpen((v) => !v)}>
+        <span style={{ fontSize: 13.5, fontWeight: 600 }}>📍 Zonas de reparto {zones.length > 0 && <span style={{ color: MUT, fontWeight: 400 }}>({zones.length})</span>}</span>
+        <span style={{ color: MUT }}>{open ? "▲" : "▼"}</span>
+      </div>
+      {open && (
+        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+          <p style={{ fontSize: 12.5, color: MUT, margin: 0 }}>Con zonas cargadas, el cliente elige su barrio en el checkout y el envío toma ese costo. Sin zonas, se usa el envío plano de config.</p>
+          {zones.map((z) => <ZoneRow key={z.id} z={z} onSave={saveZone} onDelete={del} />)}
+          <div className="mform-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 8, alignItems: "center", borderTop: `1px dashed ${LINE}`, paddingTop: 10 }}>
+            <input placeholder="Barrio / zona" value={nf.name} onChange={(e) => setNf({ ...nf, name: e.target.value })} style={input} />
+            <input placeholder="Costo $" inputMode="decimal" value={nf.price} onChange={(e) => setNf({ ...nf, price: e.target.value.replace(/[^0-9.]/g, "") })} style={input} />
+            <input placeholder="Min (ETA)" inputMode="numeric" value={nf.eta} onChange={(e) => setNf({ ...nf, eta: e.target.value.replace(/[^0-9]/g, "") })} style={input} />
+            <button onClick={add} className="mbtn" style={btn}>Agregar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function ZoneRow({ z, onSave, onDelete }: { z: Zone; onSave: (z: Zone, price: string, eta: string) => void; onDelete: (z: Zone) => void }) {
+  const [price, setPrice] = useState(String(Number(z.customerChargeMinor) / 100));
+  const [eta, setEta] = useState(z.etaMinutes != null ? String(z.etaMinutes) : "");
+  const dirty = Math.round(Number(price || 0) * 100) !== Number(z.customerChargeMinor) || (eta ? Number(eta) : null) !== z.etaMinutes;
+  return (
+    <div className="mform-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 8, alignItems: "center" }}>
+      <span style={{ fontWeight: 600, fontSize: 13.5 }}>{z.name}</span>
+      <input value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ""))} style={input} title="Costo al cliente" />
+      <input value={eta} onChange={(e) => setEta(e.target.value.replace(/[^0-9]/g, ""))} placeholder="min" style={input} title="Tiempo estimado" />
+      <span style={{ display: "flex", gap: 6 }}>
+        <button onClick={() => onSave(z, price, eta)} className="mbtn" style={{ ...btn, opacity: dirty ? 1 : 0.5 }} disabled={!dirty}>✓</button>
+        <button onClick={() => onDelete(z)} className="mbtn" style={btnDanger}>✕</button>
+      </span>
+    </div>
+  );
+}
 
 /**
  * Pedido manual (WhatsApp / teléfono / mostrador). Mismo modelo Order del ecommerce: aparece

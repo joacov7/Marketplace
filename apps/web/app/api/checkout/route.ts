@@ -3,6 +3,7 @@ import { getVariantWithPrice } from "@commerce/modules/catalog";
 import { createOrder, type PaymentMethod } from "@commerce/modules/orders";
 import { createPaymentIntent, FakePaymentProvider } from "@commerce/modules/payments";
 import { addAddress, ensureCustomerForUser, findOrCreateCustomerByPhone } from "@commerce/modules/customer";
+import { zoneChargeByName } from "@commerce/modules/delivery";
 import { createPet, listPets, type Species } from "@commerce/modules/pets";
 import { resolveConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
   ]);
   const deliveryMethod = body.delivery === "auxilio" ? "auxilio" : "estandar";
 
-  // Precios actuales + merchant + envío desde config (una lectura con contexto de tenant).
+  // Precios actuales + merchant + envío desde config/zona (una lectura con contexto de tenant).
   const priced = await db().withTenant(tenant.tenantId, async (tx) => {
     const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
     if (!merchants[0]) return null;
@@ -83,7 +84,10 @@ export async function POST(req: Request) {
       items.push({ variantId: it.variantId, qty: it.qty, unitPriceMinor: v.price.amountMinor });
       gmv += v.price.amountMinor * BigInt(it.qty);
     }
-    const deliveryChargeMinor = deliveryMethod === "auxilio" ? auxilioCost : gmv >= threshold ? 0n : standardCost;
+    // Tarifa por zona (barrio) si matchea una zona configurada; si no, envío plano.
+    const zone = body.address?.zone ? await zoneChargeByName(tx, body.address.zone) : null;
+    const baseCharge = zone?.customerChargeMinor ?? standardCost;
+    const deliveryChargeMinor = deliveryMethod === "auxilio" ? auxilioCost : gmv >= threshold ? 0n : baseCharge;
     return { merchantId: merchants[0].id, items, gmv, deliveryChargeMinor };
   });
   if (!priced) return NextResponse.json({ error: "invalid_items_or_no_merchant" }, { status: 400 });

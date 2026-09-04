@@ -5,7 +5,7 @@ import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
 import { createProduct, addVariant } from "../catalog/catalog.js";
 import { setStock } from "../inventory/inventory.js";
 import { createOrder } from "../orders/orders.js";
-import { createDelivery, transitionDelivery, getDelivery, quoteDelivery } from "./delivery.js";
+import { createDelivery, transitionDelivery, getDelivery, quoteDelivery, listZones, createZone, updateZone, deleteZone, zoneChargeByName } from "./delivery.js";
 
 describe("Delivery — costeo, ciclo de entrega, subsidio", () => {
   let pg: PGlite;
@@ -91,5 +91,34 @@ describe("Delivery — costeo, ciclo de entrega, subsidio", () => {
     expect(q.cadeteCostMinor).toBe(300_000n);
     expect(q.customerChargeMinor).toBe(200_000n);
     expect(q.subsidySource).toBe("merchant");
+  });
+
+  it("Eslabón 3: zonas de reparto — CRUD + matcheo por nombre para el checkout", async () => {
+    const { id } = await db.withTenant(tenantId, (tx) =>
+      createZone(tx, { tenantId, name: "Barrio Norte", customerChargeMinor: 150_000n, etaMinutes: 30 }),
+    );
+    await db.withTenant(tenantId, (tx) => createZone(tx, { tenantId, name: "Munilla", customerChargeMinor: 250_000n }));
+
+    let zones = await db.withTenant(tenantId, (tx) => listZones(tx));
+    const norte = zones.find((z) => z.name === "Barrio Norte")!;
+    expect(norte.customerChargeMinor).toBe(150_000n);
+    expect(norte.etaMinutes).toBe(30);
+
+    // Matcheo por nombre (case-insensitive) → tarifa que usa el checkout.
+    const match = await db.withTenant(tenantId, (tx) => zoneChargeByName(tx, "barrio norte"));
+    expect(match?.customerChargeMinor).toBe(150_000n);
+    expect(await db.withTenant(tenantId, (tx) => zoneChargeByName(tx, "Barrio inexistente"))).toBeNull();
+
+    // Editar costo + ETA.
+    await db.withTenant(tenantId, (tx) => updateZone(tx, { id, customerChargeMinor: 180_000n, etaMinutes: 45 }));
+    zones = await db.withTenant(tenantId, (tx) => listZones(tx));
+    const upd = zones.find((z) => z.id === id)!;
+    expect(upd.customerChargeMinor).toBe(180_000n);
+    expect(upd.etaMinutes).toBe(45);
+
+    // Eliminar.
+    await db.withTenant(tenantId, (tx) => deleteZone(tx, id));
+    zones = await db.withTenant(tenantId, (tx) => listZones(tx));
+    expect(zones.some((z) => z.id === id)).toBe(false);
   });
 });

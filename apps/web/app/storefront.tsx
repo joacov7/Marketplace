@@ -112,6 +112,7 @@ interface Quote {
   discountMinor: string;
   totalMinor: string;
   missingForFreeMinor: string;
+  zoneEtaMinutes?: number | null;
 }
 
 export default function Storefront(props: {
@@ -157,6 +158,8 @@ export default function Storefront(props: {
   const [greetName, setGreetName] = useState<string | null>(null);
   const [petSel, setPetSel] = useState<string>(""); // id de mascota elegida, o "" (ninguna/nueva)
   const [newPet, setNewPet] = useState({ name: "", species: "perro", weight: "" });
+  // Zonas de reparto del comercio (costo/tiempo por barrio). Vacío = envío plano.
+  const [zones, setZones] = useState<Array<{ name: string; customerChargeMinor: string; etaMinutes: number | null }>>([]);
   // Ubicación opcional del cliente (GPS del navegador, gratis, sin API key).
   const [geo, setGeo] = useState<{ lat: number; lng: number } | null>(null);
   const [geoBusy, setGeoBusy] = useState(false);
@@ -238,15 +241,24 @@ export default function Storefront(props: {
       const res = await fetch(`/api/checkout/quote?tenant=${encodeURIComponent(tenant)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ items: items.map(([variantId, l]) => ({ variantId, qty: l.qty })), delivery, payment }),
+        body: JSON.stringify({ items: items.map(([variantId, l]) => ({ variantId, qty: l.qty })), delivery, payment, zone: form.zone }),
       });
       const d = await res.json();
       if (res.ok) setQuote(d); else setError(d.error ?? "error");
     } catch (e) { setError(String(e)); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenant, delivery, payment, JSON.stringify(cart)]);
+  }, [tenant, delivery, payment, form.zone, JSON.stringify(cart)]);
 
   useEffect(() => { if (view === "checkout") void fetchQuote(); }, [view, fetchQuote]);
+
+  // Zonas de reparto (para el selector de barrio del checkout).
+  useEffect(() => {
+    if (view !== "checkout" || zones.length > 0) return;
+    fetch(`/api/zones?tenant=${encodeURIComponent(tenant)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.zones?.length) setZones(d.zones); })
+      .catch(() => {});
+  }, [view, tenant, zones.length]);
 
   // Cliente logueado: traemos sus mascotas al entrar al checkout (su alimento habitual va acá).
   useEffect(() => {
@@ -432,6 +444,7 @@ export default function Storefront(props: {
             newPet={newPet} setNewPet={setNewPet} customerName={customerName} setCustomerName={setCustomerName}
             factors={config.nutritionFactors}
             geo={geo} geoBusy={geoBusy} onShareLocation={shareLocation} onClearLocation={() => setGeo(null)}
+            zones={zones}
             onConfirm={confirmOrder}
           />
         )}
@@ -845,6 +858,7 @@ function CheckoutView(props: {
   newPet: { name: string; species: string; weight: string }; setNewPet: (p: { name: string; species: string; weight: string }) => void;
   customerName: string; setCustomerName: (n: string) => void; factors: Record<string, number>;
   geo: { lat: number; lng: number } | null; geoBusy: boolean; onShareLocation: () => void; onClearLocation: () => void;
+  zones: Array<{ name: string; customerChargeMinor: string; etaMinutes: number | null }>;
   busy: boolean; error: string | null; subtotal: number; shippingFor: (d: "estandar" | "auxilio") => number; discountFor: (p: string) => number; onConfirm: () => void;
 }) {
   const { G, form, setForm } = props;
@@ -865,7 +879,16 @@ function CheckoutView(props: {
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Dirección de envío</div>
             <div className="sf-checkout-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <input style={{ ...input, gridColumn: "1 / -1" }} placeholder="Calle y número" value={form.street} onChange={(e) => setForm({ ...form, street: e.target.value })} />
-              <input style={input} placeholder="Barrio / zona" value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value })} />
+              {props.zones.length > 0 ? (
+                <select style={input} value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value })}>
+                  <option value="">Elegí tu zona…</option>
+                  {props.zones.map((z) => (
+                    <option key={z.name} value={z.name}>{z.name} — {Number(z.customerChargeMinor) === 0 ? "gratis" : money(z.customerChargeMinor)}{z.etaMinutes ? ` · ${z.etaMinutes}′` : ""}</option>
+                  ))}
+                </select>
+              ) : (
+                <input style={input} placeholder="Barrio / zona" value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value })} />
+              )}
               <input style={input} placeholder="Teléfono / WhatsApp" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
               <input style={{ ...input, gridColumn: "1 / -1" }} placeholder="Notas (timbre, referencia…)" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
@@ -932,7 +955,11 @@ function CheckoutView(props: {
 
           <div style={card}>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Método de entrega</div>
-            <RadioCard G={G} on={props.delivery === "estandar"} title="Envío estándar" sub="En el día (13:00 a 20:00)" price={sub >= Number(props.config.freeShippingThresholdMinor) ? "Gratis" : money(props.config.standardCostMinor)} onClick={() => props.setDelivery("estandar")} />
+            <RadioCard G={G} on={props.delivery === "estandar"}
+              title="Envío estándar"
+              sub={`En el día (13:00 a 20:00)${props.quote?.zoneEtaMinutes ? ` · ~${props.quote.zoneEtaMinutes} min` : ""}`}
+              price={props.delivery === "estandar" ? (ship === 0 ? "Gratis" : money(ship)) : (sub >= Number(props.config.freeShippingThresholdMinor) ? "Gratis" : money(props.config.standardCostMinor))}
+              onClick={() => props.setDelivery("estandar")} />
             {props.config.auxilioEnabled && (
               <RadioCard G={G} on={props.delivery === "auxilio"} title="Envío de Auxilio" sub="Hoy de 20:00 a 23:00 hs" price={money(props.config.auxilioCostMinor)} onClick={() => props.setDelivery("auxilio")} />
             )}

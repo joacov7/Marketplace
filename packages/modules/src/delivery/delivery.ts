@@ -51,6 +51,97 @@ export async function quoteDelivery(
   return { cadeteCostMinor, customerChargeMinor, subsidySource, subsidyMinor };
 }
 
+// ── Zonas de reparto (Eslabón 3): costo y tiempo por barrio ─────────────────────────
+// Reusa delivery_zones (nombre + eta) + delivery_rates (tarifa al cliente). El costo por
+// zona reemplaza al envío plano en el checkout cuando la zona matchea. Todo bajo RLS/tenant.
+
+export interface Zone {
+  id: string;
+  name: string;
+  customerChargeMinor: bigint;
+  etaMinutes: number | null;
+}
+interface ZoneRow {
+  id: string;
+  name: string;
+  customer_charge_minor: string | null;
+  eta_minutes: number | null;
+}
+const mapZone = (r: ZoneRow): Zone => ({
+  id: r.id,
+  name: r.name,
+  customerChargeMinor: BigInt(r.customer_charge_minor ?? "0"),
+  etaMinutes: r.eta_minutes,
+});
+
+export async function listZones(db: Db): Promise<Zone[]> {
+  const rows = await db.query<ZoneRow>(
+    `select z.id, z.name, z.eta_minutes,
+            (select r.customer_charge_minor from delivery_rates r where r.zone_id = z.id limit 1) as customer_charge_minor
+       from delivery_zones z order by z.name`,
+  );
+  return rows.map(mapZone);
+};
+
+/** Crea una zona + su tarifa. El costo del cadete = cargo al cliente (sin subsidio) por defecto. */
+export async function createZone(
+  db: Db,
+  input: { tenantId: string; name: string; customerChargeMinor: bigint; etaMinutes?: number },
+): Promise<{ id: string }> {
+  const [z] = await db.query<{ id: string }>(
+    `insert into delivery_zones (tenant_id, name, eta_minutes) values ($1,$2,$3) returning id`,
+    [input.tenantId, input.name, input.etaMinutes ?? null],
+  );
+  await db.query(
+    `insert into delivery_rates (tenant_id, zone_id, cadete_cost_minor, customer_charge_minor, subsidy_source)
+     values ($1,$2,$3,$3,'none')`,
+    [input.tenantId, z!.id, input.customerChargeMinor.toString()],
+  );
+  return { id: z!.id };
+}
+
+export async function updateZone(
+  db: Db,
+  input: { id: string; name?: string; customerChargeMinor?: bigint; etaMinutes?: number | null },
+): Promise<void> {
+  if (input.name !== undefined || input.etaMinutes !== undefined) {
+    const sets: string[] = [];
+    const params: unknown[] = [input.id];
+    if (input.name !== undefined) { params.push(input.name); sets.push(`name = $${params.length}`); }
+    if (input.etaMinutes !== undefined) { params.push(input.etaMinutes); sets.push(`eta_minutes = $${params.length}`); }
+    if (sets.length) await db.query(`update delivery_zones set ${sets.join(", ")} where id = $1`, params);
+  }
+  if (input.customerChargeMinor !== undefined) {
+    await db.query(`update delivery_rates set cadete_cost_minor = $2, customer_charge_minor = $2 where zone_id = $1`, [
+      input.id,
+      input.customerChargeMinor.toString(),
+    ]);
+  }
+}
+
+export async function deleteZone(db: Db, id: string): Promise<void> {
+  await db.query(`delete from delivery_rates where zone_id = $1`, [id]);
+  await db.query(`delete from delivery_zones where id = $1`, [id]);
+}
+
+/** Busca la tarifa de una zona por nombre (case-insensitive). Null si no hay match. */
+export async function zoneChargeByName(
+  db: Db,
+  name: string,
+): Promise<{ zoneId: string; customerChargeMinor: bigint; etaMinutes: number | null } | null> {
+  const n = name.trim();
+  if (!n) return null;
+  const [row] = await db.query<ZoneRow>(
+    `select z.id, z.name, z.eta_minutes,
+            (select r.customer_charge_minor from delivery_rates r where r.zone_id = z.id limit 1) as customer_charge_minor
+       from delivery_zones z where lower(z.name) = lower($1) limit 1`,
+    [n],
+  );
+  if (!row) return null;
+  const z = mapZone(row);
+  return { zoneId: z.id, customerChargeMinor: z.customerChargeMinor, etaMinutes: z.etaMinutes };
+}
+
 /** Crea la entrega de un seller_order (V1: directo comercio→cliente). */
 export async function createDelivery(
   db: TenantAwareDb,

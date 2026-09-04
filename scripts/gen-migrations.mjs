@@ -18,6 +18,7 @@ const files = [
   ["0011_food_nutrition", "packages/modules/src/catalog/migrations/0011_food_nutrition.sql"],
   ["0012_pets", "packages/modules/src/pets/migrations/0012_pets.sql"],
   ["0013_customers_channel", "packages/modules/src/customer/migrations/0013_customers_channel.sql"],
+  ["0014_zone_eta", "packages/modules/src/delivery/migrations/0014_zone_eta.sql"],
 ];
 
 const entries = files

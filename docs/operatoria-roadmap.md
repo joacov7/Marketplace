@@ -101,9 +101,20 @@
   rutas `api/track/[id]`, UI `app/seguimiento/[id]/*`, botón GPS + link en `storefront.tsx`,
   pin en `reparto-client.tsx`. Tests: casos Eslabón 3 en `orders.pglite.test.ts`.
 
-### Pendiente del bloque direcciones: zonas de reparto
-Derivar la **zona/barrio** de la dirección para costo/tiempo por zona y ordenar la ruta. Engancha
-con el precio de envío ya existente (hoy plano por config). Queda como próximo incremento.
+### ✅ Zonas de reparto — implementado
+- Reusa las tablas existentes `delivery_zones` + `delivery_rates` (+ migración 0014 que suma
+  `eta_minutes` a la zona). Cada zona = nombre + **costo al cliente** + **tiempo estimado**.
+- El comercio administra las zonas desde el panel (pestaña Pedidos → "📍 Zonas de reparto":
+  agregar / editar costo y ETA / eliminar).
+- En el checkout, si hay zonas cargadas, el cliente **elige su barrio** en un selector (con el
+  costo y el tiempo a la vista); el envío toma **ese costo** (sigue gratis sobre el umbral). Sin
+  zonas, se usa el envío plano de config (retrocompatible).
+- El costeo por zona corre en el quote y en el checkout (matcheo por nombre, case-insensitive).
+- Archivos: `delivery.ts` (`listZones`/`createZone`/`updateZone`/`deleteZone`/`zoneChargeByName`),
+  migración `0014_zone_eta.sql`, rutas `api/merchant/zones{,/[id]}` + público `api/zones`,
+  checkout/quote con costo por zona, selector en `storefront.tsx`, editor en `merchant/page.tsx`.
+  Tests: zonas en `delivery.pglite.test.ts`.
+- Follow-up menor: agrupar/ordenar la cola de reparto por zona para armar la ruta.
 
 ### ✅ Eslabón 1 — implementado (la mascota en el centro)
 - **Cliente por teléfono** (`customers`, migración 0013): el teléfono normalizado es la llave;
