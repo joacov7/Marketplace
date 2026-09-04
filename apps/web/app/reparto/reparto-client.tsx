@@ -13,6 +13,8 @@ interface DeliveryOrder {
   addressStreet: string | null;
   addressZone: string | null;
   addressNotes: string | null;
+  addressLat: number | null;
+  addressLng: number | null;
   deliveryWindow: string | null;
   amountToCollectMinor: string;
   paymentMethod: string | null;
@@ -83,6 +85,10 @@ export default function RepartoClient() {
 
   const title = (o: DeliveryOrder) => (o.petName ? `Pedido de ${o.petName}` : `Pedido #${o.orderId.slice(0, 8)}`);
   const mapsLink = (o: DeliveryOrder) => {
+    // Si el cliente compartió su ubicación, vamos al pin exacto; si no, a la dirección escrita.
+    if (o.addressLat != null && o.addressLng != null) {
+      return `https://www.google.com/maps/search/?api=1&query=${o.addressLat},${o.addressLng}`;
+    }
     const q = [o.addressStreet, o.addressZone, "Gualeguay, Entre Ríos"].filter(Boolean).join(", ");
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
   };
@@ -144,7 +150,7 @@ export default function RepartoClient() {
 
                     {/* Dirección + referencias */}
                     <div style={{ marginTop: 12, fontSize: 14, lineHeight: 1.5 }}>
-                      <div>📍 <b>{o.addressStreet ?? "Sin dirección"}</b>{o.addressZone ? ` · ${o.addressZone}` : ""}</div>
+                      <div>📍 <b>{o.addressStreet ?? "Sin dirección"}</b>{o.addressZone ? ` · ${o.addressZone}` : ""}{o.addressLat != null && <span style={{ color: C.green, fontWeight: 600 }}> · ubicación exacta ✓</span>}</div>
                       {o.addressNotes && <div style={{ color: C.mut, fontSize: 13 }}>📝 {o.addressNotes}</div>}
                       {o.deliveryWindow && <div style={{ color: C.mut, fontSize: 12.5, marginTop: 2 }}>🕒 {o.deliveryWindow}</div>}
                     </div>

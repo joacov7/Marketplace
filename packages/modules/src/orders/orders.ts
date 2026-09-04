@@ -353,6 +353,77 @@ export async function completeOrder(db: TenantAwareDb, tenantId: string, orderId
   }
 }
 
+// ── Seguimiento del pedido (semáforo que ve el cliente) ────────────────────────────
+export type TrackingStage = "recibido" | "preparando" | "en_camino" | "entregado" | "cancelado";
+export interface TrackingView {
+  stage: TrackingStage;
+  step: number; // 0..3 para la barra de progreso (cancelado = -1)
+  label: string; // texto que ve el cliente
+  petName: string | null;
+  itemCount: number;
+  totalMinor: bigint;
+  currency: string;
+  deliveryWindow: string | null;
+  createdAt: string;
+}
+
+const STAGE_LABEL: Record<TrackingStage, string> = {
+  recibido: "Pedido recibido",
+  preparando: "En preparación",
+  en_camino: "En camino",
+  entregado: "Entregado ✅",
+  cancelado: "Cancelado",
+};
+const STAGE_STEP: Record<TrackingStage, number> = { recibido: 0, preparando: 1, en_camino: 2, entregado: 3, cancelado: -1 };
+
+/** Traduce (estado del pedido, cumplimiento del seller) → etapa que ve el cliente. Pura. */
+export function deliveryStage(orderStatus: string, sellerStatus: string | null): TrackingStage {
+  if (orderStatus === "cancelled" || sellerStatus === "cancelled" || sellerStatus === "rejected") return "cancelado";
+  if (orderStatus === "completed" || sellerStatus === "delivered") return "entregado";
+  if (sellerStatus === "in_transit") return "en_camino";
+  if (sellerStatus === "preparing" || sellerStatus === "ready") return "preparando";
+  if (orderStatus === "confirmed") return "preparando";
+  return "recibido";
+}
+
+/**
+ * Vista de seguimiento de UN pedido, para el link público del cliente (sin login). El orderId
+ * es un UUID no adivinable = la llave. Devuelve solo lo justo para el semáforo (sin dirección
+ * ni datos sensibles). Corre con contexto de tenant (RLS).
+ */
+export async function getOrderTracking(db: Db, orderId: string): Promise<TrackingView | null> {
+  const [o] = await db.query<{
+    status: string;
+    fulfillment: string | null;
+    pet_name: string | null;
+    currency: string;
+    total_minor: string;
+    delivery_charge_minor: string;
+    delivery_window: string | null;
+    item_count: string;
+    created_at: string;
+  }>(
+    `select o.status, o.pet_name, o.currency, o.total_minor, o.delivery_charge_minor, o.delivery_window, o.created_at,
+            (select count(*) from order_items oi join seller_orders so on so.id = oi.seller_order_id where so.order_id = o.id) as item_count,
+            (select so.status from seller_orders so where so.order_id = o.id order by so.created_at limit 1) as fulfillment
+       from orders o where o.id = $1`,
+    [orderId],
+  );
+  if (!o) return null;
+  const stage = deliveryStage(o.status, o.fulfillment);
+  return {
+    stage,
+    step: STAGE_STEP[stage],
+    label: STAGE_LABEL[stage],
+    petName: o.pet_name,
+    itemCount: Number(o.item_count),
+    totalMinor: BigInt(o.total_minor) + BigInt(o.delivery_charge_minor ?? "0"),
+    currency: o.currency,
+    deliveryWindow: o.delivery_window,
+    createdAt: new Date(o.created_at).toISOString(),
+  };
+}
+
 export interface DeliveryOrderRow {
   sellerOrderId: string;
   orderId: string;
@@ -363,6 +434,8 @@ export interface DeliveryOrderRow {
   addressStreet: string | null;
   addressZone: string | null;
   addressNotes: string | null;
+  addressLat: number | null;
+  addressLng: number | null;
   deliveryWindow: string | null;
   amountToCollectMinor: bigint; // mercadería + envío
   paymentMethod: string | null;
@@ -387,6 +460,8 @@ export async function listDeliveryOrders(db: Db, opts: { limit?: number } = {}):
     street: string | null;
     zone: string | null;
     notes: string | null;
+    lat: string | null;
+    lng: string | null;
     delivery_window: string | null;
     amount_minor: string;
     payment_method: string | null;
@@ -400,6 +475,8 @@ export async function listDeliveryOrders(db: Db, opts: { limit?: number } = {}):
             o.shipping_address->>'street' as street,
             o.shipping_address->>'zone'   as zone,
             o.shipping_address->>'notes'  as notes,
+            o.shipping_address->>'lat'    as lat,
+            o.shipping_address->>'lng'    as lng,
             o.delivery_window,
             (o.total_minor + coalesce(o.delivery_charge_minor,0))::text as amount_minor,
             o.payment_method, o.payment_status,
@@ -427,6 +504,8 @@ export async function listDeliveryOrders(db: Db, opts: { limit?: number } = {}):
     addressStreet: r.street,
     addressZone: r.zone,
     addressNotes: r.notes,
+    addressLat: r.lat != null && r.lat !== "" ? Number(r.lat) : null,
+    addressLng: r.lng != null && r.lng !== "" ? Number(r.lng) : null,
     deliveryWindow: r.delivery_window,
     amountToCollectMinor: BigInt(r.amount_minor),
     paymentMethod: r.payment_method,

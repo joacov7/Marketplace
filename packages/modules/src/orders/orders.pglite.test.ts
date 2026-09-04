@@ -4,7 +4,7 @@ import { type TenantAwareDb, setConfigValue } from "@commerce/platform";
 import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
 import { createProduct, addVariant } from "../catalog/catalog.js";
 import { setStock, getStock } from "../inventory/inventory.js";
-import { createOrder, confirmOrder, cancelOrder, completeOrder, getOrder, listSellerOrders, listDeliveryOrders, transitionSellerOrder, listCustomerOrders } from "./orders.js";
+import { createOrder, confirmOrder, cancelOrder, completeOrder, getOrder, listSellerOrders, listDeliveryOrders, transitionSellerOrder, listCustomerOrders, deliveryStage, getOrderTracking } from "./orders.js";
 import { findOrCreateCustomerByPhone } from "../customer/customer.js";
 
 async function variantWithStock(
@@ -333,6 +333,43 @@ describe("Orders — creación, reserva, confirmación, cancelación", () => {
     expect((await db.withTenant(tenantId, (tx) => listDeliveryOrders(tx))).some((r) => r.sellerOrderId === soId)).toBe(true);
     await transitionSellerOrder(db, tenantId, soId, "delivered");
     expect((await db.withTenant(tenantId, (tx) => listDeliveryOrders(tx))).some((r) => r.sellerOrderId === soId)).toBe(false);
+  });
+
+  it("Eslabón 3: deliveryStage traduce (pedido, cumplimiento) → semáforo del cliente", () => {
+    expect(deliveryStage("pending_payment", null)).toBe("recibido");
+    expect(deliveryStage("confirmed", "pending")).toBe("preparando");
+    expect(deliveryStage("confirmed", "preparing")).toBe("preparando");
+    expect(deliveryStage("confirmed", "ready")).toBe("preparando");
+    expect(deliveryStage("confirmed", "in_transit")).toBe("en_camino");
+    expect(deliveryStage("completed", "delivered")).toBe("entregado");
+    expect(deliveryStage("cancelled", "cancelled")).toBe("cancelado");
+    expect(deliveryStage("confirmed", "rejected")).toBe("cancelado");
+  });
+
+  it("Eslabón 3: getOrderTracking devuelve el semáforo (sin datos sensibles)", async () => {
+    const { customerId } = await db.withTenant(tenantId, (tx) =>
+      findOrCreateCustomerByPhone(tx, { tenantId, phone: "2447-8001", name: "Dueño de Luna" }),
+    );
+    const v = await variantWithStock(db, tenantId, merchantId, "E3A", 10);
+    const created = await createOrder(db, {
+      tenantId, customerId, petName: "Luna", paymentMethod: "efectivo", channel: "web",
+      deliveryChargeMinor: 500n,
+      sellers: [{ merchantId, items: [{ variantId: v, qty: 1, unitPriceMinor: 2000n }] }],
+    });
+    if (!created.ok) throw new Error("create falló");
+
+    let t = await db.withTenant(tenantId, (tx) => getOrderTracking(tx, created.value.orderId));
+    expect(t?.stage).toBe("recibido");
+    expect(t?.petName).toBe("Luna");
+    expect(t?.totalMinor).toBe(2500n); // mercadería + envío
+
+    await confirmOrder(db, tenantId, created.value.orderId);
+    await transitionSellerOrder(db, tenantId, created.value.sellerOrderIds[0]!, "preparing");
+    t = await db.withTenant(tenantId, (tx) => getOrderTracking(tx, created.value.orderId));
+    expect(t?.stage).toBe("preparando");
+
+    // Pedido inexistente → null.
+    expect(await db.withTenant(tenantId, (tx) => getOrderTracking(tx, "00000000-0000-0000-0000-000000000000"))).toBeNull();
   });
 
   it("Eslabón 2: completeOrder cierra el pedido entregado (idempotente)", async () => {

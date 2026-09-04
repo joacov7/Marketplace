@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 // tocar este handler (Payment Orchestrator).
 const provider = new FakePaymentProvider();
 
-interface Addr { street?: string; city?: string; zone?: string; phone?: string; notes?: string; label?: string }
+interface Addr { street?: string; city?: string; zone?: string; phone?: string; notes?: string; label?: string; lat?: number; lng?: number }
 interface CheckoutBody {
   items: Array<{ variantId: string; qty: number }>;
   address?: Addr;

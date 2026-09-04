@@ -157,6 +157,18 @@ export default function Storefront(props: {
   const [greetName, setGreetName] = useState<string | null>(null);
   const [petSel, setPetSel] = useState<string>(""); // id de mascota elegida, o "" (ninguna/nueva)
   const [newPet, setNewPet] = useState({ name: "", species: "perro", weight: "" });
+  // Ubicación opcional del cliente (GPS del navegador, gratis, sin API key).
+  const [geo, setGeo] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoBusy, setGeoBusy] = useState(false);
+  function shareLocation() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) { setError("Tu navegador no permite compartir ubicación."); return; }
+    setGeoBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setGeo({ lat: Number(pos.coords.latitude.toFixed(6)), lng: Number(pos.coords.longitude.toFixed(6)) }); setGeoBusy(false); },
+      () => { setError("No pudimos obtener tu ubicación. Podés seguir con la dirección escrita."); setGeoBusy(false); },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
 
   // Carrito persistente por tenant.
   const storageKey = `cart:${tenant}`;
@@ -289,7 +301,7 @@ export default function Storefront(props: {
         headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
         body: JSON.stringify({
           items: items.map(([variantId, l]) => ({ variantId, qty: l.qty })),
-          address: { street: form.street, zone: form.zone, phone: form.phone, notes: form.notes },
+          address: { street: form.street, zone: form.zone, phone: form.phone, notes: form.notes, ...(geo ? { lat: geo.lat, lng: geo.lng } : {}) },
           delivery,
           payment,
           ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
@@ -419,12 +431,13 @@ export default function Storefront(props: {
             knownPets={knownPets} greetName={greetName} petSel={petSel} setPetSel={setPetSel}
             newPet={newPet} setNewPet={setNewPet} customerName={customerName} setCustomerName={setCustomerName}
             factors={config.nutritionFactors}
+            geo={geo} geoBusy={geoBusy} onShareLocation={shareLocation} onClearLocation={() => setGeo(null)}
             onConfirm={confirmOrder}
           />
         )}
 
         {view === "done" && done && (
-          <DoneView G={G} orderId={done.orderId} totalMinor={done.totalMinor} petName={done.petName} onHome={() => { setCategory(""); setQuery(""); go("home"); }} />
+          <DoneView G={G} tenant={tenant} orderId={done.orderId} totalMinor={done.totalMinor} petName={done.petName} onHome={() => { setCategory(""); setQuery(""); go("home"); }} />
         )}
 
         {view === "adopciones" && (
@@ -831,6 +844,7 @@ function CheckoutView(props: {
   knownPets: StorePetLite[]; greetName: string | null; petSel: string; setPetSel: (id: string) => void;
   newPet: { name: string; species: string; weight: string }; setNewPet: (p: { name: string; species: string; weight: string }) => void;
   customerName: string; setCustomerName: (n: string) => void; factors: Record<string, number>;
+  geo: { lat: number; lng: number } | null; geoBusy: boolean; onShareLocation: () => void; onClearLocation: () => void;
   busy: boolean; error: string | null; subtotal: number; shippingFor: (d: "estandar" | "auxilio") => number; discountFor: (p: string) => number; onConfirm: () => void;
 }) {
   const { G, form, setForm } = props;
@@ -854,6 +868,21 @@ function CheckoutView(props: {
               <input style={input} placeholder="Barrio / zona" value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value })} />
               <input style={input} placeholder="Teléfono / WhatsApp" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
               <input style={{ ...input, gridColumn: "1 / -1" }} placeholder="Notas (timbre, referencia…)" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            </div>
+            {/* Ubicación opcional (GPS del navegador). El cadete llega exacto. */}
+            <div style={{ marginTop: 12 }}>
+              {props.geo ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: G, fontWeight: 600 }}>
+                  <Check size={15} /> Ubicación compartida
+                  <button type="button" onClick={props.onClearLocation} style={{ border: "none", background: "transparent", color: C.mute, fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>quitar</button>
+                </div>
+              ) : (
+                <button type="button" onClick={props.onShareLocation} disabled={props.geoBusy}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1.5px dashed ${C.border}`, background: C.white, borderRadius: 10, padding: "10px 14px", fontSize: 13.5, fontWeight: 600, color: C.text, cursor: "pointer", fontFamily: FONT }}>
+                  📍 {props.geoBusy ? "Obteniendo ubicación…" : "Compartir mi ubicación (opcional)"}
+                </button>
+              )}
+              <div style={{ fontSize: 11.5, color: C.mute, marginTop: 6 }}>Ayuda al repartidor a llegar exacto. No es obligatorio.</div>
             </div>
           </div>
 
@@ -960,8 +989,9 @@ function Row({ label, value, valueColor }: { label: string; value: string; value
 }
 
 // ── Confirmación ─────────────────────────────────────────────────────────────────
-function DoneView({ G, orderId, totalMinor, petName, onHome }: { G: string; orderId: string; totalMinor: string; petName: string | null; onHome: () => void }) {
+function DoneView({ G, tenant, orderId, totalMinor, petName, onHome }: { G: string; tenant: string; orderId: string; totalMinor: string; petName: string | null; onHome: () => void }) {
   const forPet = petName?.trim();
+  const trackUrl = `/seguimiento/${orderId}?tenant=${encodeURIComponent(tenant)}`;
   return (
     <div style={{ textAlign: "center" }}>
       <div style={{ width: 74, height: 74, borderRadius: "50%", background: C.iconBg, color: G, display: "grid", placeItems: "center", margin: "0 auto" }}><Check size={34} sw={2.6} /></div>
@@ -969,7 +999,10 @@ function DoneView({ G, orderId, totalMinor, petName, onHome }: { G: string; orde
         {forPet ? <>¡Listo! El pedido de {forPet} está confirmado ❤️</> : <>¡Pedido confirmado! ❤️</>}
       </h1>
       <p style={{ fontSize: 15.5, color: C.text2, lineHeight: 1.65 }}>Pedido <b>#{orderId.slice(0, 8)}</b> por <b>{money(totalMinor)}</b>. Te escribimos por WhatsApp para coordinar la entrega en Gualeguay.</p>
-      <button className="sf-btn" onClick={onHome} style={{ ...primaryBtn(G), padding: "14px 30px", marginTop: 28 }}>SEGUIR COMPRANDO</button>
+      <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginTop: 28 }}>
+        <a className="sf-btn" href={trackUrl} style={{ ...primaryBtn(G), padding: "14px 30px", textDecoration: "none" }}>SEGUIR MI PEDIDO 🐾</a>
+        <button className="sf-btn" onClick={onHome} style={{ ...outlineBtn(G), padding: "14px 30px" }}>SEGUIR COMPRANDO</button>
+      </div>
     </div>
   );
 }

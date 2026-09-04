@@ -28,6 +28,8 @@ export async function GET(req: Request) {
       addressStreet: r.addressStreet,
       addressZone: r.addressZone,
       addressNotes: r.addressNotes,
+      addressLat: r.addressLat,
+      addressLng: r.addressLng,
       deliveryWindow: r.deliveryWindow,
       amountToCollectMinor: r.amountToCollectMinor.toString(),
       paymentMethod: r.paymentMethod,

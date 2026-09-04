@@ -82,9 +82,28 @@
    ficha de cliente** + **mascota protagonista**. **IMPLEMENTADO** (ver abajo).
 2. ✅ **Pantalla de reparto (PWA)** + **cobro al entregar**: entregas del día, "Cómo llegar",
    WhatsApp, En camino / Entregado + cobro (impacta ledger/reportes). **IMPLEMENTADO**.
-3. **Direcciones**: referencias + "compartir ubicación" opcional en checkout; botón "Cómo
-   llegar" en reparto ya usa la dirección escrita; falta ubicación GPS + zonas de reparto.
+3. ✅ **Direcciones + seguimiento**: referencias + "compartir ubicación" GPS opcional en
+   checkout; "Cómo llegar" en reparto va al pin exacto si lo hay; **seguimiento en vivo para el
+   cliente** (link sin login). **IMPLEMENTADO** (ver abajo). Falta **zonas de reparto**.
 4. **Mercado Pago** real: cuando el cliente tenga la cuenta, se suma "Pagar ahora".
+
+### ✅ Eslabón 3 — implementado (ubicación + seguimiento en vivo)
+- **Ubicación GPS opcional** en el checkout: botón "📍 Compartir mi ubicación" (Geolocation del
+  navegador, **gratis, sin API key**). Se guardan lat/lng en el snapshot del pedido. No obliga.
+- **Reparto al pin exacto**: si el pedido tiene ubicación, "Cómo llegar" abre Google Maps en las
+  coordenadas; si no, en la dirección escrita. La tarjeta marca "ubicación exacta ✓".
+- **Seguimiento en vivo (sin login)**: página pública `/seguimiento/<orderId>?tenant=<slug>` con
+  el semáforo Recibido → En preparación → En camino → Entregado (auto-refresh cada 20 s),
+  personalizada ("Pedido de Bruno"). El orderId (UUID) es la llave; expone solo el estado +
+  total/ventana, nada sensible. La confirmación del checkout muestra el botón "Seguir mi pedido".
+- Pieza pura testeada: `deliveryStage(estadoPedido, cumplimiento)` → etapa del cliente.
+- Archivos clave: `orders.ts` (`deliveryStage`, `getOrderTracking`, lat/lng en reparto),
+  rutas `api/track/[id]`, UI `app/seguimiento/[id]/*`, botón GPS + link en `storefront.tsx`,
+  pin en `reparto-client.tsx`. Tests: casos Eslabón 3 en `orders.pglite.test.ts`.
+
+### Pendiente del bloque direcciones: zonas de reparto
+Derivar la **zona/barrio** de la dirección para costo/tiempo por zona y ordenar la ruta. Engancha
+con el precio de envío ya existente (hoy plano por config). Queda como próximo incremento.
 
 ### ✅ Eslabón 1 — implementado (la mascota en el centro)
 - **Cliente por teléfono** (`customers`, migración 0013): el teléfono normalizado es la llave;
@@ -155,7 +174,7 @@ eslabón (no todo a la vez):
 | 1. **Perfil de mascota** | Nombre, peso, edad, alimento, etc. Personaliza recomendaciones. | ✅ Hecho (Mis mascotas) |
 | 2. **Compra rápida** | Elegís la mascota → su alimento habitual → "Repetir última compra" 1 clic + recomendaciones (snacks, higiene, antiparasitarios). | ⏳ Falta (hay calculadora/comparador; falta "repetir" y "su alimento habitual") |
 | 3. **Recompra inteligente** | Estima cuándo se termina el alimento → recordatorio ("A Bruno le quedan 5 días") → "Reponer ahora". Después: **suscripción recurrente** con beneficios. | ✅ Parcial (estimación in-app lista; recordatorio proactivo = follow-up) |
-| 4. **Entrega** | Confirmado → preparando → en camino → entregado ❤️ + cobro. | ✅ Operativa (pantalla de reparto + cobro al entregar); falta seguimiento en vivo para el cliente y GPS |
+| 4. **Entrega** | Confirmado → preparando → en camino → entregado ❤️ + cobro. | ✅ Operativa: reparto + cobro al entregar + **seguimiento en vivo del cliente** + ubicación GPS. Falta zonas de reparto |
 | 5. **Referidos** | Amigo recibe descuento; vos recibís crédito. Niveles/embajadores. | ❌ Nuevo |
 | 6. **Adopción** | Mascotas de protectoras asociadas: empatía, comunidad, identidad de marca, alianzas. | ✅ Hecho (Adopciones/callejeritos) |
 
