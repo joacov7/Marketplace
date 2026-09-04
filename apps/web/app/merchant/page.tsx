@@ -47,16 +47,34 @@ const COLOR: Record<string, string> = { pending: "#b26a00", preparing: "#1a73e8"
 const CHANNEL_LABEL: Record<string, string> = { web: "🛒 Web", whatsapp: "💬 WhatsApp", telefono: "📞 Teléfono", mostrador: "🏪 Mostrador" };
 const METHOD_LABEL: Record<string, string> = { online: "Online", efectivo: "Efectivo", pos: "Tarjeta (POS)", transferencia: "Transferencia" };
 
+// ── Design tokens del panel (identidad Pet Shop: verde de marca + neutros cálidos) ──
+const A = "#2e7d32";        // accent (verde marca)
+const A_DARK = "#256a2a";
+const A_SOFT = "#e9f4ea";   // tinte del accent
+const INK = "#1f2a2e";      // texto principal
+const MUT = "#6b7280";      // texto secundario
+const LINE = "#e7e9ec";     // bordes
+const SURF = "#f4f6f5";     // fondo de página
+
 const money = (minor: string | number, c = "ARS") => (Number(minor) / 100).toLocaleString("es-AR", { style: "currency", currency: c });
-const btn: React.CSSProperties = { background: "#2563eb", color: "white", border: "none", borderRadius: 9, padding: "8px 14px", fontWeight: 600, cursor: "pointer" };
-const btnGhost: React.CSSProperties = { ...btn, background: "#eef0f3", color: "#334" };
-const input: React.CSSProperties = { padding: "8px 10px", borderRadius: 9, border: "1px solid #d4d6dc", background: "white" };
-const card: React.CSSProperties = { background: "white", border: "1px solid #ececef", borderRadius: 12, padding: 14, boxShadow: "0 1px 3px rgba(0,0,0,.04)" };
+const btn: React.CSSProperties = { background: A, color: "white", border: "none", borderRadius: 10, padding: "9px 15px", fontWeight: 600, fontSize: 13.5, cursor: "pointer", boxShadow: "0 1px 2px rgba(46,125,50,.25)" };
+const btnGhost: React.CSSProperties = { background: "white", color: INK, border: `1px solid ${LINE}`, borderRadius: 10, padding: "9px 14px", fontWeight: 600, fontSize: 13.5, cursor: "pointer" };
+const btnDanger: React.CSSProperties = { ...btnGhost, color: "#c0392b", borderColor: "#f0c9c4" };
+const input: React.CSSProperties = { padding: "9px 11px", borderRadius: 10, border: `1px solid ${LINE}`, background: "white", fontSize: 14, color: INK, outline: "none" };
+const card: React.CSSProperties = { background: "white", border: `1px solid ${LINE}`, borderRadius: 14, padding: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
+const sectionTitle: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: INK, margin: "0 0 12px" };
 const PANEL_CSS = `
-.mbtn{transition:filter .15s ease, transform .05s ease;}
-.mbtn:hover{filter:brightness(1.05);}
-.mbtn:active{transform:scale(.98);}
-input,select,textarea{max-width:100%;}
+:root{color-scheme:light;}
+.mbtn{transition:filter .15s ease, transform .05s ease, box-shadow .15s ease;}
+.mbtn:hover{filter:brightness(1.04);}
+.mbtn:active{transform:scale(.985);}
+input,select,textarea{max-width:100%;font-family:inherit;}
+input:focus,select:focus,textarea:focus{border-color:${A} !important;box-shadow:0 0 0 3px ${A_SOFT};}
+.mcard{transition:box-shadow .18s ease;}
+.mcard:hover{box-shadow:0 6px 20px rgba(16,24,40,.07);}
+.mtab{border:none;cursor:pointer;font-weight:600;font-size:14px;padding:9px 16px;border-radius:9px;background:transparent;color:${MUT};transition:background .15s ease,color .15s ease;}
+.mtab:hover{color:${INK};}
+.mtab-on{background:white;color:${A};box-shadow:0 1px 3px rgba(16,24,40,.1);}
 @media (max-width:560px){
   .mform-grid{grid-template-columns:1fr !important;}
 }
@@ -127,57 +145,64 @@ export default function MerchantPanel() {
 
   if (!token) {
     return (
-      <div style={{ background: "#f6f7f9", minHeight: "100vh", display: "grid", placeItems: "center", padding: 16 }}>
+      <div style={{ background: `radial-gradient(1200px 500px at 50% -10%, ${A_SOFT}, ${SURF})`, minHeight: "100vh", display: "grid", placeItems: "center", padding: 16, fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", color: INK }}>
         <style>{PANEL_CSS}</style>
-        <div style={{ ...card, maxWidth: 420, width: "100%", padding: 24 }}>
-          <div style={{ fontSize: 30, marginBottom: 6 }}>🐾</div>
-          <h1 style={{ fontSize: 21, margin: "0 0 4px" }}>Panel del comercio</h1>
-          <p style={{ color: "#6b7280", fontSize: 14, marginTop: 0 }}>Ingresá el token de acceso (por ahora el <code>ADMIN_API_TOKEN</code>; el login con RBAC + MFA es el paso siguiente).</p>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveToken()} placeholder="token" type="password" style={{ ...input, flex: 1 }} />
-            <button onClick={saveToken} className="mbtn" style={btn}>Entrar</button>
-          </div>
+        <div style={{ ...card, maxWidth: 400, width: "100%", padding: 28, textAlign: "center", boxShadow: "0 12px 40px rgba(16,24,40,.10)" }}>
+          <div style={{ width: 58, height: 58, borderRadius: 16, background: A_SOFT, display: "grid", placeItems: "center", margin: "0 auto 14px", fontSize: 28 }}>🐾</div>
+          <h1 style={{ fontSize: 22, margin: "0 0 4px", letterSpacing: "-.01em" }}>Panel del comercio</h1>
+          <p style={{ color: MUT, fontSize: 13.5, marginTop: 0, lineHeight: 1.5 }}>Ingresá tu código de acceso para administrar la tienda.</p>
+          <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveToken()} placeholder="Código de acceso" type="password" style={{ ...input, width: "100%", marginTop: 6, padding: 13, textAlign: "center" }} />
+          <button onClick={saveToken} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>Entrar</button>
         </div>
       </div>
     );
   }
 
-  return (
-    <div style={{ background: "#f6f7f9", minHeight: "100vh" }}>
-      <style>{PANEL_CSS}</style>
-      <main style={{ maxWidth: 920, margin: "0 auto", padding: "16px 16px 40px" }}>
-      <div style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 22 }}>🐾</span>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <span style={{ fontSize: 11, color: "#9aa0aa", textTransform: "uppercase", letterSpacing: ".04em" }}>Comercio</span>
-            <select value={merchantId} onChange={(e) => setMerchantId(e.target.value)} style={{ ...input, fontWeight: 600 }}>
-              {merchants.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-          </div>
-          <button onClick={newMerchant} className="mbtn" style={btnGhost}>+ Nuevo comercio</button>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <a href={`/reparto?tenant=${encodeURIComponent(tenant ?? "")}`} target="_blank" rel="noopener noreferrer" className="mbtn" style={{ ...btnGhost, textDecoration: "none", display: "inline-flex", alignItems: "center" }} title="Pantalla del repartidor (se abre en otra pestaña; instalable en el celular)">🛵 Reparto</a>
-          <button onClick={runMigrate} disabled={migrating} className="mbtn" style={btnGhost} title="Aplica migraciones pendientes tras un deploy con cambios de esquema">
-            {migrating ? "Migrando…" : "Migrar base"}
-          </button>
-          <button onClick={logout} className="mbtn" style={btnGhost}>Salir</button>
-        </div>
-      </div>
+  const TABS: Array<[typeof tab, string, string]> = [
+    ["catalogo", "🏷️", "Catálogo"], ["pedidos", "📦", "Pedidos"], ["reportes", "📊", "Reportes"],
+    ["diseno", "🎨", "Diseño"], ["adopciones", "🐶", "Adopciones"],
+  ];
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#eef0f3", padding: 4, borderRadius: 12, width: "fit-content", maxWidth: "100%", flexWrap: "wrap" }}>
-        {(["catalogo", "pedidos", "reportes", "diseno", "adopciones"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className="mbtn" style={{ border: "none", cursor: "pointer", fontWeight: 600, fontSize: 14, padding: "8px 16px", borderRadius: 9, background: tab === t ? "white" : "transparent", color: tab === t ? "#2563eb" : "#5b6270", boxShadow: tab === t ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>
-            {t === "catalogo" ? "Catálogo" : t === "pedidos" ? "Pedidos" : t === "reportes" ? "Reportes" : t === "diseno" ? "Diseño" : "Adopciones"}
+  return (
+    <div style={{ background: SURF, minHeight: "100vh", fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", color: INK }}>
+      <style>{PANEL_CSS}</style>
+
+      {/* Barra superior */}
+      <header style={{ position: "sticky", top: 0, zIndex: 20, background: "rgba(255,255,255,.85)", backdropFilter: "blur(8px)", borderBottom: `1px solid ${LINE}` }}>
+        <div style={{ maxWidth: 960, margin: "0 auto", padding: "11px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ width: 34, height: 34, borderRadius: 10, background: A_SOFT, display: "grid", placeItems: "center", fontSize: 18 }}>🐾</span>
+            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
+              <span style={{ fontSize: 10.5, color: MUT, textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600 }}>Comercio</span>
+              <select value={merchantId} onChange={(e) => setMerchantId(e.target.value)} style={{ ...input, fontWeight: 700, padding: "5px 8px", border: "none", background: "transparent", fontSize: 15 }}>
+                {merchants.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+            <button onClick={newMerchant} className="mbtn" style={{ ...btnGhost, padding: "6px 10px", fontSize: 12.5 }}>+ Comercio</button>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <a href={`/reparto?tenant=${encodeURIComponent(tenant ?? "")}`} target="_blank" rel="noopener noreferrer" className="mbtn" style={{ ...btnGhost, textDecoration: "none", display: "inline-flex", alignItems: "center", color: A, borderColor: A_SOFT }} title="Pantalla del repartidor (se abre en otra pestaña; instalable en el celular)">🛵 Reparto</a>
+            <button onClick={runMigrate} disabled={migrating} className="mbtn" style={btnGhost} title="Aplica migraciones pendientes tras un deploy con cambios de esquema">
+              {migrating ? "Migrando…" : "Migrar base"}
+            </button>
+            <button onClick={logout} className="mbtn" style={btnGhost}>Salir</button>
+          </div>
+        </div>
+      </header>
+
+      <main style={{ maxWidth: 960, margin: "0 auto", padding: "18px 16px 48px" }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#eceeef", padding: 5, borderRadius: 12, width: "fit-content", maxWidth: "100%", flexWrap: "wrap" }}>
+        {TABS.map(([t, icon, label]) => (
+          <button key={t} onClick={() => setTab(t)} className={`mbtn mtab${tab === t ? " mtab-on" : ""}`}>
+            <span style={{ marginRight: 6 }}>{icon}</span>{label}
           </button>
         ))}
       </div>
 
       {error && (
-        error.startsWith("✓")
-          ? <p style={{ color: "#2e7d32", fontWeight: 600 }}>{error}</p>
-          : <p style={{ color: "#c00" }}>Error: {error}</p>
+        <div style={{ ...card, padding: "10px 14px", marginBottom: 14, borderColor: error.startsWith("✓") ? "#bfe3c4" : "#f0c9c4", background: error.startsWith("✓") ? A_SOFT : "#fdecea", color: error.startsWith("✓") ? A_DARK : "#b3261e", fontWeight: 600, fontSize: 13.5 }}>
+          {error.startsWith("✓") ? error : `Error: ${error}`}
+        </div>
       )}
 
       {tab === "catalogo" ? <CatalogTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
@@ -456,7 +481,7 @@ function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | nu
                 <OrderHead o={o} title={titleOf(o)} />
                 <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
                   <button onClick={() => decide(o.orderId, "aceptar")} className="mbtn" style={{ ...btn, background: "#2e7d32" }}>Aceptar</button>
-                  <button onClick={() => decide(o.orderId, "rechazar")} className="mbtn" style={{ ...btn, background: "#c62828" }}>Rechazar</button>
+                  <button onClick={() => decide(o.orderId, "rechazar")} className="mbtn" style={btnDanger}>Rechazar</button>
                 </div>
               </li>
             ))}
@@ -715,10 +740,10 @@ const qtyBtn: React.CSSProperties = { width: 26, height: 26, borderRadius: 7, bo
 
 function Metric({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: string }) {
   return (
-    <div style={{ ...card, minWidth: 150, flex: 1 }}>
-      <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: accent ?? "#111" }}>{value}</div>
-      {hint && <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{hint}</div>}
+    <div className="mcard" style={{ ...card, minWidth: 150, flex: 1 }}>
+      <div style={{ fontSize: 12, color: MUT, marginBottom: 6, fontWeight: 500 }}>{label}</div>
+      <div style={{ fontSize: 23, fontWeight: 800, letterSpacing: "-.02em", color: accent ?? INK }}>{value}</div>
+      {hint && <div style={{ fontSize: 11, color: "#9aa2ab", marginTop: 3 }}>{hint}</div>}
     </div>
   );
 }
@@ -753,20 +778,20 @@ function ReportsTab({ tenant, token, onError }: { tenant: string | null; token: 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <Metric label="Pedidos pagados" value={String(s.paidOrders)} />
         <Metric label="GMV (ventas)" value={money(s.gmvMinor)} hint="valor de mercadería vendida" />
-        <Metric label="Comisión plataforma" value={money(s.commissionMinor)} accent="#2563eb" hint="contribución" />
-        <Metric label="A pagar a comercios" value={money(s.merchantPayoutMinor)} accent="#2e7d32" hint="payout" />
+        <Metric label="Comisión plataforma" value={money(s.commissionMinor)} accent="#0d7a80" hint="contribución" />
+        <Metric label="A pagar a comercios" value={money(s.merchantPayoutMinor)} accent={A} hint="payout" />
         <Metric label="Envíos cobrados" value={money(s.deliveryRevenueMinor)} />
         <Metric label="Ticket promedio" value={money(s.avgTicketMinor)} />
         {Number(s.refundsMinor) > 0 && <Metric label="Devoluciones" value={money(s.refundsMinor)} accent="#c62828" />}
       </div>
 
       <div style={card}>
-        <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Ventas últimos 14 días</h3>
+        <h3 style={sectionTitle}>Ventas últimos 14 días</h3>
         {data.series.length === 0 ? <p style={{ color: "#aaa", margin: 0 }}>Todavía no hay ventas.</p> : (
           <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120 }}>
             {data.series.map((r) => (
               <div key={r.day} title={`${r.day}: ${money(r.gmvMinor)} · ${r.orders} pedido(s)`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                <div style={{ width: "100%", background: "#2563eb", borderRadius: "4px 4px 0 0", height: `${Math.max(4, (Number(r.gmvMinor) / maxGmv) * 100)}%` }} />
+                <div style={{ width: "100%", background: A, borderRadius: "4px 4px 0 0", height: `${Math.max(4, (Number(r.gmvMinor) / maxGmv) * 100)}%` }} />
                 <span style={{ fontSize: 9, color: "#aaa" }}>{r.day.slice(5)}</span>
               </div>
             ))}
@@ -776,7 +801,7 @@ function ReportsTab({ tenant, token, onError }: { tenant: string | null; token: 
 
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
         <div style={card}>
-          <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Top productos</h3>
+          <h3 style={sectionTitle}>Top productos</h3>
           {data.top.length === 0 ? <p style={{ color: "#aaa", margin: 0 }}>Sin ventas.</p> : (
             <ol style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 6 }}>
               {data.top.map((t) => (
@@ -789,7 +814,7 @@ function ReportsTab({ tenant, token, onError }: { tenant: string | null; token: 
         </div>
 
         <div style={card}>
-          <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Alertas de stock <span style={{ fontSize: 12, color: "#aaa" }}>(≤ 5)</span></h3>
+          <h3 style={sectionTitle}>Alertas de stock <span style={{ fontSize: 12, color: "#9aa2ab", fontWeight: 400 }}>(≤ 5)</span></h3>
           {data.alerts.length === 0 ? <p style={{ color: "#2e7d32", margin: 0 }}>Sin alertas: stock OK.</p> : (
             <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 }}>
               {data.alerts.map((a) => (
