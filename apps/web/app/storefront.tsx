@@ -184,16 +184,25 @@ export default function Storefront(props: {
   const [reorder, setReorder] = useState<Reorder | null>(null);
   // Zonas de reparto del comercio (costo/tiempo por barrio). Vacío = envío plano.
   const [zones, setZones] = useState<Array<{ name: string; customerChargeMinor: string; etaMinutes: number | null }>>([]);
-  // Ubicación opcional del cliente (GPS del navegador, gratis, sin API key).
-  const [geo, setGeo] = useState<{ lat: number; lng: number } | null>(null);
+  // Ubicación opcional del cliente (GPS del navegador, gratis, sin API key). `acc` = precisión (m).
+  const [geo, setGeo] = useState<{ lat: number; lng: number; acc: number } | null>(null);
   const [geoBusy, setGeoBusy] = useState(false);
   function shareLocation() {
     if (typeof navigator === "undefined" || !navigator.geolocation) { setError("Tu navegador no permite compartir ubicación."); return; }
+    setError(null);
     setGeoBusy(true);
     navigator.geolocation.getCurrentPosition(
-      (pos) => { setGeo({ lat: Number(pos.coords.latitude.toFixed(6)), lng: Number(pos.coords.longitude.toFixed(6)) }); setGeoBusy(false); },
-      () => { setError("No pudimos obtener tu ubicación. Podés seguir con la dirección escrita."); setGeoBusy(false); },
-      { enableHighAccuracy: true, timeout: 10000 },
+      (pos) => {
+        setGeo({ lat: Number(pos.coords.latitude.toFixed(6)), lng: Number(pos.coords.longitude.toFixed(6)), acc: Math.round(pos.coords.accuracy || 0) });
+        setGeoBusy(false);
+      },
+      (err) => {
+        setError(err.code === err.PERMISSION_DENIED
+          ? "No diste permiso de ubicación. Podés seguir con la dirección escrita."
+          : "No pudimos obtener tu ubicación. Probá de nuevo o seguí con la dirección escrita.");
+        setGeoBusy(false);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
     );
   }
 
@@ -1026,6 +1035,43 @@ function SpeciesIcon({ species, size = 16 }: { species: string; size?: number })
   return <PawPrint size={size} strokeWidth={1.8} />;
 }
 
+/**
+ * Mini-mapa de confirmación: mosaico 3×3 de tiles de OpenStreetMap centrado en el punto del
+ * cliente, con un pin en el centro. Gratis, sin API key ni librerías. Es solo una vista previa
+ * (no arrastrable); el link "Ver en el mapa" abre el punto exacto.
+ */
+function MapPreview({ lat, lng, G }: { lat: number; lng: number; G: string }) {
+  const z = 16;
+  const n = 2 ** z;
+  const latRad = (lat * Math.PI) / 180;
+  const xt = ((lng + 180) / 360) * n;
+  const yt = ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n;
+  const cx = Math.floor(xt), cy = Math.floor(yt);
+  const fx = xt - cx, fy = yt - cy;
+  // Punto dentro del mosaico 768×768 (el tile central es el índice 1 de 0..2).
+  const px = (1 + fx) * 256, py = (1 + fy) * 256;
+  const tiles: Array<{ x: number; y: number; left: number; top: number }> = [];
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+    tiles.push({ x: ((cx - 1 + i) % n + n) % n, y: cy - 1 + j, left: i * 256, top: j * 256 });
+  }
+  return (
+    <div style={{ position: "relative", width: "100%", height: 172, overflow: "hidden", borderRadius: 12, border: `1px solid ${C.border}`, background: C.beige }}>
+      <div style={{ position: "absolute", left: "50%", top: "50%", width: 768, height: 768, transform: `translate(${-px}px, ${-py}px)` }}>
+        {tiles.map((t) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={`${t.x}-${t.y}`} src={`https://tile.openstreetmap.org/${z}/${t.x}/${t.y}.png`} alt="" width={256} height={256}
+            style={{ position: "absolute", left: t.left, top: t.top, width: 256, height: 256, display: "block" }} />
+        ))}
+      </div>
+      {/* Pin fijo en el centro del viewport (el mapa se desplaza para centrar el punto). */}
+      <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-100%)", color: G, filter: "drop-shadow(0 2px 3px rgba(0,0,0,.3))" }}>
+        <MapPin size={30} strokeWidth={2.2} fill={G} color="#fff" />
+      </div>
+      <div style={{ position: "absolute", right: 6, bottom: 4, fontSize: 9, color: "#5a5a5a", background: "rgba(255,255,255,.7)", borderRadius: 4, padding: "1px 5px" }}>© OpenStreetMap</div>
+    </div>
+  );
+}
+
 function CheckoutView(props: {
   G: string; items: [string, CartLine][]; config: StoreConfig; quote: Quote | null;
   delivery: "estandar" | "auxilio"; setDelivery: (d: "estandar" | "auxilio") => void;
@@ -1034,7 +1080,7 @@ function CheckoutView(props: {
   knownPets: StorePetLite[]; greetName: string | null; petSel: string; setPetSel: (id: string) => void;
   newPet: { name: string; species: string; weight: string }; setNewPet: (p: { name: string; species: string; weight: string }) => void;
   customerName: string; setCustomerName: (n: string) => void; factors: Record<string, number>;
-  geo: { lat: number; lng: number } | null; geoBusy: boolean; onShareLocation: () => void; onClearLocation: () => void;
+  geo: { lat: number; lng: number; acc: number } | null; geoBusy: boolean; onShareLocation: () => void; onClearLocation: () => void;
   zones: Array<{ name: string; customerChargeMinor: string; etaMinutes: number | null }>;
   busy: boolean; error: string | null; subtotal: number; shippingFor: (d: "estandar" | "auxilio") => number; discountFor: (p: string) => number; onConfirm: () => void;
 }) {
@@ -1069,20 +1115,40 @@ function CheckoutView(props: {
               <input style={input} placeholder="Teléfono / WhatsApp" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
               <input style={{ ...input, gridColumn: "1 / -1" }} placeholder="Notas (timbre, referencia…)" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
-            {/* Ubicación opcional (GPS del navegador). El cadete llega exacto. */}
+            {/* Ubicación opcional (GPS del navegador). Confirmación visual con mini-mapa. */}
             <div style={{ marginTop: 12 }}>
               {props.geo ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: G, fontWeight: 600 }}>
-                  <Check size={15} /> Ubicación compartida
-                  <button type="button" onClick={props.onClearLocation} style={{ border: "none", background: "transparent", color: C.mute, fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>quitar</button>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, color: G, fontWeight: 600, marginBottom: 8 }}>
+                    <Check size={16} /> Ubicación compartida
+                    {props.geo.acc > 0 && <span style={{ color: C.mute, fontWeight: 500 }}>· precisión ±{props.geo.acc} m</span>}
+                  </div>
+                  <MapPreview lat={props.geo.lat} lng={props.geo.lng} G={G} />
+                  {props.geo.acc > 120 && (
+                    <div style={{ fontSize: 11.5, color: "#b26a00", marginTop: 6 }}>La precisión es baja. Si el punto no es exacto, tocá “Actualizar ubicación”.</div>
+                  )}
+                  <div style={{ display: "flex", gap: 14, marginTop: 9, flexWrap: "wrap", alignItems: "center" }}>
+                    <a href={`https://www.google.com/maps/search/?api=1&query=${props.geo.lat},${props.geo.lng}`} target="_blank" rel="noopener noreferrer"
+                      style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600, color: G, textDecoration: "none" }}>
+                      <MapPin size={14} strokeWidth={1.9} /> Ver en el mapa
+                    </a>
+                    <button type="button" onClick={props.onShareLocation} disabled={props.geoBusy}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "none", background: "transparent", color: C.text2, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: FONT }}>
+                      <RotateCcw size={13} strokeWidth={2} /> {props.geoBusy ? "Actualizando…" : "Actualizar ubicación"}
+                    </button>
+                    <button type="button" onClick={props.onClearLocation}
+                      style={{ border: "none", background: "transparent", color: C.mute, fontSize: 12.5, cursor: "pointer", textDecoration: "underline", fontFamily: FONT }}>Quitar</button>
+                  </div>
                 </div>
               ) : (
-                <button type="button" onClick={props.onShareLocation} disabled={props.geoBusy}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1.5px dashed ${C.border}`, background: C.white, borderRadius: 10, padding: "10px 14px", fontSize: 13.5, fontWeight: 600, color: C.text, cursor: "pointer", fontFamily: FONT }}>
-                  <MapPin size={16} strokeWidth={1.9} />{props.geoBusy ? "Obteniendo ubicación…" : "Compartir mi ubicación (opcional)"}
-                </button>
+                <>
+                  <button type="button" onClick={props.onShareLocation} disabled={props.geoBusy}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1.5px dashed ${C.border}`, background: C.white, borderRadius: 10, padding: "10px 14px", fontSize: 13.5, fontWeight: 600, color: C.text, cursor: "pointer", fontFamily: FONT }}>
+                    <MapPin size={16} strokeWidth={1.9} />{props.geoBusy ? "Obteniendo ubicación…" : "Compartir mi ubicación (opcional)"}
+                  </button>
+                  <div style={{ fontSize: 11.5, color: C.mute, marginTop: 6 }}>Ayuda al repartidor a llegar exacto. No es obligatorio.</div>
+                </>
               )}
-              <div style={{ fontSize: 11.5, color: C.mute, marginTop: 6 }}>Ayuda al repartidor a llegar exacto. No es obligatorio.</div>
             </div>
           </div>
 
