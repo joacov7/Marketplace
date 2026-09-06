@@ -53,7 +53,7 @@ describe("Customer Shopping Agent — busca, recomienda, prepara (propose-only)"
     expect(after[0]!.n).toBe(before[0]!.n);
   });
 
-  it("detecta recompra desde el historial del cliente", async () => {
+  it("detecta recompra y, con intención de compra, propone repetir lo de siempre", async () => {
     const customerId = "11111111-1111-1111-1111-111111111111";
     const created = await createOrder(db, {
       tenantId,
@@ -63,13 +63,21 @@ describe("Customer Shopping Agent — busca, recomienda, prepara (propose-only)"
     if (!created.ok) throw new Error(created.error);
     await confirmOrder(db, tenantId, created.value.orderId);
 
-    const r = await runCustomerAgent(db, { tenantId, customerId, message: "algo para mi mascota" });
+    const r = await runCustomerAgent(db, { tenantId, customerId, message: "quiero repetir lo de siempre para mi mascota" });
     expect(r.usedTools).toContain("detectar_recompra");
     expect(r.proposedCart!.items.some((i) => i.variantId === alimentoVariant)).toBe(true);
   });
 
+  it("asesora sin empujar: una consulta SIN intención de compra no arma carrito", async () => {
+    const r = await runCustomerAgent(db, { tenantId, message: "¿cada cuánto tengo que bañar a mi perro?" });
+    expect(r.usedTools).toContain("buscar_producto");
+    expect(r.usedTools).not.toContain("armar_carrito");
+    expect(r.proposedCart).toBeNull();
+    expect(r.requiresHumanConfirmation).toBe(true);
+  });
+
   it("respeta el presupuesto: si el ítem supera el tope, no lo incluye", async () => {
-    const r = await runCustomerAgent(db, { tenantId, message: "comida perro", budgetMinor: 100_000n }); // $1.000 < $30.000
+    const r = await runCustomerAgent(db, { tenantId, message: "quiero comprar comida para mi perro", budgetMinor: 100_000n }); // $1.000 < $30.000
     expect(r.proposedCart).toBeNull(); // el único candidato no entra en el presupuesto
   });
 

@@ -31,20 +31,35 @@ export const deterministicResponder: AiTextResponder = {
   compose({ hits, repurchase, cart }) {
     const parts: string[] = [];
     if (repurchase.length > 0) {
-      parts.push(`Vi que ya compraste ${repurchase.slice(0, 3).map((r) => r.name).join(", ")}.`);
+      parts.push(`La última vez llevaste ${repurchase.slice(0, 3).map((r) => r.name).join(", ")}. ¿Querés que te prepare lo mismo?`);
     }
     if (hits.length > 0) {
-      parts.push(`Encontré ${hits.length} opción(es) que pueden servirte.`);
+      parts.push(`Tengo ${hits.length} opción(es) que pueden servirte. Decime cuál te interesa o contame un poco más y lo vemos juntos.`);
     } else {
-      parts.push("No encontré productos que coincidan con tu búsqueda.");
+      parts.push("Contame un poco más (para qué mascota, tamaño o edad) y te busco la mejor opción.");
     }
     if (cart.items.length > 0) {
       const pesos = (Number(cart.totalMinor) / 100).toLocaleString("es-AR", { style: "currency", currency: cart.currency });
-      parts.push(`Te preparé un carrito por ${pesos}. Revisalo y confirmá vos el pago.`);
+      parts.push(`Si querés, te dejo preparado un carrito por ${pesos}: lo revisás y el pago lo confirmás vos.`);
     }
     return parts.join(" ");
   },
 };
+
+/**
+ * ¿El mensaje expresa intención de COMPRAR (no solo consultar/asesorarse)? Un vendedor no
+ * arma el carrito apenas la persona saluda: primero entiende y asesora. Solo prepara un
+ * carrito cuando hay una señal clara de querer llevar algo. Substring match tolerante a
+ * conjugaciones (compr* / llev* / agreg* …).
+ */
+export function hasPurchaseIntent(message: string): boolean {
+  const m = message.toLowerCase();
+  const signals = [
+    "compr", "llev", "quiero", "necesito", "dame", "agreg", "sumá", "sumar", "sumame",
+    "carrito", "pedir", "pedido", "encarg", "reserv", "lo quiero", "me llevo", "mandame", "poné", "pone",
+  ];
+  return signals.some((s) => m.includes(s));
+}
 
 function keywords(message: string): string[] {
   const stop = new Set(["para", "necesito", "quiero", "mi", "de", "la", "el", "un", "una", "con", "que", "por"]);
@@ -112,16 +127,22 @@ export async function runCustomerAgent(db: TenantAwareDb, query: AgentQuery, dep
       usedTools.push("detectar_recompra");
     }
 
-    const seed =
-      repurchase.length > 0
-        ? repurchase.slice(0, 3).map((r) => ({ variantId: r.variantId, qty: 1 }))
-        : hits.slice(0, 1).map((h) => ({ variantId: h.variantId, qty: 1 }));
+    // Un vendedor NO arma el carrito apenas la persona escribe: primero entiende y asesora.
+    // Solo preparamos un carrito cuando el mensaje muestra intención de comprar. Si no, el
+    // responder asesora/recomienda en texto y ofrece prepararlo si la persona quiere.
+    let cart: ProposedCart = { items: [], totalMinor: 0n, currency: "ARS", withinBudget: true, budgetMinor: query.budgetMinor ?? null };
+    if (hasPurchaseIntent(query.message) && (hits.length > 0 || repurchase.length > 0)) {
+      const seed =
+        repurchase.length > 0
+          ? repurchase.slice(0, 3).map((r) => ({ variantId: r.variantId, qty: 1 }))
+          : hits.slice(0, 1).map((h) => ({ variantId: h.variantId, qty: 1 }));
 
-    const cart = await assembleProposedCart(tx, {
-      items: seed,
-      ...(query.budgetMinor !== undefined ? { budgetMinor: query.budgetMinor } : {}),
-    });
-    usedTools.push("armar_carrito");
+      cart = await assembleProposedCart(tx, {
+        items: seed,
+        ...(query.budgetMinor !== undefined ? { budgetMinor: query.budgetMinor } : {}),
+      });
+      usedTools.push("armar_carrito");
+    }
 
     const reply = await responder.compose({
       message: query.message,

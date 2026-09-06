@@ -136,6 +136,10 @@
   del catálogo devuelve (nunca inventa productos/precios/stock) y trae un guardarraíl de salud
   (no diagnostica; sugiere veterinario ante problemas de salud). Tope de mensaje (500) y
   presupuesto de IA por tenant (`AiBudgetGuard`) acotan el costo/abuso.
+- **Conversacional primero, no empuja a comprar**: atiende como vendedor de mostrador, no como
+  cajero. Ante un pedido vago pregunta y asesora antes de recomendar. El **carrito se propone
+  solo cuando hay intención de compra** (`hasPurchaseIntent`): una consulta de asesoramiento no
+  arma carrito. Sin intención, recomienda en texto y ofrece prepararlo si la persona quiere.
 - **Activable por comercio**: `features.aiAssistant` (default true) — toggle en el panel
   (Diseño → "Vendedor IA"). Off = no aparece el chat y el endpoint responde `disabled`.
 - **Búsqueda**: v1 usa matcheo por texto (nombre/descr./categoría, ilike). Follow-up de
