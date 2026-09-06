@@ -25,7 +25,8 @@ export async function freshModulesDb(): Promise<{ pg: PGlite; db: TenantAwareDb 
   const customersChannel = readFileSync(join(here, "customer", "migrations", "0013_customers_channel.sql"), "utf8");
   const zoneEta = readFileSync(join(here, "delivery", "migrations", "0014_zone_eta.sql"), "utf8");
   const variantListPrice = readFileSync(join(here, "catalog", "migrations", "0015_variant_list_price.sql"), "utf8");
-  return freshDb([catalog, orders, payments, delivery, customer, ordersCheckout, productImages, categories, adoptions, foodNutrition, pets, customersChannel, zoneEta, variantListPrice]);
+  const subscriptions = readFileSync(join(here, "subscriptions", "migrations", "0016_subscriptions.sql"), "utf8");
+  return freshDb([catalog, orders, payments, delivery, customer, ordersCheckout, productImages, categories, adoptions, foodNutrition, pets, customersChannel, zoneEta, variantListPrice, subscriptions]);
 }
 
 /** Crea un tenant + merchant listos para tests de catálogo/inventario. */

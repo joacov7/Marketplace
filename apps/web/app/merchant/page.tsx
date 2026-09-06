@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  PawPrint, Bike, MapPin, Pencil, X, Plus, Package, Tags, BarChart3, Palette, Dog, Cat,
+  PawPrint, Bike, MapPin, Pencil, X, Plus, Package, Tags, BarChart3, Palette, Dog, Cat, RotateCcw,
 } from "lucide-react";
 
 /** Icono de especie con lucide (Dog / Cat / PawPrint). Nunca emoji. */
@@ -98,7 +98,7 @@ export default function MerchantPanel() {
   const [tokenInput, setTokenInput] = useState("");
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [merchantId, setMerchantId] = useState<string>("");
-  const [tab, setTab] = useState<"catalogo" | "pedidos" | "reportes" | "diseno" | "adopciones">("catalogo");
+  const [tab, setTab] = useState<"catalogo" | "pedidos" | "suscripciones" | "reportes" | "diseno" | "adopciones">("catalogo");
   const [error, setError] = useState<string | null>(null);
   const [migrating, setMigrating] = useState(false);
 
@@ -171,8 +171,8 @@ export default function MerchantPanel() {
   }
 
   const TABS: Array<[typeof tab, typeof Tags, string]> = [
-    ["catalogo", Tags, "Catálogo"], ["pedidos", Package, "Pedidos"], ["reportes", BarChart3, "Reportes"],
-    ["diseno", Palette, "Diseño"], ["adopciones", PawPrint, "Adopciones"],
+    ["catalogo", Tags, "Catálogo"], ["pedidos", Package, "Pedidos"], ["suscripciones", RotateCcw, "Suscripciones"],
+    ["reportes", BarChart3, "Reportes"], ["diseno", Palette, "Diseño"], ["adopciones", PawPrint, "Adopciones"],
   ];
 
   return (
@@ -219,6 +219,7 @@ export default function MerchantPanel() {
 
       {tab === "catalogo" ? <CatalogTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
         : tab === "pedidos" ? <OrdersTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
+        : tab === "suscripciones" ? <SubscriptionsTab tenant={tenant} token={token} onError={setError} />
         : tab === "reportes" ? <ReportsTab tenant={tenant} token={token} onError={setError} />
         : tab === "diseno" ? <DesignTab tenant={tenant} token={token} onError={setError} />
         : <AdoptionsTab tenant={tenant} token={token} onError={setError} />}
@@ -847,6 +848,106 @@ function Metric({ label, value, hint, accent }: { label: string; value: string; 
   );
 }
 
+interface SubRow {
+  id: string; status: "active" | "paused" | "cancelled"; qty: number; intervalDays: number; nextRunAt: string;
+  petName: string | null; variantName: string; productName: string; paymentMethod: string; discountPercent: number;
+  customerName: string | null; customerPhone: string | null; lastRunAt: string | null; lastError: string | null;
+}
+
+function SubscriptionsTab({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const [rows, setRows] = useState<SubRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const auth = { authorization: `Bearer ${token}` };
+  const fmt = (iso: string | null) => { if (!iso) return "—"; try { return new Date(iso).toLocaleDateString("es-AR", { day: "numeric", month: "short" }); } catch { return "—"; } };
+
+  const load = useCallback(async () => {
+    if (!tenant) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/merchant/subscriptions?tenant=${encodeURIComponent(tenant)}`, { headers: auth });
+      const d = await res.json();
+      setLoading(false);
+      if (!res.ok) { onError(d.error); return; }
+      setRows(d.subscriptions ?? []);
+    } catch (e) { setLoading(false); onError(String(e)); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function patch(id: string, body: { status?: string }) {
+    if (!tenant) return;
+    onError(null);
+    try {
+      const res = await fetch(`/api/merchant/subscriptions/${id}?tenant=${encodeURIComponent(tenant)}`, {
+        method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      const d = await res.json();
+      if (!res.ok) { onError(d.error); return; }
+      await load();
+    } catch (e) { onError(String(e)); }
+  }
+
+  const STATUS_LABEL: Record<string, { t: string; bg: string; c: string }> = {
+    active: { t: "Activa", bg: A_SOFT, c: A_DARK },
+    paused: { t: "Pausada", bg: "#fdf3d7", c: "#8a6d1a" },
+    cancelled: { t: "Cancelada", bg: "#f0f1f2", c: MUT },
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <h2 style={sectionTitle}>Suscripciones de auto-envío</h2>
+        <button onClick={load} className="mbtn" style={btnGhost}>{loading ? "Cargando…" : "Actualizar"}</button>
+      </div>
+      <p style={{ color: MUT, fontSize: 13, margin: "0 0 14px", lineHeight: 1.5 }}>
+        Cada suscripción genera el pedido solo cada X días (entra a “Pedidos” como los demás) y se cobra al recibir.
+      </p>
+
+      {rows.length === 0 ? (
+        <div style={{ ...card, textAlign: "center", color: MUT, padding: 28 }}>
+          Todavía no hay suscripciones. Cuando un cliente se suscriba a un producto, aparece acá.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 10 }}>
+          {rows.map((s) => {
+            const st = STATUS_LABEL[s.status] ?? STATUS_LABEL.active!;
+            return (
+              <div key={s.id} className="mcard" style={{ ...card }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14.5 }}>
+                      {s.qty}× {s.productName} <span style={{ color: MUT, fontWeight: 500 }}>· {s.variantName}</span>
+                    </div>
+                    <div style={{ fontSize: 12.5, color: MUT, marginTop: 3 }}>
+                      {s.customerName || "Cliente"}{s.customerPhone ? ` · ${s.customerPhone}` : ""}{s.petName ? ` · 🐾 ${s.petName}` : ""}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: MUT, marginTop: 3 }}>
+                      Cada {s.intervalDays} días · próximo: <b style={{ color: INK }}>{fmt(s.nextRunAt)}</b>
+                      {s.discountPercent > 0 ? ` · ${s.discountPercent}% off` : ""}
+                      {s.lastError ? ` · ⚠ ${s.lastError === "sin_stock" ? "faltó stock" : s.lastError === "sin_precio" ? "sin precio" : s.lastError}` : ""}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, background: st.bg, color: st.c, borderRadius: 999, padding: "3px 10px" }}>{st.t}</span>
+                    {s.status !== "cancelled" && (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {s.status === "active"
+                          ? <button onClick={() => patch(s.id, { status: "paused" })} className="mbtn" style={{ ...btnGhost, padding: "6px 10px", fontSize: 12.5 }}>Pausar</button>
+                          : <button onClick={() => patch(s.id, { status: "active" })} className="mbtn" style={{ ...btn, padding: "6px 10px", fontSize: 12.5 }}>Reanudar</button>}
+                        <button onClick={() => { if (confirm("¿Cancelar esta suscripción?")) void patch(s.id, { status: "cancelled" }); }} className="mbtn" style={{ ...btnDanger, padding: "6px 10px", fontSize: 12.5 }}>Cancelar</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReportsTab({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -989,7 +1090,7 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
   const [perksText, setPerksText] = useState("");
   const [benefitsText, setBenefitsText] = useState("");
   const [adoptionsTitle, setAdoptionsTitle] = useState("Adopciones");
-  const [flags, setFlags] = useState({ "features.adoptions": true, "features.foodCalculator": true, "features.foodComparator": true, "features.quickReorder": true, "features.aiAssistant": true });
+  const [flags, setFlags] = useState({ "features.adoptions": true, "features.foodCalculator": true, "features.foodComparator": true, "features.quickReorder": true, "features.aiAssistant": true, "features.subscriptions": true });
   const toggle = (k: keyof typeof flags) => { setFlags((s) => ({ ...s, [k]: !s[k] })); setSaved(false); };
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1015,6 +1116,7 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
         "features.foodComparator": d.theme?.["features.foodComparator"] !== false,
         "features.quickReorder": d.theme?.["features.quickReorder"] !== false,
         "features.aiAssistant": d.theme?.["features.aiAssistant"] !== false,
+        "features.subscriptions": d.theme?.["features.subscriptions"] !== false,
       });
     } catch (e) { setLoading(false); onError(String(e)); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1128,7 +1230,7 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
 
         <div style={{ borderTop: "1px solid #eee", margin: "6px 0 12px" }} />
         <div style={{ fontSize: 13, fontWeight: 700, color: "#556", marginBottom: 8 }}>Funciones de la tienda</div>
-        {([["features.foodCalculator", "Calculadora de consumo + Mis mascotas"], ["features.foodComparator", "Comparador de alimentos (costo por día)"], ["features.quickReorder", "Compra rápida (repetir última compra)"], ["features.aiAssistant", "Vendedor IA (asesora y recomienda del catálogo)"], ["features.adoptions", "Sección de Adopciones / callejeritos"]] as const).map(([k, label]) => (
+        {([["features.foodCalculator", "Calculadora de consumo + Mis mascotas"], ["features.foodComparator", "Comparador de alimentos (costo por día)"], ["features.quickReorder", "Compra rápida (repetir última compra)"], ["features.aiAssistant", "Vendedor IA (asesora y recomienda del catálogo)"], ["features.subscriptions", "Suscripción de auto-envío (recompra automática)"], ["features.adoptions", "Sección de Adopciones / callejeritos"]] as const).map(([k, label]) => (
           <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, padding: "4px 0", cursor: "pointer" }}>
             <input type="checkbox" checked={flags[k]} onChange={() => toggle(k)} style={{ width: 16, height: 16 }} />
             {label}

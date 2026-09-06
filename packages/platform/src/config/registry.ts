@@ -243,6 +243,22 @@ export const CONFIG_KEYS = {
     sensitive: false,
     description: "Habilita la compra rápida: 'Repetir última compra' en 1 clic para clientes reconocidos.",
   },
+  "features.subscriptions": {
+    key: "features.subscriptions",
+    jsonSchema: { type: "boolean" },
+    defaultValue: true,
+    category: "features",
+    sensitive: false,
+    description: "Habilita la suscripción de auto-envío (el cliente recibe su alimento cada X días automáticamente).",
+  },
+  "subscriptions.discountPercent": {
+    key: "subscriptions.discountPercent",
+    jsonSchema: { type: "integer", minimum: 0, maximum: 90 },
+    defaultValue: 0,
+    category: "money",
+    sensitive: true,
+    description: "Descuento aplicado a los envíos de suscripción, en porcentaje entero (0 = sin descuento).",
+  },
   "nutrition.factors": {
     key: "nutrition.factors",
     jsonSchema: {

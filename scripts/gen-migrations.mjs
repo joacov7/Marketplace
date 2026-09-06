@@ -20,6 +20,7 @@ const files = [
   ["0013_customers_channel", "packages/modules/src/customer/migrations/0013_customers_channel.sql"],
   ["0014_zone_eta", "packages/modules/src/delivery/migrations/0014_zone_eta.sql"],
   ["0015_variant_list_price", "packages/modules/src/catalog/migrations/0015_variant_list_price.sql"],
+  ["0016_subscriptions", "packages/modules/src/subscriptions/migrations/0016_subscriptions.sql"],
 ];
 
 const entries = files

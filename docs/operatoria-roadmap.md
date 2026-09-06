@@ -116,6 +116,34 @@
   Tests: zonas en `delivery.pglite.test.ts`.
 - Follow-up menor: agrupar/ordenar la cola de reparto por zona para armar la ruta.
 
+### ✅ Suscripción de auto-envío — implementada (v1: cobro al recibir)
+- **Qué es**: el cliente se suscribe a su alimento y **cada X días se genera el pedido solo**
+  (entra a la cola "por aceptar" del panel como cualquier otro) y se **cobra al recibir** —
+  efectivo/POS/transferencia. **No debita tarjeta ni requiere Mercado Pago.** Es la "recompra
+  inteligente / suscripción" del flywheel. La mascota sigue siendo el centro (pet snapshot).
+- **Modelo**: tabla `subscriptions` (migración 0016, RLS por tenant) con variante, cantidad,
+  intervalo, próximo envío, estado (active/paused/cancelled), método de pago, descuento y
+  snapshot de dirección/mascota. El canal de pedido `suscripcion` se sumó al check de `orders`.
+- **Generación**: cron `GET /api/cron/subscriptions` (gated por `CRON_SECRET`, Vercel Cron
+  diario — ver `vercel.json`). Recorre los comercios activos y, por cada suscripción vencida,
+  reusa `createOrder` (reserva stock atómica). Idempotente: al generar (o fallar) avanza
+  `next_run_at` un intervalo, así el próximo corte no la re-toma. Sin precio/stock → salta el
+  ciclo (registra `last_error`) sin romper el resto. **Envío incluido** (perk v1).
+- **Descuento opcional**: `subscriptions.discountPercent` (config, default 0) se aplica al
+  precio del pedido generado (fluye por el ledger como una venta más barata).
+- **UI**: cliente se suscribe desde el detalle de producto ("Suscribite y recibilo siempre" →
+  modal con cadencia 15/30/45/60 días, cantidad, teléfono, dirección, mascota). El comercio
+  administra desde el panel (pestaña **Suscripciones**: pausar / reanudar / cancelar, ve
+  próximo envío y errores). Cliente puede pausar/cancelar (rutas con verificación de propiedad).
+- **Activable por comercio**: `features.subscriptions` (default true) — toggle en Diseño.
+- **Follow-ups**: cobro automático de tarjeta (necesita Mercado Pago recurrente/preapproval);
+  aviso al cliente antes de cada envío; que el cliente edite cadencia/cantidad desde la tienda;
+  "Mis suscripciones" en la cuenta.
+- Archivos: módulo `subscriptions/` (`subscriptions.ts`, migración 0016), rutas
+  `api/subscriptions{,/[id]}`, `api/merchant/subscriptions{,/[id]}`, `api/cron/subscriptions`,
+  `SubscribeModal` en `storefront.tsx`, `SubscriptionsTab` en `merchant/page.tsx`, `vercel.json`.
+  Tests: `subscriptions.pglite.test.ts` (genera, no duplica, descuento, sin stock, pausada).
+
 ### ✅ Vendedor IA — implementado (v1: asesora + recomienda)
 - **Qué es**: un asistente de compras conversacional (chat flotante en la tienda) que hace las
   **dos cosas de un vendedor**: (1) **asesora** sobre cuidado de la mascota y (2) **recomienda
@@ -219,7 +247,7 @@ eslabón (no todo a la vez):
 |---|---|---|
 | 1. **Perfil de mascota** | Nombre, peso, edad, alimento, etc. Personaliza recomendaciones. | ✅ Hecho (Mis mascotas) |
 | 2. **Compra rápida** | Elegís la mascota → su alimento habitual → "Repetir última compra" 1 clic + recomendaciones (snacks, higiene, antiparasitarios). | ✅ Parcial: "Repetir última compra" (1 clic, precio/stock actuales) activable por el comercio (`features.quickReorder`). Falta "su alimento habitual" y recomendaciones |
-| 3. **Recompra inteligente** | Estima cuándo se termina el alimento → recordatorio ("A Bruno le quedan 5 días") → "Reponer ahora". Después: **suscripción recurrente** con beneficios. | ✅ Parcial (estimación in-app lista; recordatorio proactivo = follow-up) |
+| 3. **Recompra inteligente** | Estima cuándo se termina el alimento → recordatorio ("A Bruno le quedan 5 días") → "Reponer ahora". Después: **suscripción recurrente** con beneficios. | ✅ **Suscripción de auto-envío** implementada (cobro al recibir; genera el pedido cada X días). Estimación in-app lista. Falta recordatorio proactivo y cobro automático de tarjeta (MP). |
 | 4. **Entrega** | Confirmado → preparando → en camino → entregado ❤️ + cobro. | ✅ Operativa: reparto + cobro al entregar + **seguimiento en vivo del cliente** + ubicación GPS. Falta zonas de reparto |
 | 5. **Referidos** | Amigo recibe descuento; vos recibís crédito. Niveles/embajadores. | ❌ Nuevo |
 | 6. **Adopción** | Mascotas de protectoras asociadas: empatía, comunidad, identidad de marca, alianzas. | ✅ Hecho (Adopciones/callejeritos) |

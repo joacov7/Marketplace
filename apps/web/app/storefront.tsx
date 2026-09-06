@@ -152,6 +152,7 @@ export default function Storefront(props: {
   heroImageUrl: string;
   adoptionsBannerImageUrl: string;
   aiAssistant?: boolean;
+  subscriptions?: boolean;
 }) {
   const { tenant, primary, products, config } = props;
   const G = primary; // verde de marca (config)
@@ -172,6 +173,8 @@ export default function Storefront(props: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ orderId: string; totalMinor: string; petName: string | null } | null>(null);
+  // Suscripción de auto-envío: variante elegida para suscribirse (abre el modal).
+  const [subscribeVariant, setSubscribeVariant] = useState<string | null>(null);
 
   // ── Cliente + mascota protagonista en el checkout ────────────────────────────
   // El teléfono es la llave del cliente (sin obligar a registrarse). Con él reconocemos al
@@ -527,6 +530,7 @@ export default function Storefront(props: {
             waLink={waLink(`¡Hola! Quiero consultar por ${sel.name}.`)}
             onBackCat={() => { setCategory(sel.category); go("list"); }}
             onAdd={(variantId) => addToCart(sel, variantId, qty)}
+            onSubscribe={props.subscriptions ? (variantId) => setSubscribeVariant(variantId) : undefined}
           />
         )}
 
@@ -566,6 +570,16 @@ export default function Storefront(props: {
           G={G} items={items} subtotal={subtotal} shipping={shippingFor("estandar")} freeShipMsg={freeShipMsg}
           onClose={() => setCartOpen(false)} onQty={setLineQty}
           onCheckout={() => { if (items.length > 0) { setCartOpen(false); setError(null); go("checkout"); } }}
+        />
+      )}
+
+      {/* Suscripción de auto-envío: modal para suscribirse a la variante elegida */}
+      {subscribeVariant && sel && (
+        <SubscribeModal
+          G={G} tenant={tenant}
+          variantId={subscribeVariant}
+          product={sel}
+          onClose={() => setSubscribeVariant(null)}
         />
       )}
 
@@ -1147,6 +1161,7 @@ function DetailView(props: {
   G: string; p: StoreProduct; category: string; sizeVariant: string; setSizeVariant: (v: string) => void;
   qty: number; setQty: (n: number) => void; showCalculator: boolean; factors: Record<string, number>;
   waLink: string | null; onBackCat: () => void; onAdd: (variantId: string) => void;
+  onSubscribe?: (variantId: string) => void;
 }) {
   const { G, p } = props;
   const variant = p.variants.find((v) => v.variantId === props.sizeVariant) ?? p.variants[p.variants.length - 1]!;
@@ -1197,6 +1212,17 @@ function DetailView(props: {
             <button className="sf-btn" onClick={() => props.onAdd(variant.variantId)} style={{ ...primaryBtn(G), padding: 15 }}><CartIcon size={17} />AGREGAR AL CARRITO</button>
             {props.waLink && <a className="sf-btn" href={props.waLink} target="_blank" rel="noopener noreferrer" style={{ ...outlineBtn(G), padding: 15 }}><WaIcon size={17} />COMPRAR POR WHATSAPP</a>}
           </div>
+
+          {props.onSubscribe && (
+            <button
+              className="sf-btn"
+              onClick={() => props.onSubscribe!(variant.variantId)}
+              style={{ display: "inline-flex", alignItems: "center", gap: 9, marginTop: 12, background: C.tint, color: G, border: `1.5px solid ${G}`, borderRadius: 11, padding: "12px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: FONT, maxWidth: 420 }}
+            >
+              <RotateCcw size={17} strokeWidth={2} />
+              Suscribite y recibilo siempre — sin quedarte sin stock
+            </button>
+          )}
 
           {props.showCalculator && isFood && <FoodCalculator G={G} kcalPerKg={p.kcalPerKg!} netWeightKg={variant.netWeightKg} factors={props.factors} />}
         </div>
@@ -1259,6 +1285,163 @@ function MapPreview({ lat, lng, G }: { lat: number; lng: number; G: string }) {
         <MapPin size={30} strokeWidth={2.2} fill={G} color="#fff" />
       </div>
       <div style={{ position: "absolute", right: 6, bottom: 4, fontSize: 9, color: "#5a5a5a", background: "rgba(255,255,255,.7)", borderRadius: 4, padding: "1px 5px" }}>© OpenStreetMap</div>
+    </div>
+  );
+}
+
+// ── Suscripción de auto-envío (modal) ───────────────────────────────────────────
+const INTERVAL_OPTIONS = [
+  { days: 15, label: "Cada 15 días" },
+  { days: 30, label: "Cada 30 días" },
+  { days: 45, label: "Cada 45 días" },
+  { days: 60, label: "Cada 60 días" },
+];
+
+/**
+ * Modal para suscribirse al auto-envío de un producto. Cada X días se genera el pedido solo
+ * y se cobra al recibir (no debita tarjeta). El cliente elige cadencia, cantidad y sus datos.
+ */
+function SubscribeModal({
+  G, tenant, variantId, product, onClose,
+}: {
+  G: string;
+  tenant: string;
+  variantId: string;
+  product: StoreProduct;
+  onClose: () => void;
+}) {
+  const variant = product.variants.find((v) => v.variantId === variantId) ?? product.variants[0]!;
+  const [intervalDays, setIntervalDays] = useState(30);
+  const [qty, setQty] = useState(1);
+  const [f, setF] = useState({ name: "", phone: "", street: "", zone: "", notes: "", petName: "" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{ nextRunAt: string; petName: string | null } | null>(null);
+  const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }));
+
+  const fmtDate = (iso: string) => {
+    try { return new Date(iso).toLocaleDateString("es-AR", { day: "numeric", month: "long" }); } catch { return ""; }
+  };
+
+  async function submit() {
+    if (!f.phone.trim()) { setError("Necesitamos tu teléfono para coordinar las entregas."); return; }
+    if (!f.street.trim()) { setError("Ingresá la dirección de entrega."); return; }
+    setBusy(true); setError(null);
+    try {
+      const res = await fetch(`/api/subscriptions?tenant=${encodeURIComponent(tenant)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          variantId, qty, intervalDays,
+          ...(f.name.trim() ? { customerName: f.name.trim() } : {}),
+          phone: f.phone.trim(),
+          ...(f.petName.trim() ? { petName: f.petName.trim() } : {}),
+          address: { street: f.street.trim(), zone: f.zone.trim(), phone: f.phone.trim(), notes: f.notes.trim() },
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.error === "disabled" ? "La suscripción no está disponible por ahora." : (d.error ?? "No pudimos crear la suscripción.")); return; }
+      setDone({ nextRunAt: d.nextRunAt, petName: d.petName ?? f.petName.trim() ?? null });
+    } catch { setError("No hay conexión en este momento. Probá de nuevo."); }
+    finally { setBusy(false); }
+  }
+
+  const inputStyle: React.CSSProperties = { width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 9, padding: "10px 12px", fontSize: 14, fontFamily: FONT, outline: "none", color: C.text };
+  const label: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: C.mute, letterSpacing: ".04em", marginBottom: 6, display: "block" };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,.45)", display: "grid", placeItems: "center", padding: 16, fontFamily: FONT }}
+    >
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(460px, 100%)", maxHeight: "90vh", overflowY: "auto", background: C.white, borderRadius: 18, color: C.text }}>
+        <div style={{ background: G, color: C.white, padding: "16px 18px", display: "flex", alignItems: "center", gap: 11, borderRadius: "18px 18px 0 0" }}>
+          <RotateCcw size={22} strokeWidth={2} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>Suscripción de auto-envío</div>
+            <div style={{ fontSize: 12, opacity: 0.9 }}>Recibí tu producto siempre, sin acordarte</div>
+          </div>
+          <button onClick={onClose} aria-label="Cerrar" style={{ background: "transparent", border: "none", color: C.white, cursor: "pointer", display: "grid", placeItems: "center" }}><X size={22} /></button>
+        </div>
+
+        {done ? (
+          <div style={{ padding: 24, textAlign: "center" }}>
+            <div style={{ color: G, display: "flex", justifyContent: "center", marginBottom: 10 }}><Check size={40} sw={2.4} /></div>
+            <h3 style={{ margin: "0 0 8px", fontSize: 19 }}>¡Suscripción activada! ❤️</h3>
+            <p style={{ fontSize: 14, color: C.text2, lineHeight: 1.6, margin: "0 0 6px" }}>
+              {done.petName ? <>El alimento de <b>{done.petName}</b> va a llegar solo cada {intervalDays} días.</> : <>Tu producto va a llegar solo cada {intervalDays} días.</>}
+            </p>
+            <p style={{ fontSize: 13.5, color: C.mute, margin: "0 0 20px" }}>Primer envío alrededor del <b>{fmtDate(done.nextRunAt)}</b>. Se cobra al recibir, como siempre.</p>
+            <button onClick={onClose} className="sf-btn" style={{ ...primaryBtn(G), padding: 13, width: "100%" }}>Listo</button>
+          </div>
+        ) : (
+          <div style={{ padding: 18 }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", background: C.surf, borderRadius: 12, padding: 12, marginBottom: 16 }}>
+              <Img src={product.imageUrl} alt={product.name} ratio="1" radius={10} seed={product.productId} w={120} h={120} height={54} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{product.name}</div>
+                <div style={{ fontSize: 12.5, color: C.mute }}>{variant.size} · {money(variant.priceMinor)}</div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <span style={label}>¿CADA CUÁNTO?</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {INTERVAL_OPTIONS.map((o) => {
+                  const on = o.days === intervalDays;
+                  return (
+                    <button key={o.days} onClick={() => setIntervalDays(o.days)} style={{ padding: "10px 8px", borderRadius: 9, fontSize: 13.5, fontWeight: 600, border: `1.5px solid ${on ? G : C.border}`, background: on ? C.tint : C.white, color: on ? G : C.nav, cursor: "pointer", fontFamily: FONT }}>{o.label}</button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 12, marginBottom: 14, alignItems: "flex-end" }}>
+              <div style={{ flex: "0 0 auto" }}>
+                <span style={label}>CANTIDAD</span>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 14, border: `1.5px solid ${C.border}`, borderRadius: 9, padding: "6px 10px" }}>
+                  <button onClick={() => setQty(Math.max(1, qty - 1))} style={{ width: 26, height: 26, border: "none", background: "transparent", fontSize: 19, color: C.nav, cursor: "pointer" }}>−</button>
+                  <span style={{ fontSize: 15, fontWeight: 600, minWidth: 14, textAlign: "center" }}>{qty}</span>
+                  <button onClick={() => setQty(qty + 1)} style={{ width: 26, height: 26, border: "none", background: "transparent", fontSize: 17, color: C.nav, cursor: "pointer" }}>+</button>
+                </div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <span style={label}>NOMBRE DE TU MASCOTA (OPCIONAL)</span>
+                <input value={f.petName} onChange={(e) => set("petName", e.target.value)} placeholder="Ej: Bruno" style={inputStyle} />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
+              <div>
+                <span style={label}>TU NOMBRE (OPCIONAL)</span>
+                <input value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Ej: Joaco" style={inputStyle} />
+              </div>
+              <div>
+                <span style={label}>TELÉFONO / WHATSAPP</span>
+                <input value={f.phone} onChange={(e) => set("phone", e.target.value)} placeholder="Ej: 3444 12-3456" inputMode="tel" style={inputStyle} />
+              </div>
+              <div>
+                <span style={label}>DIRECCIÓN DE ENTREGA</span>
+                <input value={f.street} onChange={(e) => set("street", e.target.value)} placeholder="Calle y número" style={inputStyle} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <input value={f.zone} onChange={(e) => set("zone", e.target.value)} placeholder="Barrio (opcional)" style={inputStyle} />
+                <input value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Referencias (opcional)" style={inputStyle} />
+              </div>
+            </div>
+
+            <p style={{ fontSize: 12, color: C.mute, lineHeight: 1.55, margin: "0 0 14px" }}>
+              Cada envío se cobra al recibir (efectivo, POS o transferencia). Podés pausarla o cancelarla cuando quieras.
+            </p>
+
+            {error && <div style={{ background: "#fdecea", color: "#c0392b", borderRadius: 9, padding: "9px 12px", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+
+            <button onClick={submit} disabled={busy} className="sf-btn" style={{ ...primaryBtn(G), padding: 14, width: "100%", opacity: busy ? 0.7 : 1 }}>
+              {busy ? "Creando…" : "Activar suscripción"}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { type Result, ok, err, type CurrencyCode } from "@commerce/contracts";
 import { reserveStock, confirmReservation, releaseReservation } from "../inventory/inventory.js";
 import { canTransitionOrder, canTransitionSellerOrder, type SellerOrderStatus } from "./state.js";
 
-export type OrderChannel = "web" | "whatsapp" | "telefono" | "mostrador";
+export type OrderChannel = "web" | "whatsapp" | "telefono" | "mostrador" | "suscripcion";
 export type PaymentMethod = "online" | "efectivo" | "pos" | "transferencia";
 export type PaymentStatus = "pendiente" | "pagado";
 

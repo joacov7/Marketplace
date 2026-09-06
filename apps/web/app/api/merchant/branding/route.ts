@@ -34,6 +34,7 @@ const THEME_KEYS = [
   "features.foodComparator",
   "features.quickReorder",
   "features.aiAssistant",
+  "features.subscriptions",
 ] as const;
 type ThemeKey = (typeof THEME_KEYS)[number];
 
