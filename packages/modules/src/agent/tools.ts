@@ -11,21 +11,25 @@ export async function searchProducts(
     variant_id: string;
     name: string;
     product_name: string;
+    description: string | null;
+    category_name: string | null;
     amount_minor: string | null;
     currency: CurrencyCode | null;
     available: number;
   }>(
-    `select v.id as variant_id, v.name, pr.name as product_name, p.amount_minor, p.currency,
+    `select v.id as variant_id, v.name, pr.name as product_name, pr.description,
+            cat.name as category_name, p.amount_minor, p.currency,
             coalesce(inv.available, 0) as available
        from variants v
        join products pr on pr.id = v.product_id and pr.status = 'active'
+       left join categories cat on cat.id = pr.category_id
        left join lateral (
          select amount_minor, currency from prices
           where variant_id = v.id and effective_from <= now()
           order by effective_from desc limit 1
        ) p on true
        left join inventory inv on inv.variant_id = v.id
-      where (v.name ilike $1 or pr.name ilike $1)
+      where (v.name ilike $1 or pr.name ilike $1 or pr.description ilike $1 or cat.name ilike $1)
       order by v.name
       limit $2`,
     [`%${input.query}%`, input.limit ?? 20],
@@ -34,6 +38,8 @@ export async function searchProducts(
     variantId: r.variant_id,
     name: r.name,
     productName: r.product_name,
+    description: r.description,
+    categoryName: r.category_name,
     priceMinor: r.amount_minor !== null ? BigInt(r.amount_minor) : null,
     currency: r.currency,
     available: r.available,
@@ -81,14 +87,18 @@ async function variantsByIds(db: Db, ids: string[]): Promise<ProductHit[]> {
     variant_id: string;
     name: string;
     product_name: string;
+    description: string | null;
+    category_name: string | null;
     amount_minor: string | null;
     currency: CurrencyCode | null;
     available: number;
   }>(
-    `select v.id as variant_id, v.name, pr.name as product_name, p.amount_minor, p.currency,
+    `select v.id as variant_id, v.name, pr.name as product_name, pr.description,
+            cat.name as category_name, p.amount_minor, p.currency,
             coalesce(inv.available,0) as available
        from variants v
        join products pr on pr.id = v.product_id
+       left join categories cat on cat.id = pr.category_id
        left join lateral (
          select amount_minor, currency from prices where variant_id = v.id and effective_from <= now()
          order by effective_from desc limit 1
@@ -101,6 +111,8 @@ async function variantsByIds(db: Db, ids: string[]): Promise<ProductHit[]> {
     variantId: r.variant_id,
     name: r.name,
     productName: r.product_name,
+    description: r.description,
+    categoryName: r.category_name,
     priceMinor: r.amount_minor !== null ? BigInt(r.amount_minor) : null,
     currency: r.currency,
     available: r.available,

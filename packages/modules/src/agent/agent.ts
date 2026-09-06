@@ -3,13 +3,28 @@ import { AiBudgetGuard } from "./enforcement.js";
 import { searchProducts, detectRepurchase, assembleProposedCart } from "./tools.js";
 import type { AgentQuery, AgentResponse, ProductHit, RepurchaseHit, ProposedCart } from "./types.js";
 
+/** Contexto opcional para personalizar la respuesta (la mascota es el centro). */
+export interface ResponderContext {
+  customerName?: string | null;
+  petNames?: string[];
+}
+
+export interface ResponderInput {
+  message: string;
+  hits: ProductHit[];
+  repurchase: RepurchaseHit[];
+  cart: ProposedCart;
+  context?: ResponderContext;
+}
+
 /**
  * Responder de texto. El default es DETERMINISTA (sin LLM): compone la respuesta a partir
- * de los resultados. Un `AiTextResponder` real (agent-core / un LLM) se inyecta sin tocar
- * la orquestación — misma inversión de dependencia que el AI Gateway de agent-core.
+ * de los resultados. Un `AiTextResponder` real (un LLM, p. ej. el Vendedor con Claude) se
+ * inyecta sin tocar la orquestación — misma inversión de dependencia que el AI Gateway de
+ * agent-core. `compose` puede ser sincrónico (determinista) o asíncrono (LLM).
  */
 export interface AiTextResponder {
-  compose(input: { message: string; hits: ProductHit[]; repurchase: RepurchaseHit[]; cart: ProposedCart }): string;
+  compose(input: ResponderInput): string | Promise<string>;
 }
 
 export const deterministicResponder: AiTextResponder = {
@@ -61,6 +76,8 @@ export interface AgentDeps {
   budget?: AiBudgetGuard;
   /** Costo de IA imputado por consulta (por defecto $10 = 1000 c). */
   aiCostPerQueryMinor?: bigint;
+  /** Contexto para personalizar (nombre del cliente + mascotas). La mascota es el centro. */
+  context?: ResponderContext;
 }
 
 /**
@@ -106,7 +123,13 @@ export async function runCustomerAgent(db: TenantAwareDb, query: AgentQuery, dep
     });
     usedTools.push("armar_carrito");
 
-    const reply = responder.compose({ message: query.message, hits, repurchase, cart });
+    const reply = await responder.compose({
+      message: query.message,
+      hits,
+      repurchase,
+      cart,
+      ...(deps.context ? { context: deps.context } : {}),
+    });
 
     return {
       reply,

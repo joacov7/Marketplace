@@ -989,7 +989,7 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
   const [perksText, setPerksText] = useState("");
   const [benefitsText, setBenefitsText] = useState("");
   const [adoptionsTitle, setAdoptionsTitle] = useState("Adopciones");
-  const [flags, setFlags] = useState({ "features.adoptions": true, "features.foodCalculator": true, "features.foodComparator": true, "features.quickReorder": true });
+  const [flags, setFlags] = useState({ "features.adoptions": true, "features.foodCalculator": true, "features.foodComparator": true, "features.quickReorder": true, "features.aiAssistant": true });
   const toggle = (k: keyof typeof flags) => { setFlags((s) => ({ ...s, [k]: !s[k] })); setSaved(false); };
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1014,6 +1014,7 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
         "features.foodCalculator": d.theme?.["features.foodCalculator"] !== false,
         "features.foodComparator": d.theme?.["features.foodComparator"] !== false,
         "features.quickReorder": d.theme?.["features.quickReorder"] !== false,
+        "features.aiAssistant": d.theme?.["features.aiAssistant"] !== false,
       });
     } catch (e) { setLoading(false); onError(String(e)); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1127,7 +1128,7 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
 
         <div style={{ borderTop: "1px solid #eee", margin: "6px 0 12px" }} />
         <div style={{ fontSize: 13, fontWeight: 700, color: "#556", marginBottom: 8 }}>Funciones de la tienda</div>
-        {([["features.foodCalculator", "Calculadora de consumo + Mis mascotas"], ["features.foodComparator", "Comparador de alimentos (costo por día)"], ["features.quickReorder", "Compra rápida (repetir última compra)"], ["features.adoptions", "Sección de Adopciones / callejeritos"]] as const).map(([k, label]) => (
+        {([["features.foodCalculator", "Calculadora de consumo + Mis mascotas"], ["features.foodComparator", "Comparador de alimentos (costo por día)"], ["features.quickReorder", "Compra rápida (repetir última compra)"], ["features.aiAssistant", "Vendedor IA (asesora y recomienda del catálogo)"], ["features.adoptions", "Sección de Adopciones / callejeritos"]] as const).map(([k, label]) => (
           <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, padding: "4px 0", cursor: "pointer" }}>
             <input type="checkbox" checked={flags[k]} onChange={() => toggle(k)} style={{ width: 16, height: 16 }} />
             {label}

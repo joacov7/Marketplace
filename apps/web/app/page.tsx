@@ -76,7 +76,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       promoText, heroTitle, heroHighlight, heroSubtitle, footerBlurb, perks, benefits,
       adoptionsEnabled, adoptionsTitle,
       foodCalculator, foodComparator, quickReorder, nutritionFactors,
-      heroImageUrl, adoptionsBannerImageUrl,
+      heroImageUrl, adoptionsBannerImageUrl, aiAssistant,
       catalog0,
     ] = await Promise.all([
       cfg<string>("branding.primaryColor"),
@@ -106,6 +106,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<Record<string, number>>("nutrition.factors"),
       cfg<string>("storefront.heroImageUrl"),
       cfg<string>("storefront.adoptionsBannerImageUrl"),
+      cfg<boolean>("features.aiAssistant"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
         const adoptions = await listAdoptions(tx);
@@ -195,6 +196,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
         adoptionsTitle={cleanText(adoptionsTitle, "Adopciones")}
         heroImageUrl={safeUrl(heroImageUrl)}
         adoptionsBannerImageUrl={safeUrl(adoptionsBannerImageUrl)}
+        aiAssistant={aiAssistant !== false}
       />
     );
   } catch (e) {

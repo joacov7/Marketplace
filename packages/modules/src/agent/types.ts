@@ -7,6 +7,10 @@ export interface ProductHit {
   priceMinor: bigint | null;
   currency: CurrencyCode | null;
   available: number;
+  /** Descripción del producto (para que el Vendedor asesore con criterio). Opcional. */
+  description?: string | null;
+  /** Categoría del producto (opcional). */
+  categoryName?: string | null;
 }
 
 export interface RepurchaseHit {

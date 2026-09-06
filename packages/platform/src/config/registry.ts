@@ -195,6 +195,14 @@ export const CONFIG_KEYS = {
     sensitive: false,
     description: "Habilita el Customer Shopping Agent.",
   },
+  "features.aiAssistant": {
+    key: "features.aiAssistant",
+    jsonSchema: { type: "boolean" },
+    defaultValue: true,
+    category: "features",
+    sensitive: false,
+    description: "Habilita el Vendedor IA (asistente de compras que asesora y recomienda productos del catálogo).",
+  },
   "features.adoptions": {
     key: "features.adoptions",
     jsonSchema: { type: "boolean" },

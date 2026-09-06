@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ShoppingCart, Check as LuCheck, Search, Menu, User, MapPin, Plus, RotateCcw,
   Truck, Package, Scale, Tag, PawPrint, HeartHandshake, BarChart3, Dog, Cat,
+  Sparkles, Send, X, Loader2,
 } from "lucide-react";
 
 // ── Tipos que provee el server component (page.tsx) ────────────────────────────
@@ -150,6 +151,7 @@ export default function Storefront(props: {
   adoptionsTitle: string;
   heroImageUrl: string;
   adoptionsBannerImageUrl: string;
+  aiAssistant?: boolean;
 }) {
   const { tenant, primary, products, config } = props;
   const G = primary; // verde de marca (config)
@@ -291,6 +293,20 @@ export default function Storefront(props: {
     setCartOpen(true);
   }
 
+  // Vendedor IA: agrega al carrito real los ítems que propuso (el pago lo confirma la persona).
+  function addProposedToCart(items: Array<{ variantId: string; name: string; qty: number; unitPriceMinor: string }>) {
+    setCart((c) => {
+      const next = { ...c };
+      for (const it of items) {
+        const prev = next[it.variantId]?.qty ?? 0;
+        next[it.variantId] = { name: it.name, sub: "Sugerido por el vendedor", priceMinor: Number(it.unitPriceMinor), qty: prev + it.qty };
+      }
+      return next;
+    });
+    setDone(null);
+    setCartOpen(true);
+  }
+
   // ── Quote del servidor (al entrar al checkout y al cambiar entrega/pago) ──────
   const fetchQuote = useCallback(async () => {
     if (items.length === 0) { setQuote(null); return; }
@@ -401,6 +417,7 @@ export default function Storefront(props: {
         .sf-btn{transition:background .18s ease, filter .15s ease;}
         .sf-btn:active{transform:translateY(1px);}
         .sf-a{cursor:pointer;}
+        @keyframes sfspin{to{transform:rotate(360deg);}}
         *{box-sizing:border-box;}
         img{max-width:100%;}
         .sf-img{display:block;}
@@ -552,6 +569,11 @@ export default function Storefront(props: {
         />
       )}
 
+      {/* Vendedor IA (asistente de compras): asesora y recomienda del catálogo real */}
+      {props.aiAssistant && (
+        <VendorWidget G={G} tenant={tenant} displayName={props.displayName} onAddCart={addProposedToCart} />
+      )}
+
       {/* Botón flotante de WhatsApp */}
       {waLink() && (
         <div style={{ position: "fixed", right: 26, bottom: 26, zIndex: 50, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
@@ -582,6 +604,175 @@ function CartIcon({ size = 18 }: { size?: number }) {
 }
 function Check({ size = 16, sw = 2 }: { size?: number; sw?: number }) {
   return <LuCheck size={size} strokeWidth={sw} aria-hidden />;
+}
+
+// ── Vendedor IA (asistente de compras) ──────────────────────────────────────────
+type VendorCart = { items: Array<{ variantId: string; name: string; qty: number; unitPriceMinor: string }>; totalMinor: string; currency: string };
+type VendorMsg = { role: "user" | "vendor"; text: string; cart?: VendorCart | null };
+
+/**
+ * Widget flotante del Vendedor: asesora y recomienda productos del catálogo REAL (nunca
+ * inventa). Propone un carrito que la persona agrega con un toque; el pago siempre lo
+ * confirma ella. Habla con /api/agent/query (propose-only, jamás cobra).
+ */
+function VendorWidget({
+  G, tenant, displayName, onAddCart,
+}: {
+  G: string;
+  tenant: string;
+  displayName: string;
+  onAddCart: (items: VendorCart["items"]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msgs, setMsgs] = useState<VendorMsg[]>([
+    { role: "vendor", text: `¡Hola! Soy el asistente de ${displayName}. Contame qué necesitás para tu mascota y te ayudo a encontrarlo. 🐾` },
+  ]);
+
+  async function send(text: string) {
+    const q = text.trim();
+    if (!q || busy) return;
+    setInput("");
+    setMsgs((m) => [...m, { role: "user", text: q }]);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/agent/query?tenant=${encodeURIComponent(tenant)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: q }),
+      });
+      const d = await res.json();
+      if (d?.disabled) {
+        setMsgs((m) => [...m, { role: "vendor", text: "El asistente no está disponible por ahora." }]);
+      } else if (res.ok && typeof d?.reply === "string") {
+        setMsgs((m) => [...m, { role: "vendor", text: d.reply, cart: d.proposedCart ?? null }]);
+      } else {
+        setMsgs((m) => [...m, { role: "vendor", text: "Uy, no pude responder ahora. Probá de nuevo en un momento." }]);
+      }
+    } catch {
+      setMsgs((m) => [...m, { role: "vendor", text: "No hay conexión en este momento. Probá de nuevo." }]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const panelW = "min(370px, calc(100vw - 32px))";
+
+  return (
+    <>
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="Abrir el asistente de compras"
+          className="sf-btn"
+          style={{
+            position: "fixed", left: 20, bottom: 24, zIndex: 55, display: "inline-flex", alignItems: "center", gap: 9,
+            background: G, color: C.white, border: "none", borderRadius: 999, padding: "13px 18px 13px 15px",
+            fontFamily: FONT, fontSize: 14.5, fontWeight: 600, cursor: "pointer", boxShadow: "0 10px 28px rgba(8,122,80,.34)",
+          }}
+        >
+          <Sparkles size={20} strokeWidth={2} /> Asistente
+        </button>
+      )}
+
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Asistente de compras"
+          style={{
+            position: "fixed", left: 20, bottom: 24, zIndex: 56, width: panelW, maxHeight: "min(76vh, 620px)",
+            display: "flex", flexDirection: "column", background: C.white, borderRadius: 18, overflow: "hidden",
+            fontFamily: FONT, color: C.text, boxShadow: "0 24px 60px rgba(0,0,0,.24)", border: `1px solid ${C.border}`,
+          }}
+        >
+          {/* Encabezado */}
+          <div style={{ background: G, color: C.white, padding: "13px 15px", display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(255,255,255,.18)", display: "grid", placeItems: "center" }}>
+              <Sparkles size={19} strokeWidth={2} />
+            </div>
+            <div style={{ flex: 1, lineHeight: 1.2 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 700 }}>Asistente de compras</div>
+              <div style={{ fontSize: 11.5, opacity: 0.9 }}>Te asesora y busca en la tienda</div>
+            </div>
+            <button onClick={() => setOpen(false)} aria-label="Cerrar" style={{ background: "transparent", border: "none", color: C.white, cursor: "pointer", padding: 4, display: "grid", placeItems: "center" }}>
+              <X size={20} strokeWidth={2} />
+            </button>
+          </div>
+
+          {/* Conversación */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "14px 13px", background: C.surf, display: "flex", flexDirection: "column", gap: 10 }}>
+            {msgs.map((m, i) => (
+              <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start", gap: 7 }}>
+                <div
+                  style={{
+                    maxWidth: "86%", padding: "9px 12px", borderRadius: 14, fontSize: 13.5, lineHeight: 1.5, whiteSpace: "pre-wrap",
+                    background: m.role === "user" ? G : C.white, color: m.role === "user" ? C.white : C.text,
+                    border: m.role === "user" ? "none" : `1px solid ${C.border}`,
+                    borderBottomRightRadius: m.role === "user" ? 4 : 14, borderBottomLeftRadius: m.role === "user" ? 14 : 4,
+                  }}
+                >
+                  {m.text}
+                </div>
+                {m.role === "vendor" && m.cart && m.cart.items.length > 0 && (
+                  <div style={{ maxWidth: "92%", background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: 11, width: "100%" }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.mute, textTransform: "uppercase", letterSpacing: ".03em", marginBottom: 7 }}>Carrito sugerido</div>
+                    {m.cart.items.map((it) => (
+                      <div key={it.variantId} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, padding: "3px 0" }}>
+                        <span style={{ color: C.text }}>{it.qty}× {it.name}</span>
+                        <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{money(Number(it.unitPriceMinor) * it.qty)}</span>
+                      </div>
+                    ))}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, fontWeight: 700, borderTop: `1px solid ${C.border}`, marginTop: 7, paddingTop: 7 }}>
+                      <span>Total</span><span>{money(m.cart.totalMinor)}</span>
+                    </div>
+                    <button
+                      onClick={() => onAddCart(m.cart!.items)}
+                      className="sf-btn"
+                      style={{ marginTop: 9, width: "100%", background: G, color: C.white, border: "none", borderRadius: 10, padding: "9px 12px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7 }}
+                    >
+                      <Plus size={16} strokeWidth={2.4} /> Agregar al carrito
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {busy && (
+              <div style={{ display: "flex", alignItems: "center", gap: 7, color: C.mute, fontSize: 12.5 }}>
+                <Loader2 size={15} strokeWidth={2} style={{ animation: "sfspin 1s linear infinite" }} /> Escribiendo…
+              </div>
+            )}
+          </div>
+
+          {/* Entrada */}
+          <form
+            onSubmit={(e) => { e.preventDefault(); void send(input); }}
+            style={{ display: "flex", gap: 8, padding: "10px 11px", borderTop: `1px solid ${C.border}`, background: C.white }}
+          >
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ej: comida para cachorro chico"
+              aria-label="Escribí tu consulta"
+              style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 13.5, fontFamily: FONT, outline: "none", color: C.text, minWidth: 0 }}
+            />
+            <button
+              type="submit"
+              disabled={busy || !input.trim()}
+              aria-label="Enviar"
+              className="sf-btn"
+              style={{ background: G, color: C.white, border: "none", borderRadius: 10, padding: "0 14px", cursor: busy || !input.trim() ? "default" : "pointer", opacity: busy || !input.trim() ? 0.6 : 1, display: "grid", placeItems: "center" }}
+            >
+              <Send size={17} strokeWidth={2} />
+            </button>
+          </form>
+          <div style={{ fontSize: 10.5, color: C.mute, textAlign: "center", padding: "0 12px 9px", background: C.white }}>
+            Recomienda productos de la tienda. El pago lo confirmás vos.
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 // ── Placeholder de imagen (foto real cuando exista) ─────────────────────────────

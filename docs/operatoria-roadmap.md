@@ -116,6 +116,37 @@
   Tests: zonas en `delivery.pglite.test.ts`.
 - Follow-up menor: agrupar/ordenar la cola de reparto por zona para armar la ruta.
 
+### ✅ Vendedor IA — implementado (v1: asesora + recomienda)
+- **Qué es**: un asistente de compras conversacional (chat flotante en la tienda) que hace las
+  **dos cosas de un vendedor**: (1) **asesora** sobre cuidado de la mascota y (2) **recomienda
+  productos concretos** para resolver lo que la persona necesita. Habla en rioplatense, con la
+  mascota en el centro (usa su nombre si lo conoce).
+- **Enganche en la arquitectura existente**: reutiliza el módulo `agent` (Customer Shopping
+  Agent), que es **propose-only por diseño** (garantía estructural: sus tools son solo de
+  lectura/preparación; las de dinero están prohibidas y no existen en su registro). El módulo
+  ya estaba pensado para **inyectar un responder de texto** sin tocar la orquestación; el
+  Vendedor con Claude es ese responder. Solo escribe texto: **jamás crea pedidos ni pagos**;
+  el carrito que propone es inerte y lo confirma la persona por `/api/checkout`.
+- **Sin terceros nuevos**: usa únicamente `ANTHROPIC_API_KEY` (Claude con tool-use sobre el
+  catálogo real vía Postgres). El modelo es configurable por env `VENDOR_MODEL` (default
+  `claude-haiku-4-5` — barato/rápido para un chat de cliente a volumen; subilo a
+  `claude-sonnet-5` o `claude-opus-5` para más calidad). Sin la key, degrada al responder
+  determinista (no rompe).
+- **Solo recomienda del catálogo**: el prompt fuerza a elegir de los productos que el buscador
+  del catálogo devuelve (nunca inventa productos/precios/stock) y trae un guardarraíl de salud
+  (no diagnostica; sugiere veterinario ante problemas de salud). Tope de mensaje (500) y
+  presupuesto de IA por tenant (`AiBudgetGuard`) acotan el costo/abuso.
+- **Activable por comercio**: `features.aiAssistant` (default true) — toggle en el panel
+  (Diseño → "Vendedor IA"). Off = no aparece el chat y el endpoint responde `disabled`.
+- **Búsqueda**: v1 usa matcheo por texto (nombre/descr./categoría, ilike). Follow-up de
+  precisión: búsqueda semántica con `pgvector` en Neon (mismo aislamiento por tenant) para
+  mejorar el recall cuando el cliente no sabe el nombre del producto.
+- Archivos clave: módulo `agent/` (`agent.ts` responder async + contexto, `tools.ts` hits
+  enriquecidos con descripción/categoría, `types.ts`), `apps/web/lib/vendor-responder.ts`
+  (el Vendedor con Claude, se inyecta), ruta `api/agent/query` (gate + inyección + fallback),
+  `storefront.tsx` (`VendorWidget` flotante), toggle en `merchant/page.tsx`. Tests: seam async
+  + enriquecimiento + contexto en `agent.pglite.test.ts`.
+
 ### ✅ Eslabón 1 — implementado (la mascota en el centro)
 - **Cliente por teléfono** (`customers`, migración 0013): el teléfono normalizado es la llave;
   reutiliza la ficha sin duplicar y aísla por tenant (RLS). Usuario registrado → ficha con
