@@ -482,7 +482,7 @@ export default function Storefront(props: {
         G={G} tenant={tenant} logoUrl={props.logoUrl} displayName={props.displayName}
         categories={categories} activeCat={view === "list" ? category : ""} query={query}
         cartCount={items.reduce((a, [, l]) => a + l.qty, 0)} subtotal={subtotal}
-        showPets={config.foodCalculator} factors={config.nutritionFactors}
+        showPets={config.foodCalculator} factors={config.nutritionFactors} subscriptions={!!props.subscriptions}
         adoptionsLabel={props.adoptions.length > 0 ? props.adoptionsTitle : ""} adoptionsActive={view === "adopciones"}
         comparatorLabel={config.foodComparator && foodProducts.length >= 2 ? "Comparar alimentos" : ""} comparatorActive={view === "comparar"}
         onHome={() => { setQuery(""); setCategory(""); go("home"); }}
@@ -822,7 +822,7 @@ function Header(props: {
   G: string; tenant: string; logoUrl: string; displayName: string;
   categories: { name: string; count: number }[]; activeCat: string; query: string;
   cartCount: number; subtotal: number;
-  showPets: boolean; factors: Record<string, number>;
+  showPets: boolean; factors: Record<string, number>; subscriptions: boolean;
   adoptionsLabel: string; adoptionsActive: boolean;
   comparatorLabel: string; comparatorActive: boolean;
   onHome: () => void; onCategory: (c: string) => void; onSearch: (q: string) => void; onAdoptions: () => void; onComparar: () => void; onCart: () => void; waLink: string | null;
@@ -869,7 +869,7 @@ function Header(props: {
           <Search size={16} strokeWidth={2} color={C.mute} aria-hidden />
           <input value={props.query} onChange={(e) => props.onSearch(e.target.value)} placeholder="Buscar productos" style={{ border: "none", outline: "none", background: "transparent", fontSize: 13, width: 150, fontFamily: FONT, color: C.text }} />
         </div>
-        <AccountMenu G={G} tenant={props.tenant} showPets={props.showPets} factors={props.factors} />
+        <AccountMenu G={G} tenant={props.tenant} showPets={props.showPets} factors={props.factors} subscriptions={props.subscriptions} />
         <button className="sf-btn" onClick={props.onCart} style={{ background: G, color: C.white, border: "none", borderRadius: 999, padding: "8px 16px", display: "inline-flex", alignItems: "center", gap: 9, cursor: "pointer", fontFamily: FONT }}>
           <CartIcon size={18} /><span style={{ fontSize: 14, fontWeight: 600 }}>{money(props.subtotal)}</span>
         </button>
@@ -1889,13 +1889,13 @@ function AdoptionsView({ G, title, adoptions, storeWhatsapp }: { G: string; titl
 }
 
 // ── Cuenta: login/registro + Mis pedidos + Mis mascotas ──────────────────────────
-function AccountMenu({ G, tenant, showPets, factors }: { G: string; tenant: string; showPets: boolean; factors: Record<string, number> }) {
+function AccountMenu({ G, tenant, showPets, factors, subscriptions }: { G: string; tenant: string; showPets: boolean; factors: Record<string, number>; subscriptions?: boolean }) {
   const [email, setEmail] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [form, setForm] = useState({ email: "", password: "" });
   const [err, setErr] = useState<string | null>(null);
-  const [modal, setModal] = useState<"" | "orders" | "pets">("");
+  const [modal, setModal] = useState<"" | "orders" | "pets" | "subs">("");
 
   useEffect(() => { fetch("/api/auth/me").then((r) => r.json()).then((d) => setEmail(d.user?.email ?? null)).catch(() => {}); }, []);
 
@@ -1920,6 +1920,7 @@ function AccountMenu({ G, tenant, showPets, factors }: { G: string; tenant: stri
               <div style={{ fontSize: 13, color: C.mute, marginBottom: 8, wordBreak: "break-all" }}>{email}</div>
               <button onClick={() => { setModal("orders"); setOpen(false); }} style={{ ...primaryBtn(G), width: "100%", padding: 10, marginBottom: 6 }}>Mis pedidos</button>
               {showPets && <button onClick={() => { setModal("pets"); setOpen(false); }} style={{ ...outlineBtn(G), width: "100%", padding: 10, marginBottom: 6 }}><PawPrint size={15} strokeWidth={1.8} style={{verticalAlign:"-3px",marginRight:6}} />Mis mascotas</button>}
+              {subscriptions && <button onClick={() => { setModal("subs"); setOpen(false); }} style={{ ...outlineBtn(G), width: "100%", padding: 10, marginBottom: 6 }}><RotateCcw size={15} strokeWidth={1.9} style={{verticalAlign:"-3px",marginRight:6}} />Mis suscripciones</button>}
               <button onClick={logout} style={{ border: "none", background: "transparent", color: C.mute, cursor: "pointer", fontSize: 13, width: "100%", padding: 6 }}>Cerrar sesión</button>
             </>
           ) : (
@@ -1933,13 +1934,120 @@ function AccountMenu({ G, tenant, showPets, factors }: { G: string; tenant: stri
               <input placeholder="contraseña" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} onKeyDown={(e) => e.key === "Enter" && submit()} style={input} />
               {err && <p style={{ color: "#c62828", fontSize: 12, margin: "6px 0 0" }}>{err}</p>}
               <button onClick={submit} style={{ ...primaryBtn(G), width: "100%", padding: 10, marginTop: 8 }}>{mode === "login" ? "Ingresar" : "Crear cuenta"}</button>
+              {subscriptions && (
+                <button onClick={() => { setModal("subs"); setOpen(false); }} style={{ border: "none", background: "transparent", color: G, cursor: "pointer", fontSize: 12.5, fontWeight: 600, width: "100%", padding: "10px 6px 2px", fontFamily: FONT }}>
+                  <RotateCcw size={14} strokeWidth={1.9} style={{ verticalAlign: "-2px", marginRight: 6 }} />Ver mis suscripciones
+                </button>
+              )}
             </>
           )}
         </div>
       )}
       {modal === "orders" && <MyOrdersModal onClose={() => setModal("")} />}
       {modal === "pets" && <MyPetsModal G={G} factors={factors} onClose={() => setModal("")} />}
+      {modal === "subs" && <MySubscriptionsModal G={G} tenant={tenant} onClose={() => setModal("")} />}
     </span>
+  );
+}
+
+interface CustomerSub { id: string; status: "active" | "paused" | "cancelled"; qty: number; intervalDays: number; nextRunAt: string; petName: string | null; variantName: string; productName: string }
+
+/**
+ * "Mis suscripciones" del cliente: sirve a logueados (por sesión) y a invitados (por teléfono,
+ * la llave del cliente). Permite pausar / reanudar / cancelar. La propiedad la verifica el
+ * backend (sesión o teléfono), así nadie toca la suscripción de otro.
+ */
+function MySubscriptionsModal({ G, tenant, onClose }: { G: string; tenant: string; onClose: () => void }) {
+  const [subs, setSubs] = useState<CustomerSub[] | null>(null);
+  const [phone, setPhone] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [asked, setAsked] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const fmt = (iso: string) => { try { return new Date(iso).toLocaleDateString("es-AR", { day: "numeric", month: "long" }); } catch { return ""; } };
+
+  const load = useCallback(async (ph?: string) => {
+    setLoading(true); setMsg(null);
+    try {
+      const url = `/api/subscriptions?tenant=${encodeURIComponent(tenant)}${ph ? `&phone=${encodeURIComponent(ph)}` : ""}`;
+      const r = await fetch(url);
+      const d = await r.json();
+      setSubs(Array.isArray(d.subscriptions) ? d.subscriptions : []);
+    } catch { setSubs([]); }
+    finally { setLoading(false); setAsked(true); }
+  }, [tenant]);
+
+  // Intento inicial por sesión (cliente logueado). Si no hay, pedimos el teléfono.
+  useEffect(() => { void load(); }, [load]);
+
+  async function patch(id: string, status: "active" | "paused" | "cancelled") {
+    setMsg(null);
+    try {
+      const r = await fetch(`/api/subscriptions/${id}?tenant=${encodeURIComponent(tenant)}`, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status, ...(phone.trim() ? { phone: phone.trim() } : {}) }),
+      });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setMsg(d.error === "forbidden" ? "No pudimos verificar que sea tuya." : "No se pudo actualizar."); return; }
+      await load(phone.trim() || undefined);
+    } catch { setMsg("Sin conexión. Probá de nuevo."); }
+  }
+
+  const active = (subs ?? []).filter((s) => s.status !== "cancelled");
+
+  return (
+    <Modal title="Mis suscripciones" onClose={onClose}>
+      {/* Búsqueda por teléfono (invitados) */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <input
+          value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Tu teléfono / WhatsApp" inputMode="tel"
+          onKeyDown={(e) => e.key === "Enter" && load(phone.trim() || undefined)}
+          style={{ ...input, flex: 1 }}
+        />
+        <button onClick={() => load(phone.trim() || undefined)} style={{ ...primaryBtn(G), padding: "9px 14px" }}>Ver</button>
+      </div>
+
+      {msg && <p style={{ color: "#c62828", fontSize: 13, margin: "0 0 10px" }}>{msg}</p>}
+      {loading && <p style={{ color: C.mute }}>Cargando…</p>}
+
+      {!loading && asked && active.length === 0 && (
+        <p style={{ color: C.mute, fontSize: 13.5, lineHeight: 1.5 }}>
+          No encontramos suscripciones activas. Si compraste como invitado, ingresá el teléfono con el que te suscribiste.
+        </p>
+      )}
+
+      {!loading && active.length > 0 && (
+        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 10 }}>
+          {active.map((s) => {
+            const paused = s.status === "paused";
+            return (
+              <li key={s.id} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 13 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14.5 }}>{s.qty}× {s.productName}</div>
+                    <div style={{ fontSize: 12.5, color: C.mute, marginTop: 2 }}>
+                      {s.variantName}{s.petName ? ` · para ${s.petName}` : ""}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: C.mute, marginTop: 4 }}>
+                      Cada {s.intervalDays} días · próximo: <b style={{ color: C.text }}>{fmt(s.nextRunAt)}</b>
+                    </div>
+                  </div>
+                  {paused && <span style={{ fontSize: 11, fontWeight: 700, background: "#fdf3d7", color: "#8a6d1a", borderRadius: 999, padding: "3px 9px", whiteSpace: "nowrap" }}>Pausada</span>}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 11 }}>
+                  {paused
+                    ? <button onClick={() => patch(s.id, "active")} className="sf-btn" style={{ ...primaryBtn(G), padding: "8px 12px", fontSize: 13 }}>Reanudar</button>
+                    : <button onClick={() => patch(s.id, "paused")} className="sf-btn" style={{ ...outlineBtn(G), padding: "8px 12px", fontSize: 13 }}>Pausar</button>}
+                  <button onClick={() => { if (confirm("¿Cancelar esta suscripción?")) void patch(s.id, "cancelled"); }} style={{ background: "transparent", border: `1.5px solid #f0c9c4`, color: "#c0392b", borderRadius: 9, padding: "8px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: FONT }}>Cancelar</button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <p style={{ fontSize: 11.5, color: C.mute, marginTop: 14, lineHeight: 1.5 }}>
+        Cada envío se cobra al recibir. Podés pausar o cancelar cuando quieras.
+      </p>
+    </Modal>
   );
 }
 

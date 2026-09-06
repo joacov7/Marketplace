@@ -134,11 +134,12 @@
 - **UI**: cliente se suscribe desde el detalle de producto ("Suscribite y recibilo siempre" →
   modal con cadencia 15/30/45/60 días, cantidad, teléfono, dirección, mascota). El comercio
   administra desde el panel (pestaña **Suscripciones**: pausar / reanudar / cancelar, ve
-  próximo envío y errores). Cliente puede pausar/cancelar (rutas con verificación de propiedad).
+  próximo envío y errores). El cliente gestiona las suyas desde **"Mis suscripciones"** (menú
+  de Cuenta): por sesión (logueado) o por teléfono (invitado), con pausar/reanudar/cancelar
+  (rutas con verificación de propiedad).
 - **Activable por comercio**: `features.subscriptions` (default true) — toggle en Diseño.
 - **Follow-ups**: cobro automático de tarjeta (necesita Mercado Pago recurrente/preapproval);
-  aviso al cliente antes de cada envío; que el cliente edite cadencia/cantidad desde la tienda;
-  "Mis suscripciones" en la cuenta.
+  aviso al cliente antes de cada envío; que el cliente edite cadencia/cantidad (hoy pausa/cancela).
 - Archivos: módulo `subscriptions/` (`subscriptions.ts`, migración 0016), rutas
   `api/subscriptions{,/[id]}`, `api/merchant/subscriptions{,/[id]}`, `api/cron/subscriptions`,
   `SubscribeModal` en `storefront.tsx`, `SubscriptionsTab` en `merchant/page.tsx`, `vercel.json`.
