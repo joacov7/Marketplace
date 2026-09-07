@@ -282,6 +282,7 @@ export async function generateDueOrdersForTenant(db: TenantAwareDb, tenantId: st
       ...(s.petName ? { petName: s.petName } : {}),
       ...(Object.keys(ship).length > 0 ? { shippingAddress: ship } : {}),
       deliveryChargeMinor: 0n, // envío incluido: perk de suscripción (v1)
+      reservationTtlSeconds: 7 * 24 * 3600, // pago al recibir: retiene stock hasta aceptar
       sellers: [{ merchantId: s.merchantId, items: [{ variantId: s.variantId, qty: s.qty, unitPriceMinor: unit }] }],
     });
 

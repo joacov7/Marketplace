@@ -27,6 +27,9 @@ export interface CreateOrderInput {
   shippingAddress?: Record<string, unknown>;
   deliveryWindow?: string;
   deliveryChargeMinor?: bigint;
+  /** TTL de la reserva de stock (seg). Para pago al recibir conviene largo: el pedido puede
+   *  aceptarse horas después y no queremos que otro se lleve el stock mientras tanto. */
+  reservationTtlSeconds?: number;
   sellers: ReadonlyArray<{
     merchantId: string;
     items: ReadonlyArray<{ variantId: string; qty: number; unitPriceMinor: bigint }>;
@@ -101,6 +104,7 @@ export async function createOrder(
             variantId: item.variantId,
             qty: item.qty,
             orderId,
+            ...(input.reservationTtlSeconds !== undefined ? { ttlSeconds: input.reservationTtlSeconds } : {}),
           });
           if (!reserved.ok) throw new Error(`${reserved.error}:${item.variantId}`);
 
@@ -161,17 +165,24 @@ export async function confirmOrder(db: TenantAwareDb, tenantId: string, orderId:
       if (status === null) throw new Error("order_not_found");
       if (!canTransitionOrder(status as never, "confirmed")) throw new Error(`invalid_transition:${status}->confirmed`);
 
-      const items = await tx.query<{ reservation_id: string | null }>(
-        `select oi.reservation_id from order_items oi
+      const items = await tx.query<{ id: string; variant_id: string; qty: number; reservation_id: string | null }>(
+        `select oi.id, oi.variant_id, oi.qty, oi.reservation_id from order_items oi
            join seller_orders so on so.id = oi.seller_order_id
           where so.order_id = $1`,
         [orderId],
       );
       for (const it of items) {
-        if (it.reservation_id) {
-          const c = await confirmReservation(tx, it.reservation_id);
-          if (!c.ok) throw new Error(`reservation_confirm_failed:${it.reservation_id}`);
-        }
+        if (!it.reservation_id) continue;
+        const c = await confirmReservation(tx, it.reservation_id);
+        if (c.ok) continue;
+        // La reserva venció (TTL) y el stock volvió a 'available' — típico en pago al recibir,
+        // que se acepta más tarde. Re-reservamos del stock actual y confirmamos, para que
+        // aceptar un pedido viejo NO falle si todavía hay stock. Si ya no hay, error claro.
+        const re = await reserveStock(tx, { tenantId, variantId: it.variant_id, qty: it.qty, orderId });
+        if (!re.ok) throw new Error(`sin_stock:${it.variant_id}`);
+        const c2 = await confirmReservation(tx, re.value.reservationId);
+        if (!c2.ok) throw new Error(`reservation_confirm_failed:${re.value.reservationId}`);
+        await tx.query(`update order_items set reservation_id = $2 where id = $1`, [it.id, re.value.reservationId]);
       }
       await tx.query(`update orders set status = 'confirmed', updated_at = now() where id = $1`, [orderId]);
       await enqueueEvent(tx, { tenantId, type: "order.confirmed", payload: { orderId } });

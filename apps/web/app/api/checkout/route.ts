@@ -155,6 +155,9 @@ export async function POST(req: Request) {
     ...(body.address ? { shippingAddress: { ...body.address, paymentMethod: body.payment ?? null } as Record<string, unknown> } : {}),
     deliveryWindow,
     deliveryChargeMinor: priced.deliveryChargeMinor,
+    // Pago al recibir se acepta más tarde: retenemos el stock 7 días (no 15 min) para no
+    // perderlo mientras el comercio decide. Online se captura enseguida por webhook (TTL corto).
+    ...(isOnline ? {} : { reservationTtlSeconds: 7 * 24 * 3600 }),
     sellers: [{ merchantId: priced.merchantId, items: priced.items }],
   });
   if (!order.ok) return NextResponse.json({ error: order.error }, { status: 409 });

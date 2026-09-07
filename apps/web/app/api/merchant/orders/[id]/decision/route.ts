@@ -6,6 +6,15 @@ import { requireServiceToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
+/** Traduce los errores del dominio a un mensaje entendible para el comercio. */
+function friendlyError(error: string): string {
+  if (error.startsWith("sin_stock")) return "No hay stock suficiente para aceptar este pedido. Reponé stock o rechazalo.";
+  if (error.startsWith("reservation_confirm_failed")) return "No se pudo reservar el stock. Actualizá e intentá de nuevo.";
+  if (error.startsWith("invalid_transition")) return "Este pedido ya no está pendiente de aceptación (puede que ya se haya aceptado o cancelado).";
+  if (error === "order_not_found") return "No encontramos el pedido. Actualizá la lista.";
+  return error;
+}
+
 /**
  * El comercio ACEPTA o RECHAZA un pedido de pago al recibir (los que entran "a aceptar").
  *  - aceptar  → confirmOrder: consume las reservas (venta comprometida), pasa a 'confirmed'.
@@ -34,7 +43,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     body.decision === "aceptar"
       ? await confirmOrder(db(), tenant.tenantId, params.id)
       : await cancelOrder(db(), tenant.tenantId, params.id);
-  if (!res.ok) return NextResponse.json({ error: res.error }, { status: 409 });
+  if (!res.ok) return NextResponse.json({ error: friendlyError(res.error) }, { status: 409 });
 
   return NextResponse.json({ ok: true, decision: body.decision, orderStatus: body.decision === "aceptar" ? "confirmed" : "cancelled" });
 }

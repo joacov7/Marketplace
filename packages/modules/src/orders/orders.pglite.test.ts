@@ -3,7 +3,7 @@ import type { PGlite } from "@electric-sql/pglite";
 import { type TenantAwareDb, setConfigValue } from "@commerce/platform";
 import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
 import { createProduct, addVariant } from "../catalog/catalog.js";
-import { setStock, getStock } from "../inventory/inventory.js";
+import { setStock, getStock, releaseReservation } from "../inventory/inventory.js";
 import { createOrder, confirmOrder, cancelOrder, completeOrder, getOrder, listSellerOrders, listDeliveryOrders, transitionSellerOrder, listCustomerOrders, deliveryStage, getOrderTracking, lastReorder } from "./orders.js";
 import { setPrice } from "../catalog/catalog.js";
 import { findOrCreateCustomerByPhone } from "../customer/customer.js";
@@ -144,6 +144,50 @@ describe("Orders — creación, reserva, confirmación, cancelación", () => {
     expect(cancel.ok).toBe(true);
     // el stock ya fue consumido por confirm; cancelar no lo repone (las reservas no están 'held')
     expect(await db.withTenant(tenantId, (tx) => getStock(tx, v))).toEqual({ available: 7, reserved: 0 });
+  });
+
+  it("aceptar RE-RESERVA si la reserva venció (pago al recibir aceptado tarde)", async () => {
+    const v = await variantWithStock(db, tenantId, merchantId, "TTL", 5);
+    const created = await createOrder(db, {
+      tenantId, paymentMethod: "efectivo",
+      sellers: [{ merchantId, items: [{ variantId: v, qty: 2, unitPriceMinor: 100n }] }],
+    });
+    if (!created.ok) throw new Error("create falló");
+
+    // Simula el vencimiento del TTL: el cron liberó la reserva y el stock volvió a available.
+    await db.withTenant(tenantId, async (tx) => {
+      const [oi] = await tx.query<{ reservation_id: string }>(
+        `select oi.reservation_id from order_items oi join seller_orders so on so.id = oi.seller_order_id where so.order_id = $1`,
+        [created.value.orderId],
+      );
+      await releaseReservation(tx, oi!.reservation_id);
+    });
+    expect(await db.withTenant(tenantId, (tx) => getStock(tx, v))).toEqual({ available: 5, reserved: 0 });
+
+    // Aceptar ahora debe re-reservar del stock actual y confirmar (NO fallar).
+    const conf = await confirmOrder(db, tenantId, created.value.orderId);
+    expect(conf.ok).toBe(true);
+    expect(await db.withTenant(tenantId, (tx) => getStock(tx, v))).toEqual({ available: 3, reserved: 0 });
+  });
+
+  it("aceptar sin stock tras vencer la reserva → error claro sin_stock", async () => {
+    const v = await variantWithStock(db, tenantId, merchantId, "TTL0", 2);
+    const created = await createOrder(db, {
+      tenantId, paymentMethod: "efectivo",
+      sellers: [{ merchantId, items: [{ variantId: v, qty: 2, unitPriceMinor: 100n }] }],
+    });
+    if (!created.ok) throw new Error("create falló");
+    await db.withTenant(tenantId, async (tx) => {
+      const [oi] = await tx.query<{ reservation_id: string }>(
+        `select oi.reservation_id from order_items oi join seller_orders so on so.id = oi.seller_order_id where so.order_id = $1`,
+        [created.value.orderId],
+      );
+      await releaseReservation(tx, oi!.reservation_id);
+      await setStock(tx, { tenantId, variantId: v, available: 0 }); // otro se llevó el stock
+    });
+    const conf = await confirmOrder(db, tenantId, created.value.orderId);
+    expect(conf.ok).toBe(false);
+    if (!conf.ok) expect(conf.error).toMatch(/sin_stock/);
   });
 
   it("panel del comercio: lista seller_orders pagados y avanza el cumplimiento", async () => {
