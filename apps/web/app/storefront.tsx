@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ShoppingCart, Check as LuCheck, Search, Menu, User, MapPin, Plus, RotateCcw,
   Truck, Package, Scale, Tag, PawPrint, HeartHandshake, BarChart3, Dog, Cat,
-  Sparkles, Send, X, Loader2,
+  Sparkles, Send, X, Loader2, Bone, Cookie, Droplets, Bug,
 } from "lucide-react";
 
 // ── Tipos que provee el server component (page.tsx) ────────────────────────────
@@ -88,15 +88,50 @@ const FONT = "'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, sans-seri
 // Placeholder rayado para imágenes ausentes (mientras no haya foto real).
 const PH_BG = "repeating-linear-gradient(45deg,#F0ECE0 0 9px,#F7F4EB 9px 18px)";
 
-// URL de imagen placeholder VÁLIDA (foto real) mientras no cargue la definitiva desde el panel.
-// Determinista por `seed` para que cada categoría/producto tenga una foto estable.
-function phImg(seed: string, w: number, h: number): string {
-  return `https://picsum.photos/seed/${encodeURIComponent(seed || "petshop")}/${w}/${h}`;
+// Cuando NO hay foto real cargada, en vez de una imagen random mostramos un ícono relacionado
+// a la categoría/producto sobre un fondo suave de marca. Se infiere del nombre (hint).
+function iconFor(hint: string): typeof PawPrint {
+  const h = (hint || "").toLowerCase();
+  if (/(gato|felin|michi|\bcat\b|kitten)/.test(h)) return Cat;
+  if (/(perro|\bcan\b|cachorro|\bdog\b|puppy)/.test(h)) return Dog;
+  if (/(antiparasit|pulga|garrapata|pipeta|desparasit)/.test(h)) return Bug;
+  if (/(snack|premio|gall|hueso|masticab|bocad)/.test(h)) return Cookie;
+  if (/(aliment|balanceado|comida|pienso|croqueta|\bad\.|adult|senior)/.test(h)) return Bone;
+  if (/(higien|shampoo|ba[ñn]o|limpi|arena|piedra|sanitari|desodor|toallit)/.test(h)) return Droplets;
+  if (/(accesor|juguete|collar|correa|cama|comedero|plato|bebedero|transport|pretal)/.test(h)) return Package;
+  return PawPrint;
 }
-function onImgError(e: React.SyntheticEvent<HTMLImageElement>, seed: string, w: number, h: number) {
-  const img = e.currentTarget;
-  const fallback = phImg(seed, w, h);
-  if (img.src !== fallback) img.src = fallback; // si la URL del panel falla, caemos al placeholder
+
+/** Tile de placeholder: fondo suave de marca + ícono de la categoría. Reemplaza la foto random. */
+function PhTile({ hint, radius, aspect, height }: { hint: string; radius: React.CSSProperties["borderRadius"]; aspect: string; height?: number }) {
+  const Ico = iconFor(hint);
+  const small = !!height && height < 90;
+  return (
+    <div aria-hidden style={{
+      width: "100%", borderRadius: radius, display: "grid", placeItems: "center",
+      background: `linear-gradient(135deg, ${C.tint} 0%, ${C.iconBg} 100%)`, color: C.lightGreen,
+      aspectRatio: aspect, ...(height ? { height } : {}),
+    }}>
+      <Ico size={small ? 24 : 46} strokeWidth={1.5} />
+    </div>
+  );
+}
+
+/** Imagen del hero con placeholder de marca (degradé + huella) cuando no hay foto cargada. */
+function HeroImg({ src, G }: { src: string; G: string }) {
+  const [err, setErr] = useState(false);
+  if (!src || src.length === 0 || err) {
+    return (
+      <div aria-hidden style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center",
+        background: `linear-gradient(135deg, ${C.tint} 0%, ${C.iconBg} 55%, ${C.beige} 100%)`, color: G }}>
+        <PawPrint size={112} strokeWidth={1.1} style={{ opacity: 0.5 }} />
+      </div>
+    );
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img className="sf-img" src={src} alt="Mascotas felices"
+    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+    onError={() => setErr(true)} />;
 }
 
 const pesos = (minor: number | string) => Math.round(Number(minor) / 100);
@@ -795,17 +830,22 @@ function VendorWidget({
  * si está vacía, una placeholder VÁLIDA (foto real, estable por `seed`). Nunca una caja/emoji.
  * `w`×`h` definen el tamaño del placeholder (512×512 categorías, 1080×450 hero, etc.).
  */
-function Img({ src, alt, ratio, radius, seed, w = 512, h = 512, fit = "cover", height }: {
+function Img({ src, alt, ratio, radius, seed, hint, w = 512, h = 512, fit = "cover", height }: {
   src?: string; alt: string; ratio?: string; radius: React.CSSProperties["borderRadius"];
-  seed: string; w?: number; h?: number; fit?: "cover" | "contain"; height?: number;
+  seed: string; hint?: string; w?: number; h?: number; fit?: "cover" | "contain"; height?: number;
 }) {
-  const url = src && src.length > 0 ? src : phImg(seed, w, h);
+  const [err, setErr] = useState(false);
+  const aspect = ratio ?? `${w} / ${h}`;
+  // Sin foto real (o si la del panel falla) → placeholder con ícono de la categoría, no random.
+  if (!src || src.length === 0 || err) {
+    return <PhTile hint={hint ?? seed} radius={radius} aspect={aspect} {...(height ? { height } : {})} />;
+  }
   const style: React.CSSProperties = {
     width: "100%", borderRadius: radius, objectFit: fit, display: "block",
-    background: C.beige, ...(ratio ? { aspectRatio: ratio } : {}), ...(height ? { height } : {}),
+    background: C.beige, aspectRatio: aspect, ...(height ? { height } : {}),
   };
   // eslint-disable-next-line @next/next/no-img-element
-  return <img className="sf-img" src={url} alt={alt} loading="lazy" style={style} onError={(e) => onImgError(e, seed, w, h)} />;
+  return <img className="sf-img" src={src} alt={alt} loading="lazy" style={style} onError={() => setErr(true)} />;
 }
 
 // ── Botones reutilizables ────────────────────────────────────────────────────────
@@ -917,7 +957,7 @@ function ProductCard({ G, p, listRow, onOpen, onAdd }: { G: string; p: StoreProd
   return (
     <div className="sf-card" style={{ border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, background: C.white, display: "flex", flexDirection: "column", gap: 11 }}>
       <div className="sf-a" onClick={onOpen} style={{ position: "relative" }}>
-        <Img src={p.imageUrl} alt={p.name} ratio="1" radius={12} seed={p.productId} />
+        <Img src={p.imageUrl} alt={p.name} ratio="1" radius={12} seed={p.productId} hint={p.category || p.name} />
         {onSale && (
           <span style={{ position: "absolute", top: 10, right: 10, background: G, color: C.white, fontSize: 12, fontWeight: 700, borderRadius: 8, padding: "3px 9px", boxShadow: "0 2px 8px rgba(0,0,0,.12)" }}>−{discount}%</span>
         )}
@@ -1012,9 +1052,7 @@ function HomeView(props: {
         </div>
         {/* Imagen REAL del hero (URL desde config) + badge de envío gratis */}
         <div className="sf-hero-art" style={{ position: "relative", minHeight: 320 }}>
-          <img className="sf-img" src={props.heroImageUrl && props.heroImageUrl.length > 0 ? props.heroImageUrl : phImg("hero-petshop", 1080, 900)} alt="Mascotas felices"
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-            onError={(e) => onImgError(e, "hero-petshop", 1080, 900)} />
+          <HeroImg src={props.heroImageUrl} G={G} />
           <div style={{ position: "absolute", right: 22, bottom: 22, width: 128, height: 128, borderRadius: "50%", background: G, color: C.white, boxShadow: "0 10px 28px rgba(0,0,0,.22)", display: "grid", placeItems: "center", textAlign: "center", padding: 12 }}>
             <span>
               <span style={{ display: "block" }}><Truck size={20} strokeWidth={1.9} /></span>
@@ -1172,7 +1210,7 @@ function DetailView(props: {
         Inicio / <span className="sf-a" onClick={props.onBackCat}>{p.category || "Productos"}</span> / {p.name}
       </div>
       <div className="sf-detail" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "start" }}>
-        <Img src={p.imageUrl} alt={p.name} ratio="1" radius={20} seed={p.productId} w={1080} h={1080} />
+        <Img src={p.imageUrl} alt={p.name} ratio="1" radius={20} seed={p.productId} hint={p.category || p.name} w={1080} h={1080} />
         <div>
           {p.category && <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".1em", color: C.lightGreen }}>{p.category.toUpperCase()}</div>}
           <h1 style={{ margin: "6px 0 0", fontSize: 34, fontWeight: 700, letterSpacing: "-.02em" }}>{p.name}</h1>
@@ -1377,7 +1415,7 @@ function SubscribeModal({
         ) : (
           <div style={{ padding: 18 }}>
             <div style={{ display: "flex", gap: 12, alignItems: "center", background: C.surf, borderRadius: 12, padding: 12, marginBottom: 16 }}>
-              <Img src={product.imageUrl} alt={product.name} ratio="1" radius={10} seed={product.productId} w={120} h={120} height={54} />
+              <Img src={product.imageUrl} alt={product.name} ratio="1" radius={10} seed={product.productId} hint={product.category || product.name} w={120} h={120} height={54} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{product.name}</div>
                 <div style={{ fontSize: 12.5, color: C.mute }}>{variant.size} · {money(variant.priceMinor)}</div>
@@ -1865,7 +1903,7 @@ function AdoptionsView({ G, title, adoptions, storeWhatsapp }: { G: string; titl
               : null;
             return (
               <div key={a.id} className="sf-card" style={{ border: `1px solid ${C.border}`, borderRadius: 16, background: C.white, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                <Img src={a.imageUrl} alt={a.name} ratio="1" radius={0} seed={a.id} />
+                <Img src={a.imageUrl} alt={a.name} ratio="1" radius={0} seed={a.id} hint={a.species} />
                 <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <strong style={{ fontSize: 17 }}>{a.name}</strong>
