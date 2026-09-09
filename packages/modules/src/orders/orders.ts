@@ -248,6 +248,8 @@ export interface SellerOrderRow {
   paymentMethod: string | null;
   paymentStatus: string;
   channel: string;
+  /** Detalle de productos del pedido (para preparar antes de enviar). */
+  items: Array<{ name: string; variant: string; qty: number }>;
   /** true cuando el pedido espera que el comercio lo acepte (pago al recibir, sin confirmar). */
   needsAcceptance: boolean;
   createdAt: string;
@@ -278,13 +280,19 @@ export async function listSellerOrders(db: Db, opts: { limit?: number } = {}): P
     payment_method: string | null;
     payment_status: string;
     channel: string;
+    items: unknown;
     created_at: string;
   }>(
     `select so.id as seller_order_id, so.order_id, so.merchant_id, o.customer_id,
             o.status as order_status, so.status, so.subtotal_minor, o.currency,
             o.pet_name, c.name as customer_name, c.phone as customer_phone,
             o.payment_method, o.payment_status, o.channel, o.created_at,
-            (select count(*) from order_items oi where oi.seller_order_id = so.id) as item_count
+            (select count(*) from order_items oi where oi.seller_order_id = so.id) as item_count,
+            coalesce((select json_agg(json_build_object('name', p.name, 'variant', v.name, 'qty', oi.qty))
+                        from order_items oi
+                        join variants v on v.id = oi.variant_id
+                        join products p on p.id = v.product_id
+                       where oi.seller_order_id = so.id), '[]') as items
        from seller_orders so
        join orders o on o.id = so.order_id
        left join customers c on c.id = o.customer_id
@@ -306,6 +314,7 @@ export async function listSellerOrders(db: Db, opts: { limit?: number } = {}): P
     subtotalMinor: BigInt(r.subtotal_minor),
     currency: r.currency,
     itemCount: Number(r.item_count),
+    items: Array.isArray(r.items) ? (r.items as Array<{ name: string; variant: string; qty: number }>) : typeof r.items === "string" ? JSON.parse(r.items) : [],
     petName: r.pet_name,
     customerName: r.customer_name,
     customerPhone: r.customer_phone,

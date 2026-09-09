@@ -25,6 +25,7 @@ export async function GET(req: Request) {
       subtotalMinor: r.subtotalMinor.toString(),
       currency: r.currency,
       itemCount: r.itemCount,
+      items: r.items,
       petName: r.petName,
       customerName: r.customerName,
       customerPhone: r.customerPhone,

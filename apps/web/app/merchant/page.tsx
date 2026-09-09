@@ -13,7 +13,8 @@ function PetSpeciesIcon({ species, size = 15 }: { species: string; size?: number
 }
 
 interface Merchant { id: string; slug: string; name: string }
-interface SellerOrder { sellerOrderId: string; orderId: string; orderStatus: string; status: string; subtotalMinor: string; currency: string; itemCount: number; petName: string | null; customerName: string | null; customerPhone: string | null; paymentMethod: string | null; paymentStatus: string; channel: string; needsAcceptance: boolean; createdAt: string }
+interface OrderLine { name: string; variant: string; qty: number }
+interface SellerOrder { sellerOrderId: string; orderId: string; orderStatus: string; status: string; subtotalMinor: string; currency: string; itemCount: number; items: OrderLine[]; petName: string | null; customerName: string | null; customerPhone: string | null; paymentMethod: string | null; paymentStatus: string; channel: string; needsAcceptance: boolean; createdAt: string }
 interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; categoryId: string | null; categoryName: string | null; description: string | null; kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null; priceMinor: string | null; listPriceMinor: string | null; currency: string | null; available: number; status: string }
 interface Category { id: string; slug: string; name: string; imageUrl: string | null; position: number }
 interface AdoptionItem { id: string; name: string; species: string; age: string | null; description: string | null; imageUrl: string | null; contactWhatsapp: string | null; status: string; createdAt: string }
@@ -489,6 +490,9 @@ function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | nu
           onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); void load(); }} />
       )}
 
+      {/* Nota de preparación del día: suma todo lo que hay que preparar (pedidos aceptados en curso). */}
+      <PrepNote orders={active.filter((o) => o.status === "pending" || o.status === "preparing")} />
+
       {/* Pedidos por aceptar (pago al recibir) — arriba, es lo que requiere acción. */}
       {pending.length > 0 && (
         <div style={{ marginBottom: 18 }}>
@@ -528,6 +532,57 @@ function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | nu
   );
 }
 
+/**
+ * Nota de preparación del día: consolida en una sola lista TODO lo que hay que preparar
+ * (suma cantidades por producto de los pedidos aceptados en curso), para agarrar todo de una
+ * pasada antes de cargar la camioneta. Botón "Imprimir" abre una ventana limpia y la imprime.
+ */
+function PrepNote({ orders }: { orders: SellerOrder[] }) {
+  const [open, setOpen] = useState(true);
+  const agg = new Map<string, number>();
+  for (const o of orders) for (const it of o.items ?? []) {
+    const label = `${it.name}${it.variant && it.variant !== "Único" ? ` · ${it.variant}` : ""}`;
+    agg.set(label, (agg.get(label) ?? 0) + it.qty);
+  }
+  const list = [...agg.entries()].map(([label, qty]) => ({ label, qty })).sort((a, b) => a.label.localeCompare(b.label, "es"));
+  if (list.length === 0) return null;
+
+  function printNote() {
+    const w = window.open("", "_blank", "width=460,height=640");
+    if (!w) return;
+    const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] ?? c);
+    const rows = list.map((p) => `<tr><td style="font-weight:700;padding:6px 12px 6px 0;white-space:nowrap;vertical-align:top">${p.qty}×</td><td style="padding:6px 0;border-bottom:1px solid #eee">${esc(p.label)}</td></tr>`).join("");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Nota de preparación</title></head><body style="font-family:system-ui,-apple-system,sans-serif;color:#1f2a2e;padding:24px;max-width:420px;margin:0 auto">
+      <h2 style="margin:0 0 2px">Nota de preparación</h2>
+      <div style="color:#6b7280;font-size:13px;margin-bottom:16px">${new Date().toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })} · ${orders.length} pedido(s)</div>
+      <table style="width:100%;border-collapse:collapse;font-size:15px">${rows}</table>
+      <script>window.onload=function(){window.print()}<\/script></body></html>`);
+    w.document.close();
+  }
+
+  return (
+    <div style={{ ...card, marginBottom: 18, borderColor: "#bfe3c4", background: A_SOFT }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <button onClick={() => setOpen((v) => !v)} className="mbtn" style={{ background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14.5, fontWeight: 700, color: A_DARK, padding: 0 }}>
+          <Package size={17} strokeWidth={1.9} /> Nota de preparación · {orders.length} pedido(s) {open ? "▾" : "▸"}
+        </button>
+        <button onClick={printNote} className="mbtn" style={{ ...btnGhost, padding: "6px 12px", fontSize: 12.5 }}>Imprimir</button>
+      </div>
+      {open && (
+        <div style={{ marginTop: 12, background: "white", borderRadius: 10, padding: "6px 14px" }}>
+          {list.map((p) => (
+            <div key={p.label} style={{ display: "flex", gap: 12, fontSize: 14, padding: "7px 0", borderBottom: `1px solid ${LINE}` }}>
+              <span style={{ fontWeight: 700, minWidth: 36, color: A_DARK }}>{p.qty}×</span>
+              <span style={{ color: INK }}>{p.label}</span>
+            </div>
+          ))}
+          <div style={{ fontSize: 11.5, color: MUT, paddingTop: 8 }}>Suma de los pedidos aceptados en preparación.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Encabezado de un pedido en el panel: mascota (protagonista), cliente, pago y canal. */
 function OrderHead({ o, title }: { o: SellerOrder; title: string }) {
   const paid = o.paymentStatus === "pagado";
@@ -540,6 +595,14 @@ function OrderHead({ o, title }: { o: SellerOrder; title: string }) {
           {o.customerPhone ? <span>📱 {o.customerPhone} · </span> : null}
           {o.itemCount} ítem(s) · {money(o.subtotalMinor, o.currency)}
         </div>
+        {o.items && o.items.length > 0 && (
+          <div style={{ marginTop: 8, background: "#f7f9f8", border: `1px solid ${LINE}`, borderRadius: 8, padding: "8px 11px" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: MUT, textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 4 }}>Preparar</div>
+            {o.items.map((it, i) => (
+              <div key={i} style={{ fontSize: 13, color: INK, padding: "1px 0" }}><b>{it.qty}×</b> {it.name}{it.variant && it.variant !== "Único" ? ` · ${it.variant}` : ""}</div>
+            ))}
+          </div>
+        )}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
           <span style={{ background: "#eef0f3", color: "#334", borderRadius: 999, padding: "2px 9px", fontSize: 11.5, fontWeight: 600 }}>{CHANNEL_LABEL[o.channel] ?? o.channel}</span>
           <span style={{ background: paid ? "#e6f4ea" : "#fdecea", color: paid ? "#2e7d32" : "#b26a00", borderRadius: 999, padding: "2px 9px", fontSize: 11.5, fontWeight: 600 }}>

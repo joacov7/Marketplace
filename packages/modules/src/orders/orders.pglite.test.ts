@@ -206,6 +206,10 @@ describe("Orders — creación, reserva, confirmación, cancelación", () => {
     const row = list.find((r) => r.sellerOrderId === created.value.sellerOrderIds[0]);
     expect(row?.status).toBe("pending");
     expect(row?.itemCount).toBe(1);
+    // Detalle de productos para preparar (nota de pedido / nota de preparación).
+    expect(row?.items.length).toBe(1);
+    expect(row?.items[0]!.qty).toBe(1);
+    expect(typeof row?.items[0]!.name).toBe("string");
 
     const soId = created.value.sellerOrderIds[0]!;
     expect((await transitionSellerOrder(db, tenantId, soId, "preparing")).ok).toBe(true);
