@@ -3,7 +3,7 @@ import { getVariantWithPrice } from "@commerce/modules/catalog";
 import { createOrder, type PaymentMethod } from "@commerce/modules/orders";
 import { createPaymentIntent, FakePaymentProvider } from "@commerce/modules/payments";
 import { addAddress, ensureCustomerForUser, findOrCreateCustomerByPhone } from "@commerce/modules/customer";
-import { zoneChargeByName } from "@commerce/modules/delivery";
+import { zoneChargeByName, checkDeliveryRadius } from "@commerce/modules/delivery";
 import { createPet, listPets, type Species } from "@commerce/modules/pets";
 import { resolveConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
@@ -91,6 +91,21 @@ export async function POST(req: Request) {
     return { merchantId: merchants[0].id, items, gmv, deliveryChargeMinor };
   });
   if (!priced) return NextResponse.json({ error: "invalid_items_or_no_merchant" }, { status: 400 });
+
+  // Radio de reparto: si el comercio configuró una geocerca y el cliente compartió su ubicación,
+  // rechazamos el pedido cuando el punto cae fuera del radio. Sin ubicación no bloquea (la
+  // ubicación es opcional): el comercio lo verá en el pedido y decide al aceptar.
+  const radius = await checkDeliveryRadius(db(), {
+    tenantId: tenant.tenantId,
+    lat: body.address?.lat,
+    lng: body.address?.lng,
+  });
+  if (radius.enabled && !radius.withinRadius) {
+    return NextResponse.json(
+      { error: "outside_delivery_radius", distanceKm: radius.distanceKm, radiusKm: radius.radiusKm },
+      { status: 422 },
+    );
+  }
 
   const session = readSession();
   const isOnline = ONLINE_METHODS.has(body.payment ?? "");

@@ -77,6 +77,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       adoptionsEnabled, adoptionsTitle,
       foodCalculator, foodComparator, quickReorder, nutritionFactors,
       heroImageUrl, adoptionsBannerImageUrl, aiAssistant, subscriptions,
+      radiusKm, centerLat, centerLng,
       catalog0,
     ] = await Promise.all([
       cfg<string>("branding.primaryColor"),
@@ -108,6 +109,9 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<string>("storefront.adoptionsBannerImageUrl"),
       cfg<boolean>("features.aiAssistant"),
       cfg<boolean>("features.subscriptions"),
+      cfg<number>("delivery.radiusKm"),
+      cfg<number>("delivery.centerLat"),
+      cfg<number>("delivery.centerLng"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
         const adoptions = await listAdoptions(tx);
@@ -179,6 +183,9 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       foodComparator: foodComparator !== false,
       quickReorder: quickReorder !== false,
       nutritionFactors: (nutritionFactors && typeof nutritionFactors === "object" ? nutritionFactors : {}) as Record<string, number>,
+      deliveryRadiusKm: num(radiusKm, 0),
+      deliveryCenterLat: num(centerLat, 0),
+      deliveryCenterLng: num(centerLng, 0),
     };
 
     return (

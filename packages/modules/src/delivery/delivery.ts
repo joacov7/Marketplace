@@ -51,6 +51,66 @@ export async function quoteDelivery(
   return { cadeteCostMinor, customerChargeMinor, subsidySource, subsidyMinor };
 }
 
+// ── Radio de reparto (geocerca): límite de distancia desde el punto del comercio ─────
+// Complementa a las zonas por barrio: las zonas fijan el costo del envío por nombre de
+// barrio; el radio es una geocerca dura sobre la ubicación (GPS) que compartió el cliente.
+// Todo configurable por tenant (delivery.radiusKm / centerLat / centerLng), nunca hardcodeado.
+
+/** Distancia en km entre dos puntos (lat/lng en grados) por la fórmula de Haversine. */
+export function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371; // radio terrestre medio (km)
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+export interface RadiusConfig {
+  /** Filtro activo (radiusKm > 0 y centro configurado). */
+  enabled: boolean;
+  radiusKm: number;
+  centerLat: number;
+  centerLng: number;
+}
+
+export interface RadiusCheck extends RadiusConfig {
+  /** Distancia del punto al centro (km, 1 decimal). null si no se evaluó (sin filtro o sin punto). */
+  distanceKm: number | null;
+  /** true = se puede entregar. Si el filtro está desactivado o no hay punto, no bloquea (true). */
+  withinRadius: boolean;
+}
+
+/** Lee la config de radio de reparto del tenant (resolución platform→tenant). */
+export async function resolveRadiusConfig(db: Db, tenantId: string): Promise<RadiusConfig> {
+  const chain = { tenantId };
+  const [radiusKm, centerLat, centerLng] = await Promise.all([
+    resolveConfigValue<number>(db, "delivery.radiusKm", chain).then((r) => Number(r.value) || 0),
+    resolveConfigValue<number>(db, "delivery.centerLat", chain).then((r) => Number(r.value) || 0),
+    resolveConfigValue<number>(db, "delivery.centerLng", chain).then((r) => Number(r.value) || 0),
+  ]);
+  // Sin centro válido (0,0) el radio no puede evaluarse aunque radiusKm > 0.
+  const enabled = radiusKm > 0 && (centerLat !== 0 || centerLng !== 0);
+  return { enabled, radiusKm, centerLat, centerLng };
+}
+
+/** Evalúa si un punto (lat/lng) cae dentro del radio de reparto del tenant. */
+export async function checkDeliveryRadius(
+  db: Db,
+  input: { tenantId: string; lat?: number | null; lng?: number | null },
+): Promise<RadiusCheck> {
+  const cfg = await resolveRadiusConfig(db, input.tenantId);
+  const hasPoint =
+    typeof input.lat === "number" && Number.isFinite(input.lat) &&
+    typeof input.lng === "number" && Number.isFinite(input.lng);
+  // Sin filtro o sin punto que evaluar: no bloqueamos (el radio es opt-in y la ubicación opcional).
+  if (!cfg.enabled || !hasPoint) return { ...cfg, distanceKm: null, withinRadius: true };
+  const dist = haversineKm(cfg.centerLat, cfg.centerLng, input.lat as number, input.lng as number);
+  return { ...cfg, distanceKm: Math.round(dist * 10) / 10, withinRadius: dist <= cfg.radiusKm };
+}
+
 // ── Zonas de reparto (Eslabón 3): costo y tiempo por barrio ─────────────────────────
 // Reusa delivery_zones (nombre + eta) + delivery_rates (tarifa al cliente). El costo por
 // zona reemplaza al envío plano en el checkout cuando la zona matchea. Todo bajo RLS/tenant.

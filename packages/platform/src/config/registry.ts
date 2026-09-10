@@ -179,6 +179,30 @@ export const CONFIG_KEYS = {
     sensitive: true,
     description: "Quién financia el gap entre el costo del cadete y lo que paga el cliente.",
   },
+  "delivery.radiusKm": {
+    key: "delivery.radiusKm",
+    jsonSchema: { type: "number", minimum: 0, maximum: 500 },
+    defaultValue: 0, // 0 = filtro de radio desactivado (se entrega a cualquier ubicación)
+    category: "rules",
+    sensitive: false,
+    description: "Radio máximo de reparto en km desde el punto del comercio. 0 = sin límite de radio.",
+  },
+  "delivery.centerLat": {
+    key: "delivery.centerLat",
+    jsonSchema: { type: "number", minimum: -90, maximum: 90 },
+    defaultValue: 0,
+    category: "rules",
+    sensitive: false,
+    description: "Latitud del punto central del comercio (centro del radio de reparto).",
+  },
+  "delivery.centerLng": {
+    key: "delivery.centerLng",
+    jsonSchema: { type: "number", minimum: -180, maximum: 180 },
+    defaultValue: 0,
+    category: "rules",
+    sensitive: false,
+    description: "Longitud del punto central del comercio (centro del radio de reparto).",
+  },
   "orders.maxSellersPerOrder": {
     key: "orders.maxSellersPerOrder",
     jsonSchema: { type: "integer", minimum: 1, maximum: 100 },

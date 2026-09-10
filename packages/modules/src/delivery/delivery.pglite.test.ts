@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import type { TenantAwareDb } from "@commerce/platform";
+import { setConfigValue } from "@commerce/platform";
 import { freshModulesDb, seedTenantMerchant } from "../testsupport.js";
 import { createProduct, addVariant } from "../catalog/catalog.js";
 import { setStock } from "../inventory/inventory.js";
 import { createOrder } from "../orders/orders.js";
-import { createDelivery, transitionDelivery, getDelivery, quoteDelivery, listZones, createZone, updateZone, deleteZone, zoneChargeByName } from "./delivery.js";
+import { createDelivery, transitionDelivery, getDelivery, quoteDelivery, listZones, createZone, updateZone, deleteZone, zoneChargeByName, haversineKm, checkDeliveryRadius } from "./delivery.js";
 
 describe("Delivery — costeo, ciclo de entrega, subsidio", () => {
   let pg: PGlite;
@@ -120,5 +121,50 @@ describe("Delivery — costeo, ciclo de entrega, subsidio", () => {
     await db.withTenant(tenantId, (tx) => deleteZone(tx, id));
     zones = await db.withTenant(tenantId, (tx) => listZones(tx));
     expect(zones.some((z) => z.id === id)).toBe(false);
+  });
+
+  it("haversineKm calcula distancias razonables (0 en el mismo punto, ~157 km por grado)", () => {
+    expect(haversineKm(-33.14, -59.3, -33.14, -59.3)).toBe(0);
+    // ~1° de latitud ≈ 111 km.
+    expect(haversineKm(0, 0, 1, 0)).toBeGreaterThan(110);
+    expect(haversineKm(0, 0, 1, 0)).toBeLessThan(112);
+  });
+
+  it("radio de reparto: desactivado por defecto → no bloquea ninguna ubicación", async () => {
+    const r = await db.withTenant(tenantId, (tx) => checkDeliveryRadius(tx, { tenantId, lat: -33.5, lng: -59.9 }));
+    expect(r.enabled).toBe(false);
+    expect(r.withinRadius).toBe(true);
+    expect(r.distanceKm).toBeNull();
+  });
+
+  it("radio de reparto: con centro + radio, acepta dentro y rechaza fuera; sin punto no bloquea", async () => {
+    const center = { lat: -33.146, lng: -59.309 }; // local (ej. Gualeguay)
+    for (const [key, value] of [
+      ["delivery.radiusKm", 8],
+      ["delivery.centerLat", center.lat],
+      ["delivery.centerLng", center.lng],
+    ] as const) {
+      const set = await setConfigValue(db, { key, scopeType: "tenant", scopeId: tenantId, value, actor: "test", reason: "radio" });
+      expect(set.ok).toBe(true);
+    }
+
+    // Punto a ~1 km (mismo barrio) → dentro.
+    const near = await db.withTenant(tenantId, (tx) => checkDeliveryRadius(tx, { tenantId, lat: -33.152, lng: -59.312 }));
+    expect(near.enabled).toBe(true);
+    expect(near.withinRadius).toBe(true);
+    expect(near.distanceKm).not.toBeNull();
+    expect(near.distanceKm!).toBeLessThan(8);
+
+    // Punto lejano (~40 km) → fuera.
+    const far = await db.withTenant(tenantId, (tx) => checkDeliveryRadius(tx, { tenantId, lat: -33.5, lng: -59.6 }));
+    expect(far.enabled).toBe(true);
+    expect(far.withinRadius).toBe(false);
+    expect(far.distanceKm!).toBeGreaterThan(8);
+
+    // Filtro activo pero sin ubicación → no bloquea (ubicación es opcional).
+    const noPoint = await db.withTenant(tenantId, (tx) => checkDeliveryRadius(tx, { tenantId }));
+    expect(noPoint.enabled).toBe(true);
+    expect(noPoint.withinRadius).toBe(true);
+    expect(noPoint.distanceKm).toBeNull();
   });
 });

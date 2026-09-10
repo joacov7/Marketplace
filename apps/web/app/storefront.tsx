@@ -61,6 +61,9 @@ export interface StoreConfig {
   foodComparator: boolean;
   quickReorder: boolean;
   nutritionFactors: Record<string, number>;
+  deliveryRadiusKm: number;
+  deliveryCenterLat: number;
+  deliveryCenterLng: number;
 }
 
 // ── Design tokens (handoff) ────────────────────────────────────────────────────
@@ -100,6 +103,16 @@ function iconFor(hint: string): typeof PawPrint {
   if (/(higien|shampoo|ba[ñn]o|limpi|arena|piedra|sanitari|desodor|toallit)/.test(h)) return Droplets;
   if (/(accesor|juguete|collar|correa|cama|comedero|plato|bebedero|transport|pretal)/.test(h)) return Package;
   return PawPrint;
+}
+
+/** Distancia en km entre dos puntos (lat/lng) por Haversine. Feedback del radio de reparto. */
+function distanceKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
 }
 
 /** Tile de placeholder: fondo suave de marca + ícono de la categoría. Reemplaza la foto random. */
@@ -169,6 +182,7 @@ interface Quote {
   totalMinor: string;
   missingForFreeMinor: string;
   zoneEtaMinutes?: number | null;
+  radius?: { enabled: boolean; radiusKm: number; distanceKm: number | null; withinRadius: boolean };
 }
 
 export default function Storefront(props: {
@@ -352,13 +366,13 @@ export default function Storefront(props: {
       const res = await fetch(`/api/checkout/quote?tenant=${encodeURIComponent(tenant)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ items: items.map(([variantId, l]) => ({ variantId, qty: l.qty })), delivery, payment, zone: form.zone }),
+        body: JSON.stringify({ items: items.map(([variantId, l]) => ({ variantId, qty: l.qty })), delivery, payment, zone: form.zone, ...(geo ? { lat: geo.lat, lng: geo.lng } : {}) }),
       });
       const d = await res.json();
       if (res.ok) setQuote(d); else setError(d.error ?? "error");
     } catch (e) { setError(String(e)); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenant, delivery, payment, form.zone, JSON.stringify(cart)]);
+  }, [tenant, delivery, payment, form.zone, geo?.lat, geo?.lng, JSON.stringify(cart)]);
 
   useEffect(() => { if (view === "checkout") void fetchQuote(); }, [view, fetchQuote]);
 
@@ -407,8 +421,17 @@ export default function Storefront(props: {
 
   const selectedPet = knownPets.find((p) => p.id === petSel) ?? null;
 
+  // Radio de reparto (geocerca): distancia del punto compartido al local del comercio. Solo
+  // aplica si el comercio configuró un radio (>0) y un centro válido, y si el cliente compartió
+  // su ubicación (opcional). Da feedback en vivo y bloquea el checkout si cae fuera.
+  const radiusKm = config.deliveryRadiusKm;
+  const radiusEnabled = radiusKm > 0 && (config.deliveryCenterLat !== 0 || config.deliveryCenterLng !== 0);
+  const radiusDistance = radiusEnabled && geo ? Math.round(distanceKm(config.deliveryCenterLat, config.deliveryCenterLng, geo.lat, geo.lng) * 10) / 10 : null;
+  const outsideRadius = radiusDistance != null && radiusDistance > radiusKm;
+
   async function confirmOrder() {
     if (!form.street.trim()) { setError("Ingresá la calle y número de entrega."); return; }
+    if (outsideRadius) { setError(`Tu ubicación está fuera de nuestra zona de envío (a ${radiusDistance} km; llegamos hasta ${radiusKm} km).`); return; }
     if (items.length === 0) return;
     setBusy(true);
     setError(null);
@@ -433,7 +456,12 @@ export default function Storefront(props: {
         }),
       });
       const d = await res.json();
-      if (!res.ok) { setError(d.error ?? "error en el checkout"); return; }
+      if (!res.ok) {
+        if (d.error === "outside_delivery_radius") {
+          setError(`Tu ubicación está fuera de nuestra zona de envío (a ${d.distanceKm} km; llegamos hasta ${d.radiusKm} km).`);
+        } else { setError(d.error ?? "error en el checkout"); }
+        return;
+      }
       // Mostramos el total cotizado (con descuento) que el cliente confirmó.
       const shownTotal = quote?.totalMinor ?? d.totalMinor;
       setDone({ orderId: d.orderId, totalMinor: shownTotal, petName: d.petName ?? selectedPet?.name ?? newPet.name.trim() ?? null });
@@ -580,6 +608,7 @@ export default function Storefront(props: {
             factors={config.nutritionFactors}
             geo={geo} geoBusy={geoBusy} onShareLocation={shareLocation} onClearLocation={() => setGeo(null)}
             zones={zones}
+            radiusKm={radiusEnabled ? radiusKm : 0} radiusDistance={radiusDistance} outsideRadius={outsideRadius}
             onConfirm={confirmOrder}
           />
         )}
@@ -1494,6 +1523,7 @@ function CheckoutView(props: {
   customerName: string; setCustomerName: (n: string) => void; factors: Record<string, number>;
   geo: { lat: number; lng: number; acc: number } | null; geoBusy: boolean; onShareLocation: () => void; onClearLocation: () => void;
   zones: Array<{ name: string; customerChargeMinor: string; etaMinutes: number | null }>;
+  radiusKm: number; radiusDistance: number | null; outsideRadius: boolean;
   busy: boolean; error: string | null; subtotal: number; shippingFor: (d: "estandar" | "auxilio") => number; discountFor: (p: string) => number; onConfirm: () => void;
 }) {
   const { G, form, setForm } = props;
@@ -1539,6 +1569,17 @@ function CheckoutView(props: {
                   {props.geo.acc > 120 && (
                     <div style={{ fontSize: 11.5, color: "#b26a00", marginTop: 6 }}>La precisión es baja. Si el punto no es exacto, tocá “Actualizar ubicación”.</div>
                   )}
+                  {props.radiusKm > 0 && props.radiusDistance != null && (
+                    props.outsideRadius ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 8, fontSize: 12.5, fontWeight: 600, color: "#c0392b", background: "#fdecea", border: "1px solid #f5c6c0", borderRadius: 10, padding: "9px 12px" }}>
+                        <X size={15} strokeWidth={2.2} /> Estás fuera de nuestra zona de envío (a {props.radiusDistance} km; llegamos hasta {props.radiusKm} km).
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 8, fontSize: 12.5, fontWeight: 600, color: G }}>
+                        <Check size={15} sw={2.2} /> Estás dentro de la zona de envío (a {props.radiusDistance} km).
+                      </div>
+                    )
+                  )}
                   <div style={{ display: "flex", gap: 14, marginTop: 9, flexWrap: "wrap", alignItems: "center" }}>
                     <a href={`https://www.google.com/maps/search/?api=1&query=${props.geo.lat},${props.geo.lng}`} target="_blank" rel="noopener noreferrer"
                       style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600, color: G, textDecoration: "none" }}>
@@ -1558,7 +1599,11 @@ function CheckoutView(props: {
                     style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1.5px dashed ${C.border}`, background: C.white, borderRadius: 10, padding: "10px 14px", fontSize: 13.5, fontWeight: 600, color: C.text, cursor: "pointer", fontFamily: FONT }}>
                     <MapPin size={16} strokeWidth={1.9} />{props.geoBusy ? "Obteniendo ubicación…" : "Compartir mi ubicación (opcional)"}
                   </button>
-                  <div style={{ fontSize: 11.5, color: C.mute, marginTop: 6 }}>Ayuda al repartidor a llegar exacto. No es obligatorio.</div>
+                  <div style={{ fontSize: 11.5, color: C.mute, marginTop: 6 }}>
+                    {props.radiusKm > 0
+                      ? `Entregamos hasta ${props.radiusKm} km a la redonda de nuestro local. Compartí tu ubicación para verificar que llegamos.`
+                      : "Ayuda al repartidor a llegar exacto. No es obligatorio."}
+                  </div>
                 </>
               )}
             </div>
@@ -1655,7 +1700,10 @@ function CheckoutView(props: {
             <span style={{ fontSize: 15, fontWeight: 700 }}>Total</span><span style={{ fontSize: 26, fontWeight: 700, color: G }}>{money(total)}</span>
           </div>
           {props.error && <p style={{ color: "#c62828", fontSize: 12.5, margin: "10px 0 0" }}>{props.error}</p>}
-          <button className="sf-btn" onClick={props.onConfirm} disabled={props.busy} style={{ ...primaryBtn(G), width: "100%", padding: 15, marginTop: 18 }}>{props.busy ? "Procesando…" : "CONFIRMAR PEDIDO"}</button>
+          {props.outsideRadius && !props.error && (
+            <p style={{ color: "#c0392b", fontSize: 12.5, margin: "10px 0 0" }}>Tu ubicación está fuera de la zona de envío (a {props.radiusDistance} km; llegamos hasta {props.radiusKm} km).</p>
+          )}
+          <button className="sf-btn" onClick={props.onConfirm} disabled={props.busy || props.outsideRadius} style={{ ...primaryBtn(G), width: "100%", padding: 15, marginTop: 18, ...(props.outsideRadius ? { opacity: 0.55, cursor: "not-allowed" } : {}) }}>{props.busy ? "Procesando…" : "CONFIRMAR PEDIDO"}</button>
           <p style={{ fontSize: 11.5, color: C.mute, textAlign: "center", marginTop: 10, marginBottom: 0 }}>Te confirmamos el pedido por WhatsApp antes de salir a entregar.</p>
         </div>
       </div>

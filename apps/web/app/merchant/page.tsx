@@ -483,6 +483,7 @@ function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | nu
       </div>
 
       <DeliveryZonesBar tenant={tenant} token={token} onError={onError} />
+      <DeliveryRadiusBar tenant={tenant} token={token} onError={onError} />
 
 
       {showNew && (
@@ -696,6 +697,108 @@ function ZoneRow({ z, onSave, onDelete }: { z: Zone; onSave: (z: Zone, price: st
         <button onClick={() => onSave(z, price, eta)} className="mbtn" style={{ ...btn, opacity: dirty ? 1 : 0.5 }} disabled={!dirty}>✓</button>
         <button onClick={() => onDelete(z)} className="mbtn" style={{ ...btnDanger, display: "inline-flex", alignItems: "center" }} aria-label="Eliminar"><X size={15} strokeWidth={2} /></button>
       </span>
+    </div>
+  );
+}
+
+/**
+ * Radio de reparto (geocerca): límite de distancia desde el local. Complementa a las zonas por
+ * barrio. Si está activo (radio > 0) y el cliente comparte su ubicación en el checkout, se
+ * rechazan los pedidos fuera del radio. Todo por config del tenant.
+ */
+function DeliveryRadiusBar({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const auth = { authorization: `Bearer ${token}` };
+  const [open, setOpen] = useState(false);
+  const [radius, setRadius] = useState("");
+  const [lat, setLat] = useState("");
+  const [lng, setLng] = useState("");
+  const [saved, setSaved] = useState({ radius: "", lat: "", lng: "" });
+  const [geoBusy, setGeoBusy] = useState(false);
+  const [okMsg, setOkMsg] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!tenant) return;
+    const res = await fetch(`/api/merchant/delivery-radius?tenant=${encodeURIComponent(tenant)}`, { headers: auth });
+    if (!res.ok) return;
+    const d = await res.json();
+    const r = String(d["delivery.radiusKm"] ?? 0);
+    const la = String(d["delivery.centerLat"] ?? 0);
+    const ln = String(d["delivery.centerLng"] ?? 0);
+    setRadius(r === "0" ? "" : r); setLat(la === "0" ? "" : la); setLng(ln === "0" ? "" : ln);
+    setSaved({ radius: r, lat: la, lng: ln });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token]);
+  useEffect(() => { void load(); }, [load]);
+
+  function useMyLocation() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) { onError("Tu navegador no permite compartir ubicación."); return; }
+    setGeoBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setLat(pos.coords.latitude.toFixed(6)); setLng(pos.coords.longitude.toFixed(6)); setGeoBusy(false); },
+      () => { onError("No se pudo obtener la ubicación."); setGeoBusy(false); },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+
+  const dirty =
+    String(Number(radius || 0)) !== String(Number(saved.radius || 0)) ||
+    String(Number(lat || 0)) !== String(Number(saved.lat || 0)) ||
+    String(Number(lng || 0)) !== String(Number(saved.lng || 0));
+
+  async function save() {
+    setOkMsg(false);
+    const res = await fetch(`/api/merchant/delivery-radius?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "PATCH", headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        "delivery.radiusKm": Number(radius || 0),
+        "delivery.centerLat": Number(lat || 0),
+        "delivery.centerLng": Number(lng || 0),
+      }),
+    });
+    if (!res.ok) { onError((await res.json()).error ?? "error"); return; }
+    onError(null);
+    setSaved({ radius: String(Number(radius || 0)), lat: String(Number(lat || 0)), lng: String(Number(lng || 0)) });
+    setOkMsg(true);
+  }
+
+  const active = Number(saved.radius || 0) > 0 && (Number(saved.lat || 0) !== 0 || Number(saved.lng || 0) !== 0);
+
+  return (
+    <div style={{ ...card, marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setOpen((v) => !v)}>
+        <span style={{ fontSize: 13.5, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <MapPin size={15} strokeWidth={1.8} />Radio de reparto {active && <span style={{ color: "#2e7d32", fontWeight: 600 }}>· hasta {Number(saved.radius)} km</span>}
+        </span>
+        <span style={{ color: MUT }}>{open ? "▲" : "▼"}</span>
+      </div>
+      {open && (
+        <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+          <p style={{ fontSize: 12.5, color: MUT, margin: 0 }}>
+            Con un radio cargado, si el cliente comparte su ubicación en el checkout y queda fuera del radio, el pedido se rechaza. Dejá el radio en blanco (o 0) para no limitar por distancia.
+          </p>
+          <div className="mform-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, alignItems: "center" }}>
+            <label style={{ fontSize: 12, color: MUT }}>Radio (km)
+              <input placeholder="ej: 8" inputMode="decimal" value={radius} onChange={(e) => setRadius(e.target.value.replace(/[^0-9.]/g, ""))} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 3 }} />
+            </label>
+            <label style={{ fontSize: 12, color: MUT }}>Latitud del local
+              <input placeholder="-33.146" inputMode="decimal" value={lat} onChange={(e) => setLat(e.target.value.replace(/[^0-9.\-]/g, ""))} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 3 }} />
+            </label>
+            <label style={{ fontSize: 12, color: MUT }}>Longitud del local
+              <input placeholder="-59.309" inputMode="decimal" value={lng} onChange={(e) => setLng(e.target.value.replace(/[^0-9.\-]/g, ""))} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 3 }} />
+            </label>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <button type="button" onClick={useMyLocation} disabled={geoBusy} className="mbtn" style={{ ...btnGhost, display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <MapPin size={14} strokeWidth={1.9} />{geoBusy ? "Obteniendo…" : "Usar mi ubicación actual"}
+            </button>
+            <span style={{ fontSize: 11.5, color: MUT }}>Parate en el local y tocá el botón para fijar el centro.</span>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button onClick={save} className="mbtn" style={{ ...btn, opacity: dirty ? 1 : 0.5 }} disabled={!dirty}>Guardar</button>
+            {okMsg && !dirty && <span style={{ fontSize: 12.5, color: "#2e7d32", fontWeight: 600 }}>Guardado ✓</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

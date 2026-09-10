@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getVariantWithPrice } from "@commerce/modules/catalog";
-import { zoneChargeByName } from "@commerce/modules/delivery";
+import { zoneChargeByName, checkDeliveryRadius } from "@commerce/modules/delivery";
 import { resolveConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
@@ -12,6 +12,8 @@ interface QuoteBody {
   delivery?: "estandar" | "auxilio";
   payment?: "transferencia" | "mercadopago" | "efectivo" | "pos";
   zone?: string;
+  lat?: number;
+  lng?: number;
 }
 
 /**
@@ -61,6 +63,9 @@ export async function POST(req: Request) {
   const discount = body.payment === "transferencia" ? (gmv * transferPct) / 100n : 0n;
   const total = gmv + shipping - discount;
 
+  // Radio de reparto: evalúa la ubicación (si se compartió) contra la geocerca del comercio.
+  const radius = await checkDeliveryRadius(db(), { tenantId: tenant.tenantId, lat: body.lat, lng: body.lng });
+
   return NextResponse.json({
     gmvMinor: gmv.toString(),
     deliveryChargeMinor: shipping.toString(),
@@ -69,5 +74,11 @@ export async function POST(req: Request) {
     freeShippingThresholdMinor: threshold.toString(),
     missingForFreeMinor: (gmv >= threshold ? 0n : threshold - gmv).toString(),
     zoneEtaMinutes: priced.zoneEta,
+    radius: {
+      enabled: radius.enabled,
+      radiusKm: radius.radiusKm,
+      distanceKm: radius.distanceKm,
+      withinRadius: radius.withinRadius,
+    },
   });
 }
