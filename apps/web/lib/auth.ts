@@ -1,6 +1,20 @@
+import { timingSafeEqual } from "node:crypto";
 import { headers } from "next/headers";
 import { resolveConfigValue } from "@commerce/platform";
 import { db } from "./db";
+
+/**
+ * Comparación en tiempo constante de dos secretos. Evita el side-channel por tiempo de `===`
+ * (que corta en el primer byte distinto y filtra información del token). Longitudes distintas →
+ * false sin comparar (la longitud no es secreta).
+ */
+function safeEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) return false;
+  return timingSafeEqual(ba, bb);
+}
 
 /**
  * Auth mínima para F1. Las rutas de plataforma (provisioning, crons) se protegen con un
@@ -18,7 +32,7 @@ export function requireServiceToken(envVar: "ADMIN_API_TOKEN" | "CRON_SECRET"): 
   const auth = h.get("authorization") ?? "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : null;
   const provided = bearer ?? h.get("x-service-token");
-  return provided === expected;
+  return safeEqual(provided, expected);
 }
 
 /** Lee el código provisto (Bearer o x-service-token) sin compararlo. */
@@ -38,7 +52,7 @@ export async function requireDeliveryAccess(tenantId: string): Promise<boolean> 
   const provided = providedToken();
   if (!provided) return false;
   const admin = process.env.ADMIN_API_TOKEN;
-  if (admin && provided === admin) return true;
+  if (safeEqual(provided, admin)) return true;
   const pin = (await resolveConfigValue<string>(db(), "ops.deliveryPin", { tenantId })).value;
-  return typeof pin === "string" && pin.length > 0 && provided === pin;
+  return typeof pin === "string" && pin.length > 0 && safeEqual(provided, pin);
 }
