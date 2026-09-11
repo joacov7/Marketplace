@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  PawPrint, Bike, MapPin, Pencil, X, Plus, Package, Tags, BarChart3, Palette, Dog, Cat, RotateCcw,
+  PawPrint, Bike, MapPin, Pencil, X, Plus, Package, Tags, BarChart3, Palette, Dog, Cat, RotateCcw, SlidersHorizontal,
 } from "lucide-react";
 
 /** Icono de especie con lucide (Dog / Cat / PawPrint). Nunca emoji. */
@@ -99,7 +99,7 @@ export default function MerchantPanel() {
   const [tokenInput, setTokenInput] = useState("");
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [merchantId, setMerchantId] = useState<string>("");
-  const [tab, setTab] = useState<"catalogo" | "pedidos" | "suscripciones" | "reportes" | "diseno" | "adopciones">("catalogo");
+  const [tab, setTab] = useState<"catalogo" | "pedidos" | "suscripciones" | "reportes" | "diseno" | "adopciones" | "config">("catalogo");
   const [error, setError] = useState<string | null>(null);
   const [migrating, setMigrating] = useState(false);
 
@@ -174,6 +174,7 @@ export default function MerchantPanel() {
   const TABS: Array<[typeof tab, typeof Tags, string]> = [
     ["catalogo", Tags, "Catálogo"], ["pedidos", Package, "Pedidos"], ["suscripciones", RotateCcw, "Suscripciones"],
     ["reportes", BarChart3, "Reportes"], ["diseno", Palette, "Diseño"], ["adopciones", PawPrint, "Adopciones"],
+    ["config", SlidersHorizontal, "Configuración"],
   ];
 
   return (
@@ -223,6 +224,7 @@ export default function MerchantPanel() {
         : tab === "suscripciones" ? <SubscriptionsTab tenant={tenant} token={token} onError={setError} />
         : tab === "reportes" ? <ReportsTab tenant={tenant} token={token} onError={setError} />
         : tab === "diseno" ? <DesignTab tenant={tenant} token={token} onError={setError} />
+        : tab === "config" ? <SettingsTab tenant={tenant} token={token} onError={setError} />
         : <AdoptionsTab tenant={tenant} token={token} onError={setError} />}
       </main>
     </div>
@@ -1018,6 +1020,131 @@ interface SubRow {
   id: string; status: "active" | "paused" | "cancelled"; qty: number; intervalDays: number; nextRunAt: string;
   petName: string | null; variantName: string; productName: string; paymentMethod: string; discountPercent: number;
   customerName: string | null; customerPhone: string | null; lastRunAt: string | null; lastError: string | null;
+}
+
+// ── Configuración: parámetros de negocio (registry-driven) ──────────────────────────
+type SettingsField = {
+  key: string; label: string; help: string;
+  type: "boolean" | "money" | "integer" | "select" | "text";
+  options?: unknown[]; min?: number; max?: number; value: unknown;
+};
+type SettingsSection = { title: string; fields: SettingsField[] };
+const SUBSIDY_LABELS: Record<string, string> = {
+  platform: "La plataforma", merchant: "El comercio", promo: "Una promoción", none: "Nadie (sin subsidio)",
+};
+function optionLabel(key: string, o: unknown): string {
+  if (key === "delivery.subsidySource") return SUBSIDY_LABELS[String(o)] ?? String(o);
+  return String(o);
+}
+function fieldToInput(f: SettingsField): string | boolean {
+  if (f.type === "boolean") return f.value === true;
+  if (f.type === "money") return String((Number(f.value) || 0) / 100);
+  return String(f.value ?? "");
+}
+
+/**
+ * Editor de parámetros del negocio: costos de envío, umbral de envío gratis, descuentos, etc.
+ * Los campos y sus tipos salen del backend (registry de config); el comercio los cambia sin
+ * tocar código ni variables de entorno. Guardar escribe overrides a nivel tenant.
+ */
+function SettingsTab({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const auth = { authorization: `Bearer ${token}` };
+  const [sections, setSections] = useState<SettingsSection[]>([]);
+  const [vals, setVals] = useState<Record<string, string | boolean>>({});
+  const [init, setInit] = useState<Record<string, string | boolean>>({});
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!tenant) return;
+    const res = await fetch(`/api/merchant/settings?tenant=${encodeURIComponent(tenant)}`, { headers: auth });
+    if (!res.ok) { onError((await res.json()).error ?? "error"); return; }
+    const d = await res.json();
+    const secs: SettingsSection[] = d.sections ?? [];
+    const v: Record<string, string | boolean> = {};
+    for (const s of secs) for (const f of s.fields) v[f.key] = fieldToInput(f);
+    setSections(secs); setVals(v); setInit({ ...v });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token]);
+  useEffect(() => { void load(); }, [load]);
+
+  const fields = sections.flatMap((s) => s.fields);
+  const dirtyKeys = fields.filter((f) => vals[f.key] !== init[f.key]).map((f) => f.key);
+
+  async function save() {
+    if (dirtyKeys.length === 0) return;
+    setSaving(true);
+    onError(null);
+    const out: Record<string, unknown> = {};
+    for (const f of fields) {
+      if (vals[f.key] === init[f.key]) continue;
+      const raw = vals[f.key];
+      if (f.type === "boolean") out[f.key] = raw === true;
+      else if (f.type === "money") out[f.key] = Math.round((Number(raw) || 0) * 100);
+      else if (f.type === "integer") out[f.key] = Math.round(Number(raw) || 0);
+      else if (f.type === "select") out[f.key] = f.options?.every((o) => typeof o === "number") ? Number(raw) : raw;
+      else out[f.key] = raw;
+    }
+    const res = await fetch(`/api/merchant/settings?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(out),
+    });
+    setSaving(false);
+    if (!res.ok) { onError((await res.json()).error ?? "error"); return; }
+    await load();
+    onError("✓ Configuración guardada.");
+  }
+
+  function setVal(key: string, v: string | boolean) { setVals((s) => ({ ...s, [key]: v })); }
+
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <p style={{ fontSize: 13, color: MUT, margin: 0 }}>
+        Cambiá los parámetros del negocio sin tocar código. Los montos van en pesos. Los cambios se aplican a tu tienda al guardar.
+      </p>
+      {sections.map((s) => (
+        <div key={s.title} style={card}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: INK }}>{s.title}</div>
+          <div style={{ display: "grid", gap: 14 }}>
+            {s.fields.map((f) => (
+              <div key={f.key} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{f.label}</div>
+                  <div style={{ fontSize: 11.5, color: MUT, marginTop: 2 }}>{f.help}</div>
+                </div>
+                <div style={{ justifySelf: "end", minWidth: 140 }}>
+                  {f.type === "boolean" ? (
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, fontWeight: 600, color: vals[f.key] === true ? A_DARK : MUT }}>
+                      <input type="checkbox" checked={vals[f.key] === true} onChange={(e) => setVal(f.key, e.target.checked)} style={{ width: 16, height: 16 }} />
+                      {vals[f.key] === true ? "Activado" : "Desactivado"}
+                    </label>
+                  ) : f.type === "select" ? (
+                    <select value={String(vals[f.key] ?? "")} onChange={(e) => setVal(f.key, e.target.value)} style={{ ...input, width: 180 }}>
+                      {f.options?.map((o) => <option key={String(o)} value={String(o)}>{optionLabel(f.key, o)}</option>)}
+                    </select>
+                  ) : (
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      {f.type === "money" && <span style={{ color: MUT, fontSize: 14 }}>$</span>}
+                      <input
+                        inputMode="decimal"
+                        value={String(vals[f.key] ?? "")}
+                        onChange={(e) => setVal(f.key, e.target.value.replace(/[^0-9.]/g, ""))}
+                        style={{ ...input, width: 130, textAlign: "right" }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <button onClick={save} className="mbtn" style={{ ...btn, opacity: dirtyKeys.length && !saving ? 1 : 0.5 }} disabled={!dirtyKeys.length || saving}>
+          {saving ? "Guardando…" : `Guardar cambios${dirtyKeys.length ? ` (${dirtyKeys.length})` : ""}`}
+        </button>
+        {dirtyKeys.length > 0 && !saving && <span style={{ fontSize: 12.5, color: MUT }}>Hay cambios sin guardar.</span>}
+      </div>
+    </div>
+  );
 }
 
 function SubscriptionsTab({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
