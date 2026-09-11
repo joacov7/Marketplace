@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   Bike, RefreshCw, CheckCircle2, Check, MapPin, StickyNote, Clock,
   Navigation, MessageCircle, Banknote, CreditCard, Landmark,
@@ -137,12 +137,26 @@ export default function RepartoClient() {
           </div>
         ) : (
           <div style={{ display: "grid", gap: 14 }}>
-            {orders.map((o) => {
+            {(() => {
+              // Agenda: agrupamos por franja de entrega (mismo día+turno juntos) para planificar la salida.
+              const counts = orders.reduce<Record<string, number>>((a, o) => { const w = o.deliveryWindow ?? "Sin horario asignado"; a[w] = (a[w] ?? 0) + 1; return a; }, {});
+              const sorted = [...orders].sort((a, b) => (a.deliveryWindow ?? "~").localeCompare(b.deliveryWindow ?? "~", "es"));
+              let prevWindow: string | null = null;
+              return sorted.map((o) => {
               const paid = o.paymentStatus === "pagado";
               const collecting = collectFor === o.sellerOrderId;
               const wa = waLink(o);
+              const win = o.deliveryWindow ?? "Sin horario asignado";
+              const header = win !== prevWindow ? win : null;
+              prevWindow = win;
               return (
-                <div key={o.sellerOrderId} style={{ background: C.white, borderRadius: 14, boxShadow: "0 1px 4px rgba(0,0,0,.06)", overflow: "hidden" }}>
+                <Fragment key={o.sellerOrderId}>
+                {header && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 700, color: C.ink, marginTop: 4, padding: "2px 2px" }}>
+                    <Clock size={14} strokeWidth={2} style={{ color: C.green }} />{header}<span style={{ color: C.mut, fontWeight: 500 }}>· {counts[win]} {counts[win] === 1 ? "pedido" : "pedidos"}</span>
+                  </div>
+                )}
+                <div style={{ background: C.white, borderRadius: 14, boxShadow: "0 1px 4px rgba(0,0,0,.06)", overflow: "hidden" }}>
                   <div style={{ padding: 16 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                       <div style={{ fontSize: 17, fontWeight: 700 }}>{title(o)}</div>
@@ -211,8 +225,10 @@ export default function RepartoClient() {
                     )}
                   </div>
                 </div>
+                </Fragment>
               );
-            })}
+            });
+            })()}
           </div>
         )}
         <p style={{ textAlign: "center", color: C.mut, fontSize: 11.5, marginTop: 24 }}>Pet Shop · Reparto</p>

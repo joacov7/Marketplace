@@ -78,6 +78,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       foodCalculator, foodComparator, quickReorder, nutritionFactors,
       heroImageUrl, adoptionsBannerImageUrl, aiAssistant, subscriptions,
       radiusKm, centerLat, centerLng,
+      deliverySlots, deliveryDays, cutoffHour, auxilioWindow,
       catalog0,
     ] = await Promise.all([
       cfg<string>("branding.primaryColor"),
@@ -112,6 +113,10 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<number>("delivery.radiusKm"),
       cfg<number>("delivery.centerLat"),
       cfg<number>("delivery.centerLng"),
+      cfg<Array<{ label: string; from: string; to: string }>>("delivery.slots"),
+      cfg<number[]>("delivery.days"),
+      cfg<number>("delivery.cutoffHour"),
+      cfg<string>("delivery.auxilioWindow"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
         const adoptions = await listAdoptions(tx);
@@ -186,6 +191,15 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       deliveryRadiusKm: num(radiusKm, 0),
       deliveryCenterLat: num(centerLat, 0),
       deliveryCenterLng: num(centerLng, 0),
+      deliverySlots: Array.isArray(deliverySlots)
+        ? deliverySlots
+            .filter((s) => s && typeof s.label === "string" && typeof s.from === "string" && typeof s.to === "string")
+            .map((s) => ({ label: cleanText(s.label, ""), from: s.from, to: s.to }))
+            .filter((s) => s.label)
+        : [],
+      deliveryDays: Array.isArray(deliveryDays) ? deliveryDays.map(Number).filter((n) => n >= 0 && n <= 6) : [1, 2, 3, 4, 5, 6],
+      deliveryCutoffHour: num(cutoffHour, 18),
+      auxilioWindow: cleanText(auxilioWindow, "20:00 a 23:00"),
     };
 
     return (

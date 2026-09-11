@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  PawPrint, Bike, MapPin, Pencil, X, Plus, Package, Tags, BarChart3, Palette, Dog, Cat, RotateCcw, SlidersHorizontal,
+  PawPrint, Bike, MapPin, Pencil, X, Plus, Package, Tags, BarChart3, Palette, Dog, Cat, RotateCcw, SlidersHorizontal, Clock,
 } from "lucide-react";
+import { WEEKDAYS } from "@/lib/delivery-schedule";
 
 /** Icono de especie con lucide (Dog / Cat / PawPrint). Nunca emoji. */
 function PetSpeciesIcon({ species, size = 15 }: { species: string; size?: number }) {
@@ -224,7 +225,7 @@ export default function MerchantPanel() {
         : tab === "suscripciones" ? <SubscriptionsTab tenant={tenant} token={token} onError={setError} />
         : tab === "reportes" ? <ReportsTab tenant={tenant} token={token} onError={setError} />
         : tab === "diseno" ? <DesignTab tenant={tenant} token={token} onError={setError} />
-        : tab === "config" ? <SettingsTab tenant={tenant} token={token} onError={setError} />
+        : tab === "config" ? <><SettingsTab tenant={tenant} token={token} onError={setError} /><div style={{ height: 14 }} /><DeliveryScheduleEditor tenant={tenant} token={token} onError={setError} /></>
         : <AdoptionsTab tenant={tenant} token={token} onError={setError} />}
       </main>
     </div>
@@ -1142,6 +1143,118 @@ function SettingsTab({ tenant, token, onError }: { tenant: string | null; token:
           {saving ? "Guardando…" : `Guardar cambios${dirtyKeys.length ? ` (${dirtyKeys.length})` : ""}`}
         </button>
         {dirtyKeys.length > 0 && !saving && <span style={{ fontSize: 12.5, color: MUT }}>Hay cambios sin guardar.</span>}
+      </div>
+    </div>
+  );
+}
+
+type Slot = { label: string; from: string; to: string };
+/**
+ * Editor de la agenda de entrega: turnos que el cliente puede elegir, días en que el comercio
+ * reparte, hora de corte (hoy vs próximo día) y franja del Envío de Auxilio. Config por tenant.
+ */
+function DeliveryScheduleEditor({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const auth = { authorization: `Bearer ${token}` };
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [days, setDays] = useState<number[]>([]);
+  const [cutoff, setCutoff] = useState("18");
+  const [auxilio, setAuxilio] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!tenant) return;
+    const res = await fetch(`/api/merchant/delivery-schedule?tenant=${encodeURIComponent(tenant)}`, { headers: auth });
+    if (!res.ok) { onError((await res.json()).error ?? "error"); return; }
+    const d = await res.json();
+    setSlots(Array.isArray(d["delivery.slots"]) ? d["delivery.slots"] : []);
+    setDays(Array.isArray(d["delivery.days"]) ? d["delivery.days"].map(Number) : [1, 2, 3, 4, 5, 6]);
+    setCutoff(String(d["delivery.cutoffHour"] ?? 18));
+    setAuxilio(String(d["delivery.auxilioWindow"] ?? ""));
+    setLoaded(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token]);
+  useEffect(() => { void load(); }, [load]);
+
+  const toggleDay = (n: number) => setDays((ds) => (ds.includes(n) ? ds.filter((x) => x !== n) : [...ds, n]));
+  const setSlot = (i: number, patch: Partial<Slot>) => setSlots((s) => s.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const addSlot = () => setSlots((s) => [...s, { label: "", from: "09:00", to: "13:00" }]);
+  const delSlot = (i: number) => setSlots((s) => s.filter((_, j) => j !== i));
+
+  async function save() {
+    // Validación mínima antes de mandar: turnos con nombre y horas, al menos un día.
+    const clean = slots.map((s) => ({ label: s.label.trim(), from: s.from, to: s.to })).filter((s) => s.label && /^\d{2}:\d{2}$/.test(s.from) && /^\d{2}:\d{2}$/.test(s.to));
+    if (days.length === 0) { onError("Elegí al menos un día de reparto."); return; }
+    setSaving(true);
+    onError(null);
+    const res = await fetch(`/api/merchant/delivery-schedule?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "PATCH", headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        "delivery.slots": clean,
+        "delivery.days": days,
+        "delivery.cutoffHour": Math.max(0, Math.min(23, Math.round(Number(cutoff) || 0))),
+        "delivery.auxilioWindow": auxilio.trim(),
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) { onError((await res.json()).error ?? "error"); return; }
+    await load();
+    onError("✓ Horarios de entrega guardados.");
+  }
+
+  if (!loaded) return <div style={card}>Cargando horarios…</div>;
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, color: INK, display: "inline-flex", alignItems: "center", gap: 7 }}>
+        <Clock size={16} strokeWidth={1.9} /> Horarios de entrega
+      </div>
+      <p style={{ fontSize: 12, color: MUT, margin: "0 0 14px" }}>Definí los turnos que el cliente puede elegir, los días en que repartís y hasta qué hora tomás pedidos para el mismo día.</p>
+
+      {/* Turnos */}
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: INK, marginBottom: 8 }}>Turnos que puede elegir el cliente</div>
+      <div style={{ display: "grid", gap: 8 }}>
+        {slots.map((s, i) => (
+          <div key={i} className="mform-grid" style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr auto", gap: 8, alignItems: "center" }}>
+            <input placeholder="Nombre (ej: Mañana)" value={s.label} onChange={(e) => setSlot(i, { label: e.target.value })} style={input} />
+            <input type="time" value={s.from} onChange={(e) => setSlot(i, { from: e.target.value })} style={input} />
+            <input type="time" value={s.to} onChange={(e) => setSlot(i, { to: e.target.value })} style={input} />
+            <button onClick={() => delSlot(i)} className="mbtn" style={{ ...btnDanger, display: "inline-flex", alignItems: "center" }} aria-label="Quitar turno"><X size={15} strokeWidth={2} /></button>
+          </div>
+        ))}
+        {slots.length === 0 && <p style={{ fontSize: 12, color: MUT, margin: 0 }}>Sin turnos: el cliente solo elige el día.</p>}
+        <button onClick={addSlot} className="mbtn" style={{ ...btnGhost, justifySelf: "start", display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={15} strokeWidth={2} /> Agregar turno</button>
+      </div>
+
+      {/* Días */}
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: INK, margin: "16px 0 8px" }}>Días que repartís</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {WEEKDAYS.map(({ n, label }) => {
+          const on = days.includes(n);
+          return (
+            <button key={n} type="button" onClick={() => toggleDay(n)}
+              style={{ padding: "8px 13px", borderRadius: 999, cursor: "pointer", border: `1.5px solid ${on ? A : LINE}`, background: on ? A_SOFT : "white", fontSize: 13, fontWeight: 600, color: on ? A_DARK : MUT }}>
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Corte + auxilio */}
+      <div className="mform-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 16 }}>
+        <div>
+          <div style={{ fontSize: 12, color: MUT, marginBottom: 3 }}>Hora de corte (0-23)</div>
+          <input inputMode="numeric" value={cutoff} onChange={(e) => setCutoff(e.target.value.replace(/[^0-9]/g, ""))} style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+          <div style={{ fontSize: 11, color: MUT, marginTop: 3 }}>Después de esta hora, los pedidos pasan al próximo día de reparto.</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: MUT, marginBottom: 3 }}>Franja del Envío de Auxilio</div>
+          <input value={auxilio} onChange={(e) => setAuxilio(e.target.value)} placeholder="20:00 a 23:00" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+          <div style={{ fontSize: 11, color: MUT, marginTop: 3 }}>Texto que ve el cliente en el envío urgente/nocturno.</div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <button onClick={save} disabled={saving} className="mbtn" style={btn}>{saving ? "Guardando…" : "Guardar horarios"}</button>
       </div>
     </div>
   );

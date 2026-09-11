@@ -179,6 +179,51 @@ export const CONFIG_KEYS = {
     sensitive: true,
     description: "Quién financia el gap entre el costo del cadete y lo que paga el cliente.",
   },
+  "delivery.slots": {
+    key: "delivery.slots",
+    jsonSchema: {
+      type: "array",
+      maxItems: 6,
+      items: {
+        type: "object",
+        required: ["label", "from", "to"],
+        properties: {
+          label: { type: "string", minLength: 1, maxLength: 40 },
+          from: { type: "string", pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+          to: { type: "string", pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+        },
+        additionalProperties: false,
+      },
+    },
+    defaultValue: [{ label: "Tarde", from: "13:00", to: "20:00" }],
+    category: "rules",
+    sensitive: false,
+    description: "Turnos de entrega que el cliente puede elegir (nombre + rango horario HH:MM).",
+  },
+  "delivery.days": {
+    key: "delivery.days",
+    jsonSchema: { type: "array", maxItems: 7, uniqueItems: true, items: { type: "integer", minimum: 0, maximum: 6 } },
+    defaultValue: [1, 2, 3, 4, 5, 6], // 0=domingo … 6=sábado. Por defecto: lunes a sábado.
+    category: "rules",
+    sensitive: false,
+    description: "Días de la semana en que el comercio reparte (0=domingo … 6=sábado).",
+  },
+  "delivery.cutoffHour": {
+    key: "delivery.cutoffHour",
+    jsonSchema: { type: "integer", minimum: 0, maximum: 23 },
+    defaultValue: 18, // pedidos después de esta hora se entregan el próximo día hábil de reparto
+    category: "rules",
+    sensitive: false,
+    description: "Hora de corte (0-23): los pedidos después de esta hora pasan al próximo día de reparto.",
+  },
+  "delivery.auxilioWindow": {
+    key: "delivery.auxilioWindow",
+    jsonSchema: { type: "string", maxLength: 60 },
+    defaultValue: "20:00 a 23:00",
+    category: "text",
+    sensitive: false,
+    description: "Franja horaria del Envío de Auxilio (nocturno/urgente), como texto.",
+  },
   "delivery.radiusKm": {
     key: "delivery.radiusKm",
     jsonSchema: { type: "number", minimum: 0, maximum: 500 },

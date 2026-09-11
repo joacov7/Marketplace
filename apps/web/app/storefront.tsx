@@ -6,6 +6,7 @@ import {
   Truck, Package, Scale, Tag, PawPrint, HeartHandshake, BarChart3, Dog, Cat,
   Sparkles, Send, X, Loader2, Bone, Cookie, Droplets, Bug,
 } from "lucide-react";
+import { nextDeliveryDates, dayLabel } from "@/lib/delivery-schedule";
 
 // ── Tipos que provee el server component (page.tsx) ────────────────────────────
 export interface StoreVariant {
@@ -64,6 +65,10 @@ export interface StoreConfig {
   deliveryRadiusKm: number;
   deliveryCenterLat: number;
   deliveryCenterLng: number;
+  deliverySlots: Array<{ label: string; from: string; to: string }>;
+  deliveryDays: number[];
+  deliveryCutoffHour: number;
+  auxilioWindow: string;
 }
 
 // ── Design tokens (handoff) ────────────────────────────────────────────────────
@@ -421,6 +426,24 @@ export default function Storefront(props: {
 
   const selectedPet = knownPets.find((p) => p.id === petSel) ?? null;
 
+  // Agenda de entrega: próximas fechas de reparto (según días habilitados + hora de corte) y
+  // turnos configurados. El cliente elige día + turno; se guarda como texto en el pedido.
+  const deliveryDates = useMemo(
+    () => nextDeliveryDates(config.deliveryDays, config.deliveryCutoffHour, new Date(), 4),
+    [config.deliveryDays, config.deliveryCutoffHour],
+  );
+  const [schedDateIdx, setSchedDateIdx] = useState(0);
+  const [schedSlotIdx, setSchedSlotIdx] = useState(0);
+  const slots = config.deliverySlots;
+  function buildDeliveryWindow(): string | undefined {
+    if (delivery === "auxilio") return `Envío de Auxilio (${config.auxilioWindow})`;
+    const d = deliveryDates[schedDateIdx];
+    if (!d) return undefined;
+    const dl = dayLabel(d, new Date());
+    const s = slots[schedSlotIdx];
+    return s ? `${dl} · ${s.label} (${s.from}–${s.to})` : dl;
+  }
+
   // Radio de reparto (geocerca): distancia del punto compartido al local del comercio. Solo
   // aplica si el comercio configuró un radio (>0) y un centro válido, y si el cliente compartió
   // su ubicación (opcional). Da feedback en vivo y bloquea el checkout si cae fuera.
@@ -449,6 +472,7 @@ export default function Storefront(props: {
           items: items.map(([variantId, l]) => ({ variantId, qty: l.qty })),
           address: { street: form.street, zone: form.zone, phone: form.phone, notes: form.notes, ...(geo ? { lat: geo.lat, lng: geo.lng } : {}) },
           delivery,
+          ...(buildDeliveryWindow() ? { deliveryWindow: buildDeliveryWindow() } : {}),
           payment,
           ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
           ...(customerName.trim() ? { customerName: customerName.trim() } : {}),
@@ -609,6 +633,8 @@ export default function Storefront(props: {
             geo={geo} geoBusy={geoBusy} onShareLocation={shareLocation} onClearLocation={() => setGeo(null)}
             zones={zones}
             radiusKm={radiusEnabled ? radiusKm : 0} radiusDistance={radiusDistance} outsideRadius={outsideRadius}
+            deliveryDates={deliveryDates} slots={slots} auxilioWindow={config.auxilioWindow}
+            schedDateIdx={schedDateIdx} setSchedDateIdx={setSchedDateIdx} schedSlotIdx={schedSlotIdx} setSchedSlotIdx={setSchedSlotIdx}
             onConfirm={confirmOrder}
           />
         )}
@@ -1524,6 +1550,8 @@ function CheckoutView(props: {
   geo: { lat: number; lng: number; acc: number } | null; geoBusy: boolean; onShareLocation: () => void; onClearLocation: () => void;
   zones: Array<{ name: string; customerChargeMinor: string; etaMinutes: number | null }>;
   radiusKm: number; radiusDistance: number | null; outsideRadius: boolean;
+  deliveryDates: Date[]; slots: Array<{ label: string; from: string; to: string }>; auxilioWindow: string;
+  schedDateIdx: number; setSchedDateIdx: (n: number) => void; schedSlotIdx: number; setSchedSlotIdx: (n: number) => void;
   busy: boolean; error: string | null; subtotal: number; shippingFor: (d: "estandar" | "auxilio") => number; discountFor: (p: string) => number; onConfirm: () => void;
 }) {
   const { G, form, setForm } = props;
@@ -1656,12 +1684,53 @@ function CheckoutView(props: {
           <div style={card}>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Método de entrega</div>
             <RadioCard G={G} on={props.delivery === "estandar"}
-              title="Envío estándar"
-              sub={`En el día (13:00 a 20:00)${props.quote?.zoneEtaMinutes ? ` · ~${props.quote.zoneEtaMinutes} min` : ""}`}
+              title="Envío programado"
+              sub={`Elegí el día y el turno${props.quote?.zoneEtaMinutes ? ` · ~${props.quote.zoneEtaMinutes} min` : ""}`}
               price={props.delivery === "estandar" ? (ship === 0 ? "Gratis" : money(ship)) : (sub >= Number(props.config.freeShippingThresholdMinor) ? "Gratis" : money(props.config.standardCostMinor))}
               onClick={() => props.setDelivery("estandar")} />
+
+            {/* Agenda: día + turno (solo para envío programado). */}
+            {props.delivery === "estandar" && (
+              <div style={{ padding: "4px 2px 6px", display: "grid", gap: 12 }}>
+                {props.deliveryDates.length === 0 ? (
+                  <div style={{ fontSize: 12.5, color: "#b26a00" }}>No hay días de reparto configurados. Coordinamos la entrega por WhatsApp.</div>
+                ) : (
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: C.mute, marginBottom: 7 }}>¿Qué día?</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {props.deliveryDates.map((d, i) => {
+                        const on = props.schedDateIdx === i;
+                        return (
+                          <button key={i} type="button" onClick={() => props.setSchedDateIdx(i)}
+                            style={{ padding: "8px 13px", borderRadius: 999, cursor: "pointer", border: `1.5px solid ${on ? G : C.border}`, background: on ? C.tint : C.white, fontSize: 13, fontWeight: 600, color: on ? G : C.text }}>
+                            {dayLabel(d, new Date())}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {props.slots.length > 0 && props.deliveryDates.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: C.mute, marginBottom: 7 }}>¿En qué turno?</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {props.slots.map((s, i) => {
+                        const on = props.schedSlotIdx === i;
+                        return (
+                          <button key={i} type="button" onClick={() => props.setSchedSlotIdx(i)}
+                            style={{ padding: "8px 13px", borderRadius: 999, cursor: "pointer", border: `1.5px solid ${on ? G : C.border}`, background: on ? C.tint : C.white, fontSize: 13, fontWeight: 600, color: on ? G : C.text }}>
+                            {s.label} <span style={{ color: C.mute, fontWeight: 500 }}>{s.from}–{s.to}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {props.config.auxilioEnabled && (
-              <RadioCard G={G} on={props.delivery === "auxilio"} title="Envío de Auxilio" sub="Hoy de 20:00 a 23:00 hs" price={money(props.config.auxilioCostMinor)} onClick={() => props.setDelivery("auxilio")} />
+              <RadioCard G={G} on={props.delivery === "auxilio"} title="Envío de Auxilio" sub={`Hoy, ${props.auxilioWindow} hs`} price={money(props.config.auxilioCostMinor)} onClick={() => props.setDelivery("auxilio")} />
             )}
           </div>
 
