@@ -1383,8 +1383,6 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
   const [perksText, setPerksText] = useState("");
   const [benefitsText, setBenefitsText] = useState("");
   const [adoptionsTitle, setAdoptionsTitle] = useState("Adopciones");
-  const [flags, setFlags] = useState({ "features.adoptions": true, "features.foodCalculator": true, "features.foodComparator": true, "features.quickReorder": true, "features.aiAssistant": true, "features.subscriptions": true });
-  const toggle = (k: keyof typeof flags) => { setFlags((s) => ({ ...s, [k]: !s[k] })); setSaved(false); };
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -1403,14 +1401,6 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
       setPerksText(pairsToText(d.theme?.["storefront.perks"]));
       setBenefitsText(pairsToText(d.theme?.["storefront.benefits"]));
       if (typeof d.theme?.["storefront.adoptionsTitle"] === "string") setAdoptionsTitle(d.theme["storefront.adoptionsTitle"]);
-      setFlags({
-        "features.adoptions": d.theme?.["features.adoptions"] !== false,
-        "features.foodCalculator": d.theme?.["features.foodCalculator"] !== false,
-        "features.foodComparator": d.theme?.["features.foodComparator"] !== false,
-        "features.quickReorder": d.theme?.["features.quickReorder"] !== false,
-        "features.aiAssistant": d.theme?.["features.aiAssistant"] !== false,
-        "features.subscriptions": d.theme?.["features.subscriptions"] !== false,
-      });
     } catch (e) { setLoading(false); onError(String(e)); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant, token]);
@@ -1420,7 +1410,7 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
     onError(null);
     setSaving(true);
     try {
-      const body = { ...theme, "storefront.perks": textToPairs(perksText), "storefront.benefits": textToPairs(benefitsText), "storefront.adoptionsTitle": adoptionsTitle, ...flags };
+      const body = { ...theme, "storefront.perks": textToPairs(perksText), "storefront.benefits": textToPairs(benefitsText), "storefront.adoptionsTitle": adoptionsTitle };
       const res = await fetch(`/api/merchant/branding?tenant=${encodeURIComponent(tenant ?? "")}`, {
         method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(body),
       });
@@ -1522,16 +1512,10 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
         </Field>
 
         <div style={{ borderTop: "1px solid #eee", margin: "6px 0 12px" }} />
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#556", marginBottom: 8 }}>Funciones de la tienda</div>
-        {([["features.foodCalculator", "Calculadora de consumo + Mis mascotas"], ["features.foodComparator", "Comparador de alimentos (costo por día)"], ["features.quickReorder", "Compra rápida (repetir última compra)"], ["features.aiAssistant", "Vendedor IA (asesora y recomienda del catálogo)"], ["features.subscriptions", "Suscripción de auto-envío (recompra automática)"], ["features.adoptions", "Sección de Adopciones / callejeritos"]] as const).map(([k, label]) => (
-          <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, padding: "4px 0", cursor: "pointer" }}>
-            <input type="checkbox" checked={flags[k]} onChange={() => toggle(k)} style={{ width: 16, height: 16 }} />
-            {label}
-          </label>
-        ))}
         <Field label="Nombre de la sección de adopciones" hint="Ej: Adopciones, Callejeritos">
           <input value={adoptionsTitle} onChange={(e) => { setAdoptionsTitle(e.target.value); setSaved(false); }} style={{ ...input, width: "100%", boxSizing: "border-box" }} />
         </Field>
+        <p style={{ fontSize: 11.5, color: MUT, margin: "2px 0 0" }}>¿Buscás activar o desactivar funciones (Vendedor IA, suscripciones, adopciones…)? Ahora están en la pestaña <b>Configuración</b>.</p>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
           <button onClick={save} disabled={saving} className="mbtn" style={btn}>{saving ? "Guardando…" : "Guardar diseño"}</button>

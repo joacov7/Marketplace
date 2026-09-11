@@ -39,6 +39,17 @@ const SECTIONS: Array<{ title: string; items: Array<{ key: string; label: string
       { key: "storefront.listColumns", label: "Columnas del listado de productos" },
     ],
   },
+  {
+    title: "Funciones de la tienda",
+    items: [
+      { key: "features.aiAssistant", label: "Vendedor IA (asesora y recomienda del catálogo)" },
+      { key: "features.subscriptions", label: "Suscripción de auto-envío (recompra automática)" },
+      { key: "features.foodCalculator", label: "Calculadora de consumo + Mis mascotas" },
+      { key: "features.foodComparator", label: "Comparador de alimentos (costo por día)" },
+      { key: "features.quickReorder", label: "Compra rápida (repetir última compra)" },
+      { key: "features.adoptions", label: "Sección de Adopciones / callejeritos" },
+    ],
+  },
 ];
 
 const EDITABLE = new Set(SECTIONS.flatMap((s) => s.items.map((i) => i.key)));
