@@ -434,14 +434,19 @@ export default function Storefront(props: {
   );
   const [schedDateIdx, setSchedDateIdx] = useState(0);
   const [schedSlotIdx, setSchedSlotIdx] = useState(0);
+  // Horario sugerido por el cliente (texto libre, opcional): "capaz no están cuando uno va".
+  const [deliveryPref, setDeliveryPref] = useState("");
   const slots = config.deliverySlots;
   function buildDeliveryWindow(): string | undefined {
-    if (delivery === "auxilio") return `Envío de Auxilio (${config.auxilioWindow})`;
+    const pref = deliveryPref.trim();
+    const suffix = pref ? ` · Prefiere: ${pref}` : "";
+    if (delivery === "auxilio") return `Envío de Auxilio (${config.auxilioWindow})${suffix}`;
     const d = deliveryDates[schedDateIdx];
-    if (!d) return undefined;
-    const dl = dayLabel(d, new Date());
+    const dl = d ? dayLabel(d, new Date()) : "";
     const s = slots[schedSlotIdx];
-    return s ? `${dl} · ${s.label} (${s.from}–${s.to})` : dl;
+    const base = d ? `${dl}${s ? ` · ${s.label} (${s.from}–${s.to})` : ""}` : "A coordinar";
+    if (!d && !pref) return undefined;
+    return `${base}${suffix}`;
   }
 
   // Radio de reparto (geocerca): distancia del punto compartido al local del comercio. Solo
@@ -635,6 +640,7 @@ export default function Storefront(props: {
             radiusKm={radiusEnabled ? radiusKm : 0} radiusDistance={radiusDistance} outsideRadius={outsideRadius}
             deliveryDates={deliveryDates} slots={slots} auxilioWindow={config.auxilioWindow}
             schedDateIdx={schedDateIdx} setSchedDateIdx={setSchedDateIdx} schedSlotIdx={schedSlotIdx} setSchedSlotIdx={setSchedSlotIdx}
+            deliveryPref={deliveryPref} setDeliveryPref={setDeliveryPref}
             onConfirm={confirmOrder}
           />
         )}
@@ -1552,6 +1558,7 @@ function CheckoutView(props: {
   radiusKm: number; radiusDistance: number | null; outsideRadius: boolean;
   deliveryDates: Date[]; slots: Array<{ label: string; from: string; to: string }>; auxilioWindow: string;
   schedDateIdx: number; setSchedDateIdx: (n: number) => void; schedSlotIdx: number; setSchedSlotIdx: (n: number) => void;
+  deliveryPref: string; setDeliveryPref: (s: string) => void;
   busy: boolean; error: string | null; subtotal: number; shippingFor: (d: "estandar" | "auxilio") => number; discountFor: (p: string) => number; onConfirm: () => void;
 }) {
   const { G, form, setForm } = props;
@@ -1726,6 +1733,12 @@ function CheckoutView(props: {
                     </div>
                   </div>
                 )}
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.mute, marginBottom: 7 }}>¿Te viene mejor un horario puntual? <span style={{ fontWeight: 400 }}>(opcional)</span></div>
+                  <input style={{ ...input, width: "100%" }} placeholder="Ej: después de las 16, o llamame antes de salir"
+                    value={props.deliveryPref} onChange={(e) => props.setDeliveryPref(e.target.value)} maxLength={80} />
+                  <div style={{ fontSize: 11, color: C.mute, marginTop: 5 }}>Es una sugerencia para el repartidor; hacemos lo posible por respetarla.</div>
+                </div>
               </div>
             )}
 

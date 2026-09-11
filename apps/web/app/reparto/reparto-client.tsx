@@ -139,14 +139,17 @@ export default function RepartoClient() {
           <div style={{ display: "grid", gap: 14 }}>
             {(() => {
               // Agenda: agrupamos por franja de entrega (mismo día+turno juntos) para planificar la salida.
-              const counts = orders.reduce<Record<string, number>>((a, o) => { const w = o.deliveryWindow ?? "Sin horario asignado"; a[w] = (a[w] ?? 0) + 1; return a; }, {});
-              const sorted = [...orders].sort((a, b) => (a.deliveryWindow ?? "~").localeCompare(b.deliveryWindow ?? "~", "es"));
+              // Agrupamos por día+turno (base), ignorando la preferencia libre del cliente
+              // ("· Prefiere: …") que sí se muestra completa en cada tarjeta.
+              const baseWindow = (o: DeliveryOrder) => (o.deliveryWindow ?? "Sin horario asignado").split(" · Prefiere:")[0]!;
+              const counts = orders.reduce<Record<string, number>>((a, o) => { const w = baseWindow(o); a[w] = (a[w] ?? 0) + 1; return a; }, {});
+              const sorted = [...orders].sort((a, b) => baseWindow(a).localeCompare(baseWindow(b), "es"));
               let prevWindow: string | null = null;
               return sorted.map((o) => {
               const paid = o.paymentStatus === "pagado";
               const collecting = collectFor === o.sellerOrderId;
               const wa = waLink(o);
-              const win = o.deliveryWindow ?? "Sin horario asignado";
+              const win = baseWindow(o);
               const header = win !== prevWindow ? win : null;
               prevWindow = win;
               return (
