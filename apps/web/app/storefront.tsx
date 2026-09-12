@@ -675,6 +675,7 @@ export default function Storefront(props: {
           G={G} tenant={tenant}
           variantId={subscribeVariant}
           product={sel}
+          factors={config.nutritionFactors}
           onClose={() => setSubscribeVariant(null)}
         />
       )}
@@ -1319,7 +1320,7 @@ function DetailView(props: {
               style={{ display: "inline-flex", alignItems: "center", gap: 9, marginTop: 12, background: C.tint, color: G, border: `1.5px solid ${G}`, borderRadius: 11, padding: "12px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: FONT, maxWidth: 420 }}
             >
               <RotateCcw size={17} strokeWidth={2} />
-              Suscribite y recibilo siempre — sin quedarte sin stock
+              {isFood ? "Suscribite: no te quedás nunca sin alimento" : "Suscribite y recibilo siempre — sin quedarte sin stock"}
             </button>
           )}
 
@@ -1401,22 +1402,49 @@ const INTERVAL_OPTIONS = [
  * y se cobra al recibir (no debita tarjeta). El cliente elige cadencia, cantidad y sus datos.
  */
 function SubscribeModal({
-  G, tenant, variantId, product, onClose,
+  G, tenant, variantId, product, factors, onClose,
 }: {
   G: string;
   tenant: string;
   variantId: string;
   product: StoreProduct;
+  factors: Record<string, number>;
   onClose: () => void;
 }) {
   const variant = product.variants.find((v) => v.variantId === variantId) ?? product.variants[0]!;
   const [intervalDays, setIntervalDays] = useState(30);
   const [qty, setQty] = useState(1);
+  const [petWeight, setPetWeight] = useState("");
+  const [autoSet, setAutoSet] = useState(false); // ya ajustamos el intervalo al peso una vez
   const [f, setF] = useState({ name: "", phone: "", street: "", zone: "", notes: "", petName: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ nextRunAt: string; petName: string | null } | null>(null);
   const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }));
+
+  // Reposición inteligente: con el peso de la mascota calculamos cuántos días dura la bolsa
+  // (o las bolsas, si pide más de una) y sugerimos el intervalo justo para que NUNCA se quede
+  // sin alimento. Este es el corazón del pet shop: el dolor real es "me quedé sin comida".
+  const isFood = !!(product.kcalPerKg && product.kcalPerKg > 0 && variant.netWeightKg && variant.netWeightKg > 0);
+  const wKg = Number(petWeight.replace(",", "."));
+  const bagDays = (() => {
+    if (!isFood || !(wKg > 0)) return 0;
+    const factor = factors["adulto_normal"] ?? 1.4;
+    const c = consumption(wKg, factor, product.kcalPerKg!);
+    if (!(c.gramsPerDay > 0)) return 0;
+    return Math.floor((variant.netWeightKg! * 1000 * qty) / c.gramsPerDay);
+  })();
+  // Intervalo sugerido: el mayor de la lista que NO supere la duración (llega antes de que se
+  // acabe, mejor temprano que tarde). Si dura menos que la opción más chica, usamos esa.
+  const suggestedInterval = (() => {
+    if (bagDays <= 0) return null;
+    const fits = INTERVAL_OPTIONS.filter((o) => o.days <= bagDays).map((o) => o.days);
+    return fits.length ? Math.max(...fits) : INTERVAL_OPTIONS[0]!.days;
+  })();
+  // Pre-seleccionamos el intervalo sugerido la primera vez que hay una estimación válida.
+  useEffect(() => {
+    if (suggestedInterval && !autoSet) { setIntervalDays(suggestedInterval); setAutoSet(true); }
+  }, [suggestedInterval, autoSet]);
 
   const fmtDate = (iso: string) => {
     try { return new Date(iso).toLocaleDateString("es-AR", { day: "numeric", month: "long" }); } catch { return ""; }
@@ -1435,6 +1463,7 @@ function SubscribeModal({
           ...(f.name.trim() ? { customerName: f.name.trim() } : {}),
           phone: f.phone.trim(),
           ...(f.petName.trim() ? { petName: f.petName.trim() } : {}),
+          ...(isFood && wKg > 0 ? { petWeightKg: wKg } : {}),
           address: { street: f.street.trim(), zone: f.zone.trim(), phone: f.phone.trim(), notes: f.notes.trim() },
         }),
       });
@@ -1457,8 +1486,8 @@ function SubscribeModal({
         <div style={{ background: G, color: C.white, padding: "16px 18px", display: "flex", alignItems: "center", gap: 11, borderRadius: "18px 18px 0 0" }}>
           <RotateCcw size={22} strokeWidth={2} />
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>Suscripción de auto-envío</div>
-            <div style={{ fontSize: 12, opacity: 0.9 }}>Recibí tu producto siempre, sin acordarte</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{isFood ? "Nunca más te quedes sin alimento" : "Suscripción de auto-envío"}</div>
+            <div style={{ fontSize: 12, opacity: 0.9 }}>Te llega solo, antes de que se acabe. Cobramos al recibir.</div>
           </div>
           <button onClick={onClose} aria-label="Cerrar" style={{ background: "transparent", border: "none", color: C.white, cursor: "pointer", display: "grid", placeItems: "center" }}><X size={22} /></button>
         </div>
@@ -1483,13 +1512,33 @@ function SubscribeModal({
               </div>
             </div>
 
+            {isFood && (
+              <div style={{ marginBottom: 14 }}>
+                <span style={label}>¿CUÁNTO PESA TU MASCOTA?</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input value={petWeight} onChange={(e) => setPetWeight(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="Ej: 22" inputMode="decimal" style={{ ...inputStyle, width: 130 }} />
+                  <span style={{ fontSize: 14, color: C.mute }}>kg</span>
+                  <span style={{ fontSize: 12, color: C.mute }}>— así calculamos cuándo se le acaba</span>
+                </div>
+                {bagDays > 0 && (
+                  <div style={{ marginTop: 10, background: C.tint, border: `1px solid ${C.iconBg}`, borderRadius: 12, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.55, color: C.text }}>
+                    <b style={{ color: G }}>{qty > 1 ? `${qty} bolsas le duran` : "Esta bolsa le dura"} ~{bagDays} días.</b> Te la mandamos <b>cada {intervalDays} días</b> para que <b>nunca se quede sin alimento</b>. 🐾
+                  </div>
+                )}
+              </div>
+            )}
+
             <div style={{ marginBottom: 14 }}>
-              <span style={label}>¿CADA CUÁNTO?</span>
+              <span style={label}>¿CADA CUÁNTO LLEGA?</span>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 {INTERVAL_OPTIONS.map((o) => {
                   const on = o.days === intervalDays;
+                  const suggested = o.days === suggestedInterval;
                   return (
-                    <button key={o.days} onClick={() => setIntervalDays(o.days)} style={{ padding: "10px 8px", borderRadius: 9, fontSize: 13.5, fontWeight: 600, border: `1.5px solid ${on ? G : C.border}`, background: on ? C.tint : C.white, color: on ? G : C.nav, cursor: "pointer", fontFamily: FONT }}>{o.label}</button>
+                    <button key={o.days} onClick={() => setIntervalDays(o.days)} style={{ position: "relative", padding: "10px 8px", borderRadius: 9, fontSize: 13.5, fontWeight: 600, border: `1.5px solid ${on ? G : C.border}`, background: on ? C.tint : C.white, color: on ? G : C.nav, cursor: "pointer", fontFamily: FONT }}>
+                      {o.label}
+                      {suggested && <span style={{ position: "absolute", top: -8, right: -6, background: G, color: C.white, fontSize: 9.5, fontWeight: 700, letterSpacing: ".02em", borderRadius: 6, padding: "2px 5px" }}>SUGERIDO</span>}
+                    </button>
                   );
                 })}
               </div>
