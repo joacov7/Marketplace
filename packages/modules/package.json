@@ -15,7 +15,8 @@
     "./reports": { "types": "./dist/reports/index.d.ts", "default": "./dist/reports/index.js" },
     "./adoptions": { "types": "./dist/adoptions/index.d.ts", "default": "./dist/adoptions/index.js" },
     "./pets": { "types": "./dist/pets/index.d.ts", "default": "./dist/pets/index.js" },
-    "./subscriptions": { "types": "./dist/subscriptions/index.d.ts", "default": "./dist/subscriptions/index.js" }
+    "./subscriptions": { "types": "./dist/subscriptions/index.d.ts", "default": "./dist/subscriptions/index.js" },
+    "./content": { "types": "./dist/content/index.d.ts", "default": "./dist/content/index.js" }
   },
   "scripts": {
     "build": "tsc --build"

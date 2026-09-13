@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   PawPrint, Bike, MapPin, Pencil, X, Plus, Package, Tags, BarChart3, Palette, Dog, Cat, RotateCcw, SlidersHorizontal, Clock,
+  Megaphone, Sparkles, Copy, Download,
 } from "lucide-react";
 import { WEEKDAYS } from "@/lib/delivery-schedule";
 
@@ -92,6 +93,9 @@ input:focus,select:focus,textarea:focus{border-color:${A} !important;box-shadow:
 @media (max-width:560px){
   .mform-grid{grid-template-columns:1fr !important;}
 }
+@media (max-width:720px){
+  .mcontent-grid{grid-template-columns:1fr !important;}
+}
 `;
 
 export default function MerchantPanel() {
@@ -100,7 +104,7 @@ export default function MerchantPanel() {
   const [tokenInput, setTokenInput] = useState("");
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [merchantId, setMerchantId] = useState<string>("");
-  const [tab, setTab] = useState<"catalogo" | "pedidos" | "suscripciones" | "reportes" | "diseno" | "adopciones" | "config">("catalogo");
+  const [tab, setTab] = useState<"catalogo" | "pedidos" | "suscripciones" | "contenido" | "reportes" | "diseno" | "adopciones" | "config">("catalogo");
   const [error, setError] = useState<string | null>(null);
   const [migrating, setMigrating] = useState(false);
 
@@ -174,7 +178,7 @@ export default function MerchantPanel() {
 
   const TABS: Array<[typeof tab, typeof Tags, string]> = [
     ["catalogo", Tags, "Catálogo"], ["pedidos", Package, "Pedidos"], ["suscripciones", RotateCcw, "Suscripciones"],
-    ["reportes", BarChart3, "Reportes"], ["diseno", Palette, "Diseño"], ["adopciones", PawPrint, "Adopciones"],
+    ["contenido", Megaphone, "Contenido"], ["reportes", BarChart3, "Reportes"], ["diseno", Palette, "Diseño"], ["adopciones", PawPrint, "Adopciones"],
     ["config", SlidersHorizontal, "Configuración"],
   ];
 
@@ -223,6 +227,7 @@ export default function MerchantPanel() {
       {tab === "catalogo" ? <CatalogTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
         : tab === "pedidos" ? <OrdersTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
         : tab === "suscripciones" ? <SubscriptionsTab tenant={tenant} token={token} onError={setError} />
+        : tab === "contenido" ? <ContentStudioTab tenant={tenant} token={token} onError={setError} />
         : tab === "reportes" ? <ReportsTab tenant={tenant} token={token} onError={setError} />
         : tab === "diseno" ? <DesignTab tenant={tenant} token={token} onError={setError} />
         : tab === "config" ? <><SettingsTab tenant={tenant} token={token} onError={setError} /><div style={{ height: 14 }} /><DeliveryScheduleEditor tenant={tenant} token={token} onError={setError} /></>
@@ -1255,6 +1260,170 @@ function DeliveryScheduleEditor({ tenant, token, onError }: { tenant: string | n
 
       <div style={{ marginTop: 16 }}>
         <button onClick={save} disabled={saving} className="mbtn" style={btn}>{saving ? "Guardando…" : "Guardar horarios"}</button>
+      </div>
+    </div>
+  );
+}
+
+interface ContentThemeOpt { value: string; label: string }
+/**
+ * Estudio de Contenido: el agente arma la publicación del día (texto + placa) con datos reales
+ * del catálogo y el calendario de temas del comercio. El comercio revisa, edita, copia el texto
+ * y descarga la placa para subirla a sus redes. Publicación manual por ahora (sin API de Meta).
+ */
+function ContentStudioTab({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const auth = { authorization: `Bearer ${token}` };
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [date, setDate] = useState(todayStr);
+  const [selTheme, setSelTheme] = useState<string | null>(null);
+  const [variant, setVariant] = useState<number | null>(null);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [hashtags, setHashtags] = useState("");
+  const [themeLabel, setThemeLabel] = useState("");
+  const [themes, setThemes] = useState<ContentThemeOpt[]>([]);
+  const [variantIdx, setVariantIdx] = useState(0);
+  const [variantCount, setVariantCount] = useState(0);
+  const [placaBase, setPlacaBase] = useState("");
+  const [productCount, setProductCount] = useState(0);
+  const [enabled, setEnabled] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!tenant) return;
+    setLoading(true);
+    const p = new URLSearchParams({ tenant, date });
+    if (selTheme) p.set("theme", selTheme);
+    if (variant !== null) p.set("variant", String(variant));
+    try {
+      const res = await fetch(`/api/merchant/content/today?${p.toString()}`, { headers: auth });
+      const d = await res.json();
+      if (!res.ok) { onError(d.error ?? "error"); return; }
+      setTitle(d.post.title);
+      setBody(d.post.body);
+      setHashtags((d.post.hashtags ?? []).join(" "));
+      setThemeLabel(d.post.themeLabel);
+      setVariantIdx(d.post.variant);
+      setVariantCount(d.post.variantCount);
+      setPlacaBase(d.placaUrl);
+      setThemes(d.themes ?? []);
+      setEnabled(d.enabled !== false);
+      setProductCount(d.productCount ?? 0);
+      setSelTheme(d.post.theme);
+      setLoaded(true);
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token, date, selTheme, variant]);
+  useEffect(() => { void load(); }, [load]);
+
+  // Normaliza los hashtags escritos (espacios/comas) para el texto a copiar.
+  const tags = hashtags.split(/[\s,]+/).map((h) => h.trim().replace(/^#+/, "")).filter(Boolean).map((h) => `#${h}`);
+  const fullText = [title.trim(), body.trim(), tags.join(" ")].filter(Boolean).join("\n\n");
+
+  // La placa refleja lo que el comercio edita (título/cuerpo); el resto (marca, tema, precio)
+  // viene del servidor en placaBase.
+  const previewUrl = (() => {
+    if (!placaBase) return "";
+    try {
+      const u = new URL(placaBase, window.location.origin);
+      u.searchParams.set("title", title);
+      u.searchParams.set("body", body);
+      return `${u.pathname}?${u.searchParams.toString()}`;
+    } catch { return placaBase; }
+  })();
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(fullText);
+      onError("✓ Texto copiado. Pegalo en tu publicación de Instagram o Facebook.");
+    } catch {
+      onError("No pude copiar automáticamente. Seleccioná el texto y copialo a mano.");
+    }
+  }
+
+  function pickTheme(t: string) { setVariant(null); setSelTheme(t); }
+  function nextVariant() { if (variantCount > 1) setVariant(variantIdx + 1); }
+
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <div style={card}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: INK, display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <Sparkles size={17} strokeWidth={1.9} /> Publicación del día
+        </div>
+        <p style={{ fontSize: 12.5, color: MUT, margin: "6px 0 0" }}>
+          El agente arma el post con tus productos y el tema del día. Revisalo, editá lo que quieras, copiá el texto y descargá la placa para subirla a tus redes.
+        </p>
+        {!enabled && (
+          <div style={{ marginTop: 10, fontSize: 12.5, color: "#b3261e", background: "#fdecea", border: "1px solid #f0c9c4", borderRadius: 10, padding: "8px 12px" }}>
+            El Estudio de Contenido está desactivado. Activalo en <b>Configuración → Funciones de la tienda</b>.
+          </div>
+        )}
+        {enabled && productCount === 0 && (
+          <div style={{ marginTop: 10, fontSize: 12.5, color: A_DARK, background: A_SOFT, borderRadius: 10, padding: "8px 12px" }}>
+            No hay productos en stock: los temas de producto/oferta usan un texto genérico hasta que cargues catálogo.
+          </div>
+        )}
+
+        {/* Tema + fecha + variante */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14, alignItems: "center" }}>
+          {themes.map((t) => {
+            const on = selTheme === t.value;
+            return (
+              <button key={t.value} type="button" onClick={() => pickTheme(t.value)}
+                style={{ padding: "7px 13px", borderRadius: 999, cursor: "pointer", border: `1.5px solid ${on ? A : LINE}`, background: on ? A_SOFT : "white", fontSize: 12.5, fontWeight: 700, color: on ? A_DARK : MUT }}>
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12, alignItems: "center" }}>
+          <label style={{ fontSize: 12, color: MUT, display: "inline-flex", alignItems: "center", gap: 6 }}>
+            Fecha
+            <input type="date" value={date} onChange={(e) => { setVariant(null); setDate(e.target.value); }} style={{ ...input, padding: "7px 9px" }} />
+          </label>
+          <button onClick={nextVariant} disabled={variantCount <= 1 || loading} className="mbtn" style={{ ...btnGhost, display: "inline-flex", alignItems: "center", gap: 6, opacity: variantCount <= 1 ? 0.5 : 1 }}>
+            <RotateCcw size={14} strokeWidth={2} /> Otra variante {variantCount > 1 ? `(${variantIdx + 1}/${variantCount})` : ""}
+          </button>
+          {loading && <span style={{ fontSize: 12, color: MUT }}>Generando…</span>}
+        </div>
+      </div>
+
+      {/* Editor + placa */}
+      <div className="mcontent-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}>
+        <div style={card}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: INK, marginBottom: 8 }}>Texto de la publicación</div>
+          <div style={{ fontSize: 11, color: MUT, marginBottom: 3 }}>Título</div>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} style={{ ...input, width: "100%", boxSizing: "border-box", fontWeight: 700 }} />
+          <div style={{ fontSize: 11, color: MUT, margin: "10px 0 3px" }}>Cuerpo</div>
+          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} style={{ ...input, width: "100%", boxSizing: "border-box", resize: "vertical", lineHeight: 1.4 }} />
+          <div style={{ fontSize: 11, color: MUT, margin: "10px 0 3px" }}>Hashtags</div>
+          <input value={hashtags} onChange={(e) => setHashtags(e.target.value)} placeholder="mascotas petshop" style={{ ...input, width: "100%", boxSizing: "border-box", color: A_DARK }} />
+          <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+            <button onClick={copy} className="mbtn" style={{ ...btn, display: "inline-flex", alignItems: "center", gap: 7 }}><Copy size={15} strokeWidth={2} /> Copiar texto</button>
+            {previewUrl && (
+              <a href={previewUrl} download={`placa-${date}-${selTheme ?? "post"}.png`} className="mbtn" style={{ ...btnGhost, textDecoration: "none", color: INK, display: "inline-flex", alignItems: "center", gap: 7 }}>
+                <Download size={15} strokeWidth={2} /> Descargar placa
+              </a>
+            )}
+          </div>
+        </div>
+
+        <div style={card}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: INK, marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+            <span>Placa {themeLabel ? `· ${themeLabel}` : ""}</span>
+            <span style={{ fontSize: 11, color: MUT, fontWeight: 500 }}>1080×1080</span>
+          </div>
+          <div style={{ borderRadius: 12, overflow: "hidden", border: `1px solid ${LINE}`, background: SURF }}>
+            {previewUrl
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img key={previewUrl} src={previewUrl} alt="Placa de la publicación" style={{ display: "block", width: "100%", aspectRatio: "1 / 1" }} />
+              : <div style={{ aspectRatio: "1 / 1", display: "grid", placeItems: "center", color: MUT, fontSize: 13 }}>{loaded ? "Sin placa" : "Cargando…"}</div>}
+          </div>
+          <p style={{ fontSize: 11, color: MUT, margin: "8px 0 0" }}>La placa se actualiza con lo que editás arriba. Cuando conectemos la API de Instagram/Facebook, esto se publicará solo.</p>
+        </div>
       </div>
     </div>
   );

@@ -459,6 +459,90 @@ export const CONFIG_KEYS = {
     sensitive: false,
     description: "Módulos habilitados para el tenant (feature flags de módulo).",
   },
+  "features.contentStudio": {
+    key: "features.contentStudio",
+    jsonSchema: { type: "boolean" },
+    defaultValue: true,
+    category: "features",
+    sensitive: false,
+    description: "Habilita el Estudio de Contenido (genera el post del día: texto + placa para redes).",
+  },
+  "content.themeSchedule": {
+    key: "content.themeSchedule",
+    jsonSchema: {
+      type: "object",
+      additionalProperties: { type: "string", enum: ["tip", "producto", "oferta", "suscripcion", "testimonio", "calido"] },
+    },
+    // 0=Dom … 6=Sáb. Rotación semanal por defecto (educar, mostrar, vender, fidelizar).
+    defaultValue: { "0": "calido", "1": "tip", "2": "producto", "3": "testimonio", "4": "oferta", "5": "suscripcion", "6": "calido" },
+    category: "text",
+    sensitive: false,
+    description: "Calendario de contenido: qué tema se publica cada día de la semana (0=Dom … 6=Sáb).",
+  },
+  "content.templates": {
+    key: "content.templates",
+    jsonSchema: {
+      type: "object",
+      additionalProperties: {
+        type: "array",
+        maxItems: 8,
+        items: {
+          type: "object",
+          required: ["title", "body"],
+          properties: { title: { type: "string", maxLength: 120 }, body: { type: "string", maxLength: 500 } },
+          additionalProperties: false,
+        },
+      },
+    },
+    // Tokens: {store} {product} {price} {handle} {phone} {discount}. Varias variantes por tema
+    // → el contenido cambia día a día aunque el tema se repita.
+    defaultValue: {
+      tip: [
+        { title: "¿Sabías cuánto debería comer tu mascota?", body: "La cantidad justa depende del peso y la actividad. Escribinos y te ayudamos a calcularla — sin que sobre ni falte. 🐾" },
+        { title: "El agua también alimenta", body: "Dejá siempre agua limpia y fresca a su alcance. Un detalle simple que cuida la salud de tu compañero. — {store}" },
+        { title: "Cambios de alimento, de a poco", body: "Si vas a cambiar el alimento, hacelo gradual durante una semana para cuidar su digestión. Cualquier duda, escribinos a {handle}." },
+      ],
+      producto: [
+        { title: "{product}", body: "Ya disponible en {store} por {price}. Te lo llevamos a tu casa el mismo día. Pedilo por {handle}." },
+        { title: "Llegó {product}", body: "Calidad para tu compañero al mejor precio. Pedilo hoy y te lo entregamos. — {store}" },
+      ],
+      oferta: [
+        { title: "Oferta de la semana: {product}", body: "Aprovechá esta semana en {store}: {price}. Envíos a domicilio. Escribinos por {handle} para pedir el tuyo." },
+        { title: "{product} en promo", body: "Precio especial por tiempo limitado: {price}. Te lo llevamos a tu puerta. Pedilo ya en {store}." },
+      ],
+      suscripcion: [
+        { title: "Nunca más te quedes sin alimento", body: "Con la suscripción de {store} te llega solo, antes de que se acabe — y pagás al recibir. Preguntanos cómo por {handle}. 🐾" },
+        { title: "¿Cansado de acordarte de comprar la bolsa?", body: "Suscribite y te la mandamos justo cuando está por terminarse. Vos no hacés nada. Consultá por {handle}." },
+      ],
+      testimonio: [
+        { title: "Gracias por la confianza 💚", body: "Cada entrega es una familia que cuida a su compañero con nosotros. Gracias por elegir {store}." },
+        { title: "Clientes felices, mascotas sanas", body: "Nos encanta ser parte del cuidado de tu mascota. Contanos tu experiencia 🐾 — {store}" },
+      ],
+      calido: [
+        { title: "Feliz finde de patas 🐾", body: "Que lo disfrutes con tu compañero. En {store} estamos para lo que necesites." },
+        { title: "Ellos nos alegran los días", body: "Etiquetá a tu compañero de vida 🐶🐱 En {store} los cuidamos como se merecen." },
+      ],
+    },
+    category: "text",
+    sensitive: false,
+    description: "Plantillas de copy por tema (título + cuerpo). Tokens: {store} {product} {price} {handle} {phone} {discount}.",
+  },
+  "content.hashtags": {
+    key: "content.hashtags",
+    jsonSchema: { type: "array", maxItems: 12, items: { type: "string", maxLength: 40 } },
+    defaultValue: ["mascotas", "petshop", "alimentobalanceado", "enviosadomicilio"],
+    category: "text",
+    sensitive: false,
+    description: "Hashtags base que se agregan a cada publicación (sin el #; se normalizan solos).",
+  },
+  "content.handle": {
+    key: "content.handle",
+    jsonSchema: { type: "string", maxLength: 60 },
+    defaultValue: "",
+    category: "text",
+    sensitive: false,
+    description: "Usuario de redes/WhatsApp para el token {handle} (ej. @tutienda). Vacío = usa el nombre de la marca.",
+  },
 } as const satisfies Record<string, ConfigKeyDef>;
 
 export type ConfigKeyName = keyof typeof CONFIG_KEYS;

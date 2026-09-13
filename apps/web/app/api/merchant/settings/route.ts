@@ -48,6 +48,7 @@ const SECTIONS: Array<{ title: string; items: Array<{ key: string; label: string
       { key: "features.foodComparator", label: "Comparador de alimentos (costo por día)" },
       { key: "features.quickReorder", label: "Compra rápida (repetir última compra)" },
       { key: "features.adoptions", label: "Sección de Adopciones / callejeritos" },
+      { key: "features.contentStudio", label: "Estudio de Contenido (post del día para redes)" },
     ],
   },
 ];
