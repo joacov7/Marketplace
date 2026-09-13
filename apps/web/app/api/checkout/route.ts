@@ -3,7 +3,7 @@ import { getVariantWithPrice } from "@commerce/modules/catalog";
 import { createOrder, type PaymentMethod } from "@commerce/modules/orders";
 import { createPaymentIntent, FakePaymentProvider } from "@commerce/modules/payments";
 import { addAddress, ensureCustomerForUser, findOrCreateCustomerByPhone } from "@commerce/modules/customer";
-import { zoneChargeByName, checkDeliveryRadius } from "@commerce/modules/delivery";
+import { zoneChargeByName, checkDeliveryRadius, cartHasFood, resolveMinOrderConfig, applyMinOrder } from "@commerce/modules/delivery";
 import { createPet, listPets, type Species } from "@commerce/modules/pets";
 import { resolveConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
@@ -65,10 +65,11 @@ export async function POST(req: Request) {
   }
 
   const chain = { tenantId: tenant.tenantId };
-  const [threshold, standardCost, auxilioCost] = await Promise.all([
+  const [threshold, standardCost, auxilioCost, minOrderCfg] = await Promise.all([
     resolveConfigValue<number>(db(), "delivery.freeOverOrderTotalMinor", chain).then((r) => BigInt(r.value)),
     resolveConfigValue<number>(db(), "delivery.customerChargeMinor", chain).then((r) => BigInt(r.value)),
     resolveConfigValue<number>(db(), "delivery.auxilioCostMinor", chain).then((r) => BigInt(r.value)),
+    resolveMinOrderConfig(db(), tenant.tenantId),
   ]);
   const deliveryMethod = body.delivery === "auxilio" ? "auxilio" : "estandar";
 
@@ -84,13 +85,30 @@ export async function POST(req: Request) {
       items.push({ variantId: it.variantId, qty: it.qty, unitPriceMinor: v.price.amountMinor });
       gmv += v.price.amountMinor * BigInt(it.qty);
     }
+    // ¿El carrito lleva alimento (ancla)? Define qué mínimo de envío rige.
+    const hasFood = await cartHasFood(tx, body.items.map((i) => i.variantId));
     // Tarifa por zona (barrio) si matchea una zona configurada; si no, envío plano.
     const zone = body.address?.zone ? await zoneChargeByName(tx, body.address.zone) : null;
     const baseCharge = zone?.customerChargeMinor ?? standardCost;
     const deliveryChargeMinor = deliveryMethod === "auxilio" ? auxilioCost : gmv >= threshold ? 0n : baseCharge;
-    return { merchantId: merchants[0].id, items, gmv, deliveryChargeMinor };
+    return { merchantId: merchants[0].id, items, gmv, deliveryChargeMinor, hasFood };
   });
   if (!priced) return NextResponse.json({ error: "invalid_items_or_no_merchant" }, { status: 400 });
+
+  // Mínimo de envío por segmento: con alimento rige el mínimo base; sin alimento (almacén puro),
+  // el más alto. Se valida en el server (autoritativo) aunque la tienda ya lo muestre.
+  const minOrder = applyMinOrder({ hasFood: priced.hasFood, gmvMinor: priced.gmv, config: minOrderCfg });
+  if (!minOrder.meets) {
+    return NextResponse.json(
+      {
+        error: "below_minimum",
+        minMinor: minOrder.minMinor.toString(),
+        missingMinor: minOrder.missingMinor.toString(),
+        hasFood: minOrder.hasFood,
+      },
+      { status: 422 },
+    );
+  }
 
   // Radio de reparto: si el comercio configuró una geocerca y el cliente compartió su ubicación,
   // rechazamos el pedido cuando el punto cae fuera del radio. Sin ubicación no bloquea (la

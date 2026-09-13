@@ -186,6 +186,10 @@ interface Quote {
   discountMinor: string;
   totalMinor: string;
   missingForFreeMinor: string;
+  hasFood?: boolean;
+  minOrderMinor?: string;
+  meetsMinimum?: boolean;
+  missingForMinimumMinor?: string;
   zoneEtaMinutes?: number | null;
   radius?: { enabled: boolean; radiusKm: number; distanceKm: number | null; withinRadius: boolean };
 }
@@ -488,6 +492,11 @@ export default function Storefront(props: {
       if (!res.ok) {
         if (d.error === "outside_delivery_radius") {
           setError(`Tu ubicación está fuera de nuestra zona de envío (a ${d.distanceKm} km; llegamos hasta ${d.radiusKm} km).`);
+        } else if (d.error === "below_minimum") {
+          const falta = money(Number(d.missingMinor));
+          setError(d.hasFood === false
+            ? `Sin alimento, el mínimo de envío es ${money(Number(d.minMinor))}. Te faltan ${falta} — sumá algo más o agregá una bolsa de alimento.`
+            : `Te faltan ${falta} para llegar al mínimo de envío.`);
         } else { setError(d.error ?? "error en el checkout"); }
         return;
       }
@@ -1616,6 +1625,11 @@ function CheckoutView(props: {
   const ship = props.quote ? Number(props.quote.deliveryChargeMinor) : props.shippingFor(props.delivery);
   const disc = props.quote ? Number(props.quote.discountMinor) : props.discountFor(props.payment);
   const total = props.quote ? Number(props.quote.totalMinor) : sub + ship - disc;
+  // Mínimo de envío por segmento: bloquea la confirmación si el carrito no llega al mínimo.
+  const belowMin = props.quote?.meetsMinimum === false;
+  const missingMin = Number(props.quote?.missingForMinimumMinor ?? 0);
+  const minMinor = Number(props.quote?.minOrderMinor ?? 0);
+  const cartHasFood = props.quote?.hasFood !== false;
   const card: React.CSSProperties = { border: `1px solid ${C.border}`, borderRadius: 16, padding: 22 };
   const hasPets = props.knownPets.length > 0;
   const addingNew = !props.petSel; // sin mascota elegida → alta rápida / captura del nombre
@@ -1834,7 +1848,14 @@ function CheckoutView(props: {
           {props.outsideRadius && !props.error && (
             <p style={{ color: "#c0392b", fontSize: 12.5, margin: "10px 0 0" }}>Tu ubicación está fuera de la zona de envío (a {props.radiusDistance} km; llegamos hasta {props.radiusKm} km).</p>
           )}
-          <button className="sf-btn" onClick={props.onConfirm} disabled={props.busy || props.outsideRadius} style={{ ...primaryBtn(G), width: "100%", padding: 15, marginTop: 18, ...(props.outsideRadius ? { opacity: 0.55, cursor: "not-allowed" } : {}) }}>{props.busy ? "Procesando…" : "CONFIRMAR PEDIDO"}</button>
+          {belowMin && !props.error && !props.outsideRadius && (
+            <p style={{ color: "#c0392b", fontSize: 12.5, margin: "10px 0 0" }}>
+              {cartHasFood
+                ? <>Te faltan <b>{money(missingMin)}</b> para el mínimo de envío ({money(minMinor)}).</>
+                : <>Sin alimento el mínimo de envío es <b>{money(minMinor)}</b>. Te faltan {money(missingMin)} — sumá algo más o agregá una bolsa de alimento. 🐾</>}
+            </p>
+          )}
+          <button className="sf-btn" onClick={props.onConfirm} disabled={props.busy || props.outsideRadius || belowMin} style={{ ...primaryBtn(G), width: "100%", padding: 15, marginTop: 18, ...(props.outsideRadius || belowMin ? { opacity: 0.55, cursor: "not-allowed" } : {}) }}>{props.busy ? "Procesando…" : "CONFIRMAR PEDIDO"}</button>
           <p style={{ fontSize: 11.5, color: C.mute, textAlign: "center", marginTop: 10, marginBottom: 0 }}>Te confirmamos el pedido por WhatsApp antes de salir a entregar.</p>
         </div>
       </div>

@@ -51,6 +51,68 @@ export async function quoteDelivery(
   return { cadeteCostMinor, customerChargeMinor, subsidySource, subsidyMinor };
 }
 
+// ── Mínimo de pedido por segmento (con alimento vs almacén puro) ─────────────────────
+// El cliente de alimento (el ancla) llega al mínimo con una bolsa; el de almacén necesita
+// muchos items, así que su mínimo se pone más alto para que la entrega valga la pena. Ambos
+// mínimos son config por tenant (delivery.minOrderMinor / delivery.minOrderNoFoodMinor), nunca
+// hardcodeados. Un mínimo en 0 = sin mínimo (no bloquea).
+
+export interface MinOrderConfig {
+  /** Mínimo cuando el carrito lleva alimento (ancla), en centavos. 0 = sin mínimo. */
+  minOrderMinor: bigint;
+  /** Mínimo cuando el carrito NO lleva alimento (almacén puro), en centavos. 0 = sin mínimo. */
+  minOrderNoFoodMinor: bigint;
+}
+
+export interface MinOrderResult {
+  /** El carrito incluye alimento (kcal_per_kg > 0). */
+  hasFood: boolean;
+  /** Mínimo aplicable al carrito, en centavos (según lleve o no alimento). */
+  minMinor: bigint;
+  /** true = el subtotal alcanza el mínimo (o no hay mínimo). */
+  meets: boolean;
+  /** Cuánto falta para el mínimo, en centavos (0 si ya alcanza). */
+  missingMinor: bigint;
+}
+
+/** Lee la config del mínimo por segmento del tenant (resolución platform→tenant). */
+export async function resolveMinOrderConfig(db: Db, tenantId: string): Promise<MinOrderConfig> {
+  const chain = { tenantId };
+  const [withFood, noFood] = await Promise.all([
+    resolveConfigValue<number>(db, "delivery.minOrderMinor", chain).then((r) => BigInt(r.value)),
+    resolveConfigValue<number>(db, "delivery.minOrderNoFoodMinor", chain).then((r) => BigInt(r.value)),
+  ]);
+  return { minOrderMinor: withFood, minOrderNoFoodMinor: noFood };
+}
+
+/**
+ * ¿El carrito incluye al menos un producto de alimento? Alimento = producto con kcal_per_kg > 0
+ * (la misma señal que usa la calculadora de consumo). Es el ancla que define qué mínimo rige.
+ * Corre bajo el contexto de tenant (RLS).
+ */
+export async function cartHasFood(db: Db, variantIds: string[]): Promise<boolean> {
+  if (variantIds.length === 0) return false;
+  const rows = await db.query<{ n: number }>(
+    `select 1 as n from variants v
+       join products p on p.id = v.product_id
+      where v.id = any($1::uuid[]) and coalesce(p.kcal_per_kg, 0) > 0
+      limit 1`,
+    [variantIds],
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Mínimo aplicable por segmento: con alimento rige el mínimo base; sin alimento (almacén puro)
+ * rige el mínimo más alto. Un mínimo en 0 = sin mínimo (siempre `meets`). PURO: no toca DB.
+ */
+export function applyMinOrder(input: { hasFood: boolean; gmvMinor: bigint; config: MinOrderConfig }): MinOrderResult {
+  const minMinor = input.hasFood ? input.config.minOrderMinor : input.config.minOrderNoFoodMinor;
+  const meets = minMinor <= 0n || input.gmvMinor >= minMinor;
+  const missingMinor = meets ? 0n : minMinor - input.gmvMinor;
+  return { hasFood: input.hasFood, minMinor, meets, missingMinor };
+}
+
 // ── Radio de reparto (geocerca): límite de distancia desde el punto del comercio ─────
 // Complementa a las zonas por barrio: las zonas fijan el costo del envío por nombre de
 // barrio; el radio es una geocerca dura sobre la ubicación (GPS) que compartió el cliente.

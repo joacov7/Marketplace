@@ -33,6 +33,22 @@ export const CONFIG_KEYS = {
     sensitive: true,
     description: "Umbral de compra por sobre el cual el delivery es gratis, en centavos.",
   },
+  "delivery.minOrderMinor": {
+    key: "delivery.minOrderMinor",
+    jsonSchema: { type: "integer", minimum: 0 },
+    defaultValue: 0, // 0 = sin mínimo (el comercio lo activa poniendo un valor)
+    category: "money",
+    sensitive: true,
+    description: "Mínimo de compra para enviar cuando el carrito incluye alimento (el ancla), en centavos. 0 = sin mínimo.",
+  },
+  "delivery.minOrderNoFoodMinor": {
+    key: "delivery.minOrderNoFoodMinor",
+    jsonSchema: { type: "integer", minimum: 0 },
+    defaultValue: 0, // 0 = sin mínimo; se sube para pedidos de almacén sin alimento
+    category: "money",
+    sensitive: true,
+    description: "Mínimo de compra para enviar cuando el carrito NO incluye alimento (almacén puro), en centavos. Suele ser más alto que el mínimo con alimento. 0 = sin mínimo.",
+  },
   "delivery.auxilioCostMinor": {
     key: "delivery.auxilioCostMinor",
     jsonSchema: { type: "integer", minimum: 0 },

@@ -19,6 +19,8 @@ const SECTIONS: Array<{ title: string; items: Array<{ key: string; label: string
     items: [
       { key: "delivery.customerChargeMinor", label: "Costo de envío al cliente" },
       { key: "delivery.freeOverOrderTotalMinor", label: "Envío gratis a partir de" },
+      { key: "delivery.minOrderMinor", label: "Mínimo de envío con alimento" },
+      { key: "delivery.minOrderNoFoodMinor", label: "Mínimo de envío sin alimento (almacén)" },
       { key: "delivery.auxilioCostMinor", label: "Costo del Envío de Auxilio" },
       { key: "delivery.cadeteCostMinor", label: "Costo real de una entrega (cadete)" },
       { key: "delivery.subsidySource", label: "Quién financia el subsidio de envío" },
