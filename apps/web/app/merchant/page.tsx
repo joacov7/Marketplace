@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   PawPrint, Bike, MapPin, Pencil, X, Plus, Package, Tags, BarChart3, Palette, Dog, Cat, RotateCcw, SlidersHorizontal, Clock,
-  Megaphone, Sparkles, Copy, Download,
+  Megaphone, Sparkles, Copy, Download, ImagePlus,
 } from "lucide-react";
 import { WEEKDAYS } from "@/lib/delivery-schedule";
 
@@ -97,6 +97,89 @@ input:focus,select:focus,textarea:focus{border-color:${A} !important;box-shadow:
   .mcontent-grid{grid-template-columns:1fr !important;}
 }
 `;
+
+/**
+ * Comprime una imagen en el navegador antes de subirla: la reescala a un máximo de lado y la
+ * exporta como JPEG de calidad media. Así una foto de celular de varios MB queda en ~100–250 KB,
+ * liviana para guardar en la base y rápida de mostrar. Fondo blanco (por si el original es PNG
+ * con transparencia). Devuelve el Blob listo para subir.
+ */
+async function compressImage(file: File, maxDim = 1280, quality = 0.82): Promise<Blob> {
+  const dataUrl: string = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result as string);
+    r.onerror = () => rej(new Error("read"));
+    r.readAsDataURL(file);
+  });
+  const img: HTMLImageElement = await new Promise((res, rej) => {
+    const i = new window.Image();
+    i.onload = () => res(i);
+    i.onerror = () => rej(new Error("decode"));
+    i.src = dataUrl;
+  });
+  let w = img.naturalWidth || img.width;
+  let h = img.naturalHeight || img.height;
+  if (Math.max(w, h) > maxDim) {
+    const s = maxDim / Math.max(w, h);
+    w = Math.round(w * s); h = Math.round(h * s);
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas");
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  return await new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error("blob"))), "image/jpeg", quality));
+}
+
+/**
+ * Campo de imagen: sube el ARCHIVO (no un link). Muestra la miniatura, un botón para subir/cambiar
+ * y otro para quitar. Comprime en el cliente y guarda en la base vía /api/merchant/images; devuelve
+ * la URL (/api/images/<id>) que se persiste en imageUrl como cualquier otra foto.
+ */
+function ImageField({ tenant, token, value, onChange, onError, size = 46 }: {
+  tenant: string | null; token: string; value: string; onChange: (url: string) => void; onError: (s: string | null) => void; size?: number;
+}) {
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLInputElement>(null);
+
+  async function pick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { onError("El archivo tiene que ser una imagen."); return; }
+    setBusy(true); onError(null);
+    try {
+      const blob = await compressImage(file);
+      const res = await fetch(`/api/merchant/images?tenant=${encodeURIComponent(tenant ?? "")}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": blob.type },
+        body: blob,
+      });
+      const d = await res.json();
+      if (!res.ok) { onError(d.error === "too_large" ? "La imagen es muy pesada." : "No se pudo subir la foto."); return; }
+      onChange(d.url);
+    } catch {
+      onError("No se pudo procesar la imagen.");
+    } finally {
+      setBusy(false);
+      if (ref.current) ref.current.value = "";
+    }
+  }
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      {value
+        // eslint-disable-next-line @next/next/no-img-element
+        ? <img src={value} alt="" style={{ width: size, height: size, objectFit: "cover", borderRadius: 8, border: `1px solid ${LINE}` }} />
+        : <span style={{ width: size, height: size, borderRadius: 8, border: `1px dashed ${LINE}`, display: "grid", placeItems: "center", color: MUT }}><ImagePlus size={18} strokeWidth={1.7} /></span>}
+      <input ref={ref} type="file" accept="image/*" onChange={pick} hidden />
+      <button type="button" onClick={() => ref.current?.click()} disabled={busy} className="mbtn" style={{ ...btnGhost, display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <ImagePlus size={14} strokeWidth={1.9} /> {busy ? "Subiendo…" : value ? "Cambiar" : "Subir foto"}
+      </button>
+      {value && !busy && <button type="button" onClick={() => onChange("")} className="mbtn" style={{ ...btnGhost, padding: "9px 10px", color: "#c62828" }} aria-label="Quitar foto"><X size={14} strokeWidth={2} /></button>}
+    </span>
+  );
+}
 
 export default function MerchantPanel() {
   const [tenant, setTenant] = useState<string | null>(null);
@@ -330,7 +413,7 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
         )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input placeholder="Nueva categoría (ej: Alimentos para Perros)" value={newCat.name} onChange={(e) => setNewCat({ ...newCat, name: e.target.value })} style={{ ...input, flex: 2, minWidth: 200 }} />
-          <input placeholder="Foto de categoría (URL, opcional)" value={newCat.imageUrl} onChange={(e) => setNewCat({ ...newCat, imageUrl: e.target.value })} style={{ ...input, flex: 1, minWidth: 180 }} />
+          <ImageField tenant={tenant} token={token} value={newCat.imageUrl} onChange={(url) => setNewCat({ ...newCat, imageUrl: url })} onError={onError} />
           <button onClick={addCategory} className="mbtn" style={btnGhost}>+ Crear categoría</button>
         </div>
       </div>
@@ -346,7 +429,7 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
             <option value="">Sin categoría</option>
             {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <input placeholder="Foto (URL https://…)" value={f.imageUrl} onChange={(e) => setF({ ...f, imageUrl: e.target.value })} style={{ ...input, flex: 1, minWidth: 200 }} />
+          <ImageField tenant={tenant} token={token} value={f.imageUrl} onChange={(url) => setF({ ...f, imageUrl: url })} onError={onError} />
           <button onClick={addProduct} className="mbtn" style={btn}>Agregar</button>
         </div>
         <textarea placeholder="Descripción (opcional) — se muestra en la ficha del producto" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} rows={2} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 8, resize: "vertical", fontFamily: "inherit" }} />
@@ -354,14 +437,14 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
 
       {items.length === 0 ? <p style={{ color: "#888" }}>Este comercio no tiene productos. Cargá el primero arriba.</p> : (
         <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 8 }}>
-          {items.map((it) => <CatalogRow key={it.variantId} it={it} cats={cats} onSave={save} />)}
+          {items.map((it) => <CatalogRow key={it.variantId} it={it} cats={cats} tenant={tenant} token={token} onSave={save} onError={onError} />)}
         </ul>
       )}
     </div>
   );
 }
 
-function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; onSave: (variantId: string, priceMinor: number | null, listPriceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string, food: { kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null }) => void }) {
+function CatalogRow({ it, cats, tenant, token, onSave, onError }: { it: CatalogItem; cats: Category[]; tenant: string | null; token: string; onSave: (variantId: string, priceMinor: number | null, listPriceMinor: number | null, stock: number, imageUrl: string, categoryId: string, description: string, food: { kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null }) => void; onError: (s: string | null) => void }) {
   const [price, setPrice] = useState(it.priceMinor ? String(Number(it.priceMinor) / 100) : "");
   const [listPrice, setListPrice] = useState(it.listPriceMinor ? String(Number(it.listPriceMinor) / 100) : "");
   const [stock, setStock] = useState(String(it.available));
@@ -392,7 +475,7 @@ function CatalogRow({ it, cats, onSave }: { it: CatalogItem; cats: Category[]; o
             <option value="">Sin categoría</option>
             {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <input placeholder="Foto (URL)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} style={{ ...input, width: 160 }} />
+          <ImageField tenant={tenant} token={token} value={imageUrl} onChange={setImageUrl} onError={onError} size={40} />
           <button onClick={() => setOpenDesc((v) => !v)} className="mbtn" style={btnGhost} title="Descripción y datos de alimento">{openDesc ? "▲ Más" : "▼ Más"}</button>
           <button onClick={doSave} className="mbtn" style={btn}>Guardar</button>
         </span>
