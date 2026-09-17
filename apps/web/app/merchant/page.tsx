@@ -1806,21 +1806,21 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
             <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(secondary) ? secondary : "#1e293b"} onChange={(e) => set("branding.secondaryColor", e.target.value)} style={{ width: 56, height: 34, border: "1px solid #ccc", borderRadius: 8, background: "white" }} />
           </Field>
         </div>
-        <Field label="Logo (URL)" hint="http/https. Vacío = sin logo.">
-          <input value={theme["branding.logoUrl"]} onChange={(e) => set("branding.logoUrl", e.target.value)} placeholder="https://…/logo.png" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        <Field label="Logo" hint="Subí el archivo. Vacío = sin logo.">
+          <ImageField tenant={tenant} token={token} value={theme["branding.logoUrl"]} onChange={(url) => set("branding.logoUrl", url)} onError={onError} />
         </Field>
         <Field label="Texto del banner" hint="Lema que se muestra bajo el nombre.">
           <input value={theme["branding.bannerText"]} onChange={(e) => set("branding.bannerText", e.target.value)} placeholder="Todo para tu mascota, en el día" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
         </Field>
-        <Field label="Imagen del banner (URL)" hint="http/https. Vacío = fondo de color.">
-          <input value={theme["branding.bannerImageUrl"]} onChange={(e) => set("branding.bannerImageUrl", e.target.value)} placeholder="https://…/banner.jpg" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        <Field label="Imagen del banner" hint="Subí el archivo. Vacío = fondo de color.">
+          <ImageField tenant={tenant} token={token} value={theme["branding.bannerImageUrl"]} onChange={(url) => set("branding.bannerImageUrl", url)} onError={onError} />
         </Field>
-        <Field label="Imagen del hero (URL)" hint="Foto principal de la home, aprox. 1080×450. Vacío = placeholder.">
-          <input value={theme["storefront.heroImageUrl"]} onChange={(e) => set("storefront.heroImageUrl", e.target.value)} placeholder="https://…/hero.jpg" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        <Field label="Imagen del hero" hint="Foto principal de la home, aprox. 1080×450. Vacío = placeholder.">
+          <ImageField tenant={tenant} token={token} value={theme["storefront.heroImageUrl"]} onChange={(url) => set("storefront.heroImageUrl", url)} onError={onError} />
           <UrlPreview url={theme["storefront.heroImageUrl"]} ratio="1080 / 450" />
         </Field>
-        <Field label="Imagen del banner de Adopciones (URL)" hint="Foto del bloque de adopciones. Vacío = placeholder.">
-          <input value={theme["storefront.adoptionsBannerImageUrl"]} onChange={(e) => set("storefront.adoptionsBannerImageUrl", e.target.value)} placeholder="https://…/adopciones.jpg" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
+        <Field label="Imagen del banner de Adopciones" hint="Foto del bloque de adopciones. Vacío = placeholder.">
+          <ImageField tenant={tenant} token={token} value={theme["storefront.adoptionsBannerImageUrl"]} onChange={(url) => set("storefront.adoptionsBannerImageUrl", url)} onError={onError} />
           <UrlPreview url={theme["storefront.adoptionsBannerImageUrl"]} ratio="1080 / 540" />
         </Field>
         <Field label="Disposición del catálogo">
@@ -1976,7 +1976,7 @@ function AdoptionsTab({ tenant, token, onError }: { tenant: string | null; token
           </select>
           <input placeholder="Edad / detalle (ej: 2 años)" value={f.age} onChange={(e) => setF({ ...f, age: e.target.value })} style={{ ...input, width: 160 }} />
           <input placeholder="WhatsApp de contacto (opcional)" value={f.contactWhatsapp} onChange={(e) => setF({ ...f, contactWhatsapp: e.target.value.replace(/[^0-9]/g, "") })} inputMode="numeric" style={{ ...input, width: 190 }} />
-          <input placeholder="Foto (URL https://…)" value={f.imageUrl} onChange={(e) => setF({ ...f, imageUrl: e.target.value })} style={{ ...input, flex: 1, minWidth: 200 }} />
+          <ImageField tenant={tenant} token={token} value={f.imageUrl} onChange={(url) => setF({ ...f, imageUrl: url })} onError={onError} />
         </div>
         <textarea placeholder="Descripción (temperamento, castrado, vacunas…)" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} rows={2} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 8, resize: "vertical", fontFamily: "inherit" }} />
         <div style={{ marginTop: 8 }}><button onClick={publish} className="mbtn" style={btn}>Publicar</button></div>
