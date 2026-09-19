@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   PawPrint, Bike, MapPin, Pencil, X, Plus, Package, Tags, BarChart3, Palette, Dog, Cat, RotateCcw, SlidersHorizontal, Clock,
-  Megaphone, Sparkles, Copy, Download, ImagePlus,
+  Megaphone, Sparkles, Copy, Download, ImagePlus, ChevronUp, ChevronDown, Eye, EyeOff,
 } from "lucide-react";
 import { WEEKDAYS } from "@/lib/delivery-schedule";
 
@@ -18,7 +18,7 @@ interface Merchant { id: string; slug: string; name: string }
 interface OrderLine { name: string; variant: string; qty: number }
 interface SellerOrder { sellerOrderId: string; orderId: string; orderStatus: string; status: string; subtotalMinor: string; currency: string; itemCount: number; items: OrderLine[]; petName: string | null; customerName: string | null; customerPhone: string | null; paymentMethod: string | null; paymentStatus: string; channel: string; needsAcceptance: boolean; createdAt: string }
 interface CatalogItem { variantId: string; productName: string; variantName: string; sku: string; imageUrl: string | null; categoryId: string | null; categoryName: string | null; description: string | null; kcalPerKg: number | null; proteinPct: number | null; netWeightKg: number | null; priceMinor: string | null; listPriceMinor: string | null; currency: string | null; available: number; status: string }
-interface Category { id: string; slug: string; name: string; imageUrl: string | null; position: number }
+interface Category { id: string; slug: string; name: string; imageUrl: string | null; position: number; hidden?: boolean }
 interface AdoptionItem { id: string; name: string; species: string; age: string | null; description: string | null; imageUrl: string | null; contactWhatsapp: string | null; status: string; createdAt: string }
 interface ReportSummary { paidOrders: number; gmvMinor: string; deliveryRevenueMinor: string; commissionMinor: string; merchantPayoutMinor: string; refundsMinor: string; avgTicketMinor: string }
 interface ReportSeries { day: string; orders: number; gmvMinor: string }
@@ -388,12 +388,34 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
     await load();
   }
 
+  async function patchCategory(id: string, body: Record<string, unknown>) {
+    const res = await fetch(`/api/merchant/categories/${id}?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); onError(d.error ?? "error"); return false; }
+    return true;
+  }
+
   async function setCategoryImage(id: string, url: string) {
     onError(null);
-    const res = await fetch(`/api/merchant/categories/${id}?tenant=${encodeURIComponent(tenant ?? "")}`, {
-      method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ imageUrl: url }),
-    });
-    if (!res.ok) { const d = await res.json(); onError(d.error); return; }
+    if (await patchCategory(id, { imageUrl: url })) await load();
+  }
+
+  async function toggleCategoryHidden(id: string, hidden: boolean) {
+    onError(null);
+    if (await patchCategory(id, { hidden })) await load();
+  }
+
+  /** Mueve una categoría en el orden de la vitrina y persiste las posiciones (0..n-1). */
+  async function moveCategory(id: string, dir: "up" | "down") {
+    onError(null);
+    const order = [...cats].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+    const i = order.findIndex((c) => c.id === id);
+    const j = dir === "up" ? i - 1 : i + 1;
+    if (i < 0 || j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j]!, order[i]!];
+    // Normaliza posiciones a su índice; solo escribe las que cambian.
+    await Promise.all(order.map((c, idx) => (c.position !== idx ? patchCategory(c.id, { position: idx }) : Promise.resolve(true))));
     await load();
   }
 
@@ -418,16 +440,24 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
       <div style={{ ...card }}>
         <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Categorías</h3>
         {cats.length > 0 && (
+          <>
+          <p style={{ fontSize: 12, color: MUT, margin: "0 0 8px" }}>Ordená con las flechas y ocultá con el ojo. En la tienda solo aparecen las visibles que tienen al menos un producto.</p>
           <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
-            {cats.map((c) => (
-              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#f6f7f9", borderRadius: 10, padding: "8px 10px" }}>
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: "#445", flex: 1, minWidth: 120 }}>{c.name}</span>
+            {cats.map((c, i) => (
+              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#f6f7f9", borderRadius: 10, padding: "8px 10px", opacity: c.hidden ? 0.55 : 1 }}>
+                <span style={{ display: "inline-flex", flexDirection: "column" }}>
+                  <button onClick={() => moveCategory(c.id, "up")} disabled={i === 0} title="Subir" style={{ border: "none", background: "transparent", cursor: i === 0 ? "default" : "pointer", padding: 0, color: i === 0 ? "#c9ced4" : "#556", lineHeight: 0.7, display: "inline-flex" }}><ChevronUp size={16} strokeWidth={2.2} /></button>
+                  <button onClick={() => moveCategory(c.id, "down")} disabled={i === cats.length - 1} title="Bajar" style={{ border: "none", background: "transparent", cursor: i === cats.length - 1 ? "default" : "pointer", padding: 0, color: i === cats.length - 1 ? "#c9ced4" : "#556", lineHeight: 0.7, display: "inline-flex" }}><ChevronDown size={16} strokeWidth={2.2} /></button>
+                </span>
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: "#445", flex: 1, minWidth: 110 }}>{c.name}{c.hidden && <span style={{ color: MUT, fontWeight: 500 }}> · oculta</span>}</span>
                 <ImageField tenant={tenant} token={token} value={c.imageUrl ?? ""} onChange={(url) => setCategoryImage(c.id, url)} onError={onError} size={38} />
+                <button onClick={() => toggleCategoryHidden(c.id, !c.hidden)} title={c.hidden ? "Mostrar en la tienda" : "Ocultar de la tienda"} className="mbtn" style={{ ...btnGhost, padding: "8px 10px", display: "inline-flex", alignItems: "center", color: c.hidden ? "#c62828" : A_DARK }}>{c.hidden ? <EyeOff size={14} strokeWidth={1.9} /> : <Eye size={14} strokeWidth={1.9} />}</button>
                 <button onClick={() => renameCategory(c.id, c.name)} title="Renombrar" className="mbtn" style={{ ...btnGhost, padding: "8px 10px", display: "inline-flex", alignItems: "center" }}><Pencil size={14} strokeWidth={1.9} /></button>
                 <button onClick={() => removeCategory(c.id, c.name)} title="Borrar" className="mbtn" style={{ ...btnGhost, padding: "8px 10px", color: "#c62828", display: "inline-flex", alignItems: "center" }}><X size={14} strokeWidth={2} /></button>
               </div>
             ))}
           </div>
+          </>
         )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input placeholder="Nueva categoría (ej: Alimentos para Perros)" value={newCat.name} onChange={(e) => setNewCat({ ...newCat, name: e.target.value })} style={{ ...input, flex: 2, minWidth: 200 }} />

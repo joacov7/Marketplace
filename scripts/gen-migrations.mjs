@@ -22,6 +22,7 @@ const files = [
   ["0015_variant_list_price", "packages/modules/src/catalog/migrations/0015_variant_list_price.sql"],
   ["0016_subscriptions", "packages/modules/src/subscriptions/migrations/0016_subscriptions.sql"],
   ["0017_images", "packages/modules/src/catalog/migrations/0017_images.sql"],
+  ["0018_category_hidden", "packages/modules/src/catalog/migrations/0018_category_hidden.sql"],
 ];
 
 const entries = files

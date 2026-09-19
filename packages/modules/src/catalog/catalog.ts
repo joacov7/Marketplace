@@ -46,6 +46,7 @@ export interface Category {
   name: string;
   imageUrl: string | null;
   position: number;
+  hidden: boolean;
 }
 
 /** Crea una categoría en un comercio. El slug se deriva del nombre. */
@@ -64,23 +65,24 @@ export async function createCategory(
 
 /** Lista las categorías de un comercio, ordenadas por position y nombre. */
 export async function listCategories(db: Db, merchantId: string): Promise<Category[]> {
-  const rows = await db.query<{ id: string; slug: string; name: string; image_url: string | null; position: number }>(
-    `select id, slug, name, image_url, position from categories where merchant_id = $1 order by position, name`,
+  const rows = await db.query<{ id: string; slug: string; name: string; image_url: string | null; position: number; hidden: boolean }>(
+    `select id, slug, name, image_url, position, hidden from categories where merchant_id = $1 order by position, name`,
     [merchantId],
   );
-  return rows.map((r) => ({ id: r.id, slug: r.slug, name: r.name, imageUrl: r.image_url, position: r.position }));
+  return rows.map((r) => ({ id: r.id, slug: r.slug, name: r.name, imageUrl: r.image_url, position: r.position, hidden: r.hidden }));
 }
 
 /** Renombra / actualiza una categoría (nombre, foto, posición). Solo campos provistos. */
 export async function updateCategory(
   db: Db,
-  input: { categoryId: string; name?: string; imageUrl?: string | null; position?: number },
+  input: { categoryId: string; name?: string; imageUrl?: string | null; position?: number; hidden?: boolean },
 ): Promise<void> {
   const sets: string[] = [];
   const params: unknown[] = [input.categoryId];
   if (input.name !== undefined) { params.push(input.name); sets.push(`name = $${params.length}`); }
   if (input.imageUrl !== undefined) { params.push(input.imageUrl); sets.push(`image_url = $${params.length}`); }
   if (input.position !== undefined) { params.push(input.position); sets.push(`position = $${params.length}`); }
+  if (input.hidden !== undefined) { params.push(input.hidden); sets.push(`hidden = $${params.length}`); }
   if (sets.length === 0) return;
   await db.query(`update categories set ${sets.join(", ")} where id = $1`, params);
 }

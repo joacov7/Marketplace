@@ -13,7 +13,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
-  let body: { name?: string; imageUrl?: string; position?: number };
+  let body: { name?: string; imageUrl?: string; position?: number; hidden?: boolean };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -26,6 +26,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       ...(body.name !== undefined ? { name: body.name.trim() } : {}),
       ...(body.imageUrl !== undefined ? { imageUrl: safeUrl(body.imageUrl) || null } : {}),
       ...(body.position !== undefined ? { position: Number(body.position) } : {}),
+      ...(body.hidden !== undefined ? { hidden: !!body.hidden } : {}),
     }),
   );
   return NextResponse.json({ ok: true });

@@ -151,6 +151,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
     const products = [...byProduct.values()].filter((p) => p.variants.length > 0);
 
     const storeCategories: StoreCategory[] = catRows
+      .filter((c) => !c.hidden)
       .map((c) => ({ name: c.name, position: c.position, imageUrl: safeUrl(c.imageUrl ?? "") }))
       .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
 
