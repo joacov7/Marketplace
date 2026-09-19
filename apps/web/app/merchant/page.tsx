@@ -1800,6 +1800,9 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
       const d = await res.json();
       setSaving(false);
       if (!res.ok) { onError(`${d.error}${d.key ? ` (${d.key})` : ""}`); return; }
+      if (Array.isArray(d.failed) && d.failed.length > 0) {
+        onError(`Se guardó casi todo, pero estos campos no (suele ser por texto demasiado largo): ${d.failed.map((x: { key: string }) => x.key).join(", ")}.`);
+      }
       setSaved(true);
     } catch (e) { setSaving(false); onError(String(e)); }
   }
@@ -1928,6 +1931,17 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
           </div>
           <p style={{ margin: "6px 0 0", opacity: 0.9 }}>{theme["branding.bannerText"] || "¿Qué necesitás para tu mascota?"}</p>
         </div>
+        {theme["storefront.promoText"] && (
+          <div style={{ marginTop: 8, background: primary, color: "white", fontSize: 11.5, fontWeight: 600, textAlign: "center", padding: "6px 8px", borderRadius: 8 }}>{theme["storefront.promoText"]}</div>
+        )}
+        {(theme["storefront.heroTitle"] || theme["storefront.heroHighlight"] || theme["storefront.heroSubtitle"]) && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: INK, lineHeight: 1.15 }}>
+              {theme["storefront.heroTitle"]} {theme["storefront.heroHighlight"] && <span style={{ color: primary }}>{theme["storefront.heroHighlight"]}</span>}
+            </div>
+            {theme["storefront.heroSubtitle"] && <div style={{ fontSize: 13, color: MUT, marginTop: 4 }}>{theme["storefront.heroSubtitle"]}</div>}
+          </div>
+        )}
         <div style={{ marginTop: 12, display: "grid", gap: 8, gridTemplateColumns: theme["branding.layout"] === "list" ? "1fr" : "1fr 1fr" }}>
           {["Alimento premium", "Juguete"].map((n) => (
             <div key={n} style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, display: "flex", flexDirection: theme["branding.layout"] === "list" ? "row" : "column", justifyContent: "space-between", gap: 8 }}>

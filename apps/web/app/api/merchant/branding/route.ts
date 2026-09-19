@@ -63,7 +63,10 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
+  // Aplica cada clave de forma independiente: que un campo inválido (p. ej. un texto demasiado
+  // largo) NO impida guardar el resto. Se informa qué claves fallaron para poder corregirlas.
   const applied: string[] = [];
+  const failed: { key: string; error: string }[] = [];
   for (const key of THEME_KEYS) {
     if (!(key in body)) continue;
     const res = await setConfigValue(db(), {
@@ -74,9 +77,13 @@ export async function PATCH(req: Request) {
       actor: "merchant-admin",
       reason: "theme-editor",
     });
-    if (!res.ok) return NextResponse.json({ error: res.error, key }, { status: 400 });
+    if (!res.ok) { failed.push({ key, error: res.error }); continue; }
     applied.push(key);
   }
 
-  return NextResponse.json({ ok: true, applied });
+  // Solo es un error duro si NO se pudo guardar nada.
+  if (applied.length === 0 && failed.length > 0) {
+    return NextResponse.json({ error: failed[0]!.error, key: failed[0]!.key, failed }, { status: 400 });
+  }
+  return NextResponse.json({ ok: true, applied, failed });
 }
