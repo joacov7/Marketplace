@@ -199,6 +199,7 @@ export default function Storefront(props: {
   displayName: string;
   primary: string;
   logoUrl: string;
+  bannerImageUrl: string;
   whatsapp: string;
   whatsappMessage: string;
   products: StoreProduct[];
@@ -578,6 +579,12 @@ export default function Storefront(props: {
           )}
         </div>
       </div>
+
+      {props.bannerImageUrl && (
+        // Portada del comercio (opcional). Arriba de todo, se va con el scroll; el header queda sticky.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={props.bannerImageUrl} alt={`Portada de ${props.displayName}`} className="sf-cover" style={{ display: "block", width: "100%", height: "clamp(120px, 22vw, 260px)", objectFit: "cover" }} />
+      )}
 
       <Header
         G={G} tenant={tenant} logoUrl={props.logoUrl} displayName={props.displayName}

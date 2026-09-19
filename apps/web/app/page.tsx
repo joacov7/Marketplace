@@ -70,7 +70,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
 
   try {
     const [
-      primary, displayName, logoUrl, whatsapp, whatsappMessage,
+      primary, displayName, logoUrl, bannerImageUrl, whatsapp, whatsappMessage,
       thresholdMinor, standardCostMinor, auxilioCostMinor, transferPct, auxilioEnabled,
       featuredCount, listColumns,
       promoText, heroTitle, heroHighlight, heroSubtitle, footerBlurb, perks, benefits,
@@ -84,6 +84,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<string>("branding.primaryColor"),
       cfg<string>("branding.displayName"),
       cfg<string>("branding.logoUrl"),
+      cfg<string>("branding.bannerImageUrl"),
       cfg<string>("contact.whatsapp"),
       cfg<string>("contact.whatsappMessage"),
       cfg<number>("delivery.freeOverOrderTotalMinor"),
@@ -208,6 +209,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
         displayName={cleanText(displayName, "Pet Shop")}
         primary={cssColor(primary)}
         logoUrl={safeUrl(logoUrl)}
+        bannerImageUrl={safeUrl(bannerImageUrl)}
         whatsapp={(whatsapp ?? "").replace(/[^0-9]/g, "")}
         whatsappMessage={cleanText(whatsappMessage, "¡Hola! Quiero hacer un pedido.")}
         products={products}

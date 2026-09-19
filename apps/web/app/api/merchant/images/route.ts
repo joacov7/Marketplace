@@ -23,9 +23,18 @@ export async function POST(req: Request) {
   if (buf.length === 0) return NextResponse.json({ error: "empty" }, { status: 400 });
   if (buf.length > MAX_BYTES) return NextResponse.json({ error: "too_large" }, { status: 413 });
 
-  const [row] = await db().query<{ id: string }>(
-    `insert into images (tenant_id, content_type, data, byte_size) values ($1,$2,$3,$4) returning id`,
-    [tenant.tenantId, contentType, buf, buf.length],
-  );
-  return NextResponse.json({ id: row!.id, url: `/api/images/${row!.id}` }, { status: 201 });
+  try {
+    const [row] = await db().query<{ id: string }>(
+      `insert into images (tenant_id, content_type, data, byte_size) values ($1,$2,$3,$4) returning id`,
+      [tenant.tenantId, contentType, buf, buf.length],
+    );
+    return NextResponse.json({ id: row!.id, url: `/api/images/${row!.id}` }, { status: 201 });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // La tabla no existe todavía → falta correr las migraciones (botón "Migrar base").
+    if (/relation "?images"? does not exist/i.test(msg)) {
+      return NextResponse.json({ error: "needs_migration" }, { status: 503 });
+    }
+    return NextResponse.json({ error: "db_error" }, { status: 500 });
+  }
 }

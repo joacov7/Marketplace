@@ -155,8 +155,16 @@ function ImageField({ tenant, token, value, onChange, onError, size = 46 }: {
         headers: { authorization: `Bearer ${token}`, "content-type": blob.type },
         body: blob,
       });
-      const d = await res.json();
-      if (!res.ok) { onError(d.error === "too_large" ? "La imagen es muy pesada." : "No se pudo subir la foto."); return; }
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        onError(
+          d.error === "too_large" ? "La imagen es muy pesada."
+          : d.error === "needs_migration" ? "Falta preparar la base: tocá “Migrar base” arriba y volvé a intentar."
+          : d.error === "unsupported_type" ? "Formato no soportado. Usá JPG, PNG o WebP."
+          : "No se pudo subir la foto.",
+        );
+        return;
+      }
       onChange(d.url);
     } catch {
       onError("No se pudo procesar la imagen.");
@@ -380,6 +388,15 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
     await load();
   }
 
+  async function setCategoryImage(id: string, url: string) {
+    onError(null);
+    const res = await fetch(`/api/merchant/categories/${id}?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ imageUrl: url }),
+    });
+    if (!res.ok) { const d = await res.json(); onError(d.error); return; }
+    await load();
+  }
+
   async function removeCategory(id: string, name: string) {
     if (!confirm(`¿Borrar la categoría "${name}"? Los productos quedan sin categoría.`)) return;
     onError(null);
@@ -401,13 +418,14 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
       <div style={{ ...card }}>
         <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Categorías</h3>
         {cats.length > 0 && (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
             {cats.map((c) => (
-              <span key={c.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#eef0f3", borderRadius: 999, padding: "4px 6px 4px 12px", fontSize: 13, fontWeight: 600, color: "#445" }}>
-                {c.name}
-                <button onClick={() => renameCategory(c.id, c.name)} title="Renombrar" style={{ border: "none", background: "transparent", cursor: "pointer", padding: "0 2px", display: "inline-flex" }}><Pencil size={13} strokeWidth={1.9} /></button>
-                <button onClick={() => removeCategory(c.id, c.name)} title="Borrar" style={{ border: "none", background: "transparent", cursor: "pointer", padding: "0 2px", color: "#c62828", display: "inline-flex" }}><X size={13} strokeWidth={2} /></button>
-              </span>
+              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#f6f7f9", borderRadius: 10, padding: "8px 10px" }}>
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: "#445", flex: 1, minWidth: 120 }}>{c.name}</span>
+                <ImageField tenant={tenant} token={token} value={c.imageUrl ?? ""} onChange={(url) => setCategoryImage(c.id, url)} onError={onError} size={38} />
+                <button onClick={() => renameCategory(c.id, c.name)} title="Renombrar" className="mbtn" style={{ ...btnGhost, padding: "8px 10px", display: "inline-flex", alignItems: "center" }}><Pencil size={14} strokeWidth={1.9} /></button>
+                <button onClick={() => removeCategory(c.id, c.name)} title="Borrar" className="mbtn" style={{ ...btnGhost, padding: "8px 10px", color: "#c62828", display: "inline-flex", alignItems: "center" }}><X size={14} strokeWidth={2} /></button>
+              </div>
             ))}
           </div>
         )}
@@ -1812,8 +1830,9 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
         <Field label="Texto del banner" hint="Lema que se muestra bajo el nombre.">
           <input value={theme["branding.bannerText"]} onChange={(e) => set("branding.bannerText", e.target.value)} placeholder="Todo para tu mascota, en el día" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
         </Field>
-        <Field label="Imagen del banner" hint="Subí el archivo. Vacío = fondo de color.">
+        <Field label="Portada de la tienda" hint="Foto ancha arriba de todo (tipo portada de Facebook). Vacío = sin portada.">
           <ImageField tenant={tenant} token={token} value={theme["branding.bannerImageUrl"]} onChange={(url) => set("branding.bannerImageUrl", url)} onError={onError} />
+          <UrlPreview url={theme["branding.bannerImageUrl"]} ratio="1280 / 260" />
         </Field>
         <Field label="Imagen del hero" hint="Foto principal de la home, aprox. 1080×450. Vacío = placeholder.">
           <ImageField tenant={tenant} token={token} value={theme["storefront.heroImageUrl"]} onChange={(url) => set("storefront.heroImageUrl", url)} onError={onError} />
