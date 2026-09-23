@@ -202,6 +202,99 @@ export async function salesByDay(db: Db, opts: { days?: number } = {}): Promise<
   return rows.map((r) => ({ day: r.day, orders: Number(r.orders), gmvMinor: BigInt(r.gmv) }));
 }
 
+export interface WeekdaySalesRow {
+  /** Día ISO: 1 = lunes … 7 = domingo. */
+  dow: number;
+  orders: number;
+  units: number;
+  gmvMinor: bigint;
+  /** Producto más vendido de ese día (por unidades). null si no hubo ventas. */
+  topProduct: string | null;
+  topUnits: number;
+}
+
+/**
+ * Ventas por DÍA DE LA SEMANA (para anticipar stock: qué días concentran demanda y qué se
+ * vende más cada día). Une los pedidos cobrados con sus items; el "top" de cada día sale por
+ * unidades. Filas ralas (solo días con ventas): el panel completa lunes→domingo.
+ */
+export async function salesByWeekday(db: Db, window: ReportWindow = {}): Promise<WeekdaySalesRow[]> {
+  const aParams: unknown[] = [];
+  const aWin = windowClause(window, "o.created_at", aParams);
+  const agg = await db.query<{ dow: number; orders: string; units: string; gmv: string }>(
+    `select extract(isodow from o.created_at)::int as dow,
+            count(distinct o.id)::text as orders,
+            coalesce(sum(oi.qty),0)::text as units,
+            coalesce(sum(oi.qty * oi.unit_price_minor),0)::text as gmv
+       from orders o
+       join seller_orders so on so.order_id = o.id
+       join order_items oi on oi.seller_order_id = so.id
+      where o.status in ${PAID_STATUSES}${aWin}
+      group by 1`,
+    aParams,
+  );
+  const tParams: unknown[] = [];
+  const tWin = windowClause(window, "o.created_at", tParams);
+  const tops = await db.query<{ dow: number; product_name: string; units: string }>(
+    `select dow, product_name, units from (
+       select extract(isodow from o.created_at)::int as dow, p.name as product_name,
+              sum(oi.qty) as units,
+              row_number() over (partition by extract(isodow from o.created_at)::int order by sum(oi.qty) desc, p.name) as rn
+         from order_items oi
+         join seller_orders so on so.id = oi.seller_order_id
+         join orders o on o.id = so.order_id
+         join variants v on v.id = oi.variant_id
+         join products p on p.id = v.product_id
+        where o.status in ${PAID_STATUSES}${tWin}
+        group by 1, p.name
+     ) t where rn = 1`,
+    tParams,
+  );
+  const topByDow = new Map(tops.map((t) => [Number(t.dow), { name: t.product_name, units: Number(t.units) }]));
+  return agg.map((r) => {
+    const top = topByDow.get(Number(r.dow));
+    return {
+      dow: Number(r.dow),
+      orders: Number(r.orders),
+      units: Number(r.units),
+      gmvMinor: BigInt(r.gmv),
+      topProduct: top?.name ?? null,
+      topUnits: top?.units ?? 0,
+    };
+  });
+}
+
+export interface SlotSalesRow {
+  /** Etiqueta del turno elegido en el pedido (delivery_window). */
+  slot: string;
+  orders: number;
+  units: number;
+  gmvMinor: bigint;
+}
+
+/**
+ * Ventas por TURNO de entrega (delivery_window del pedido), ordenadas por unidades. Muestra en
+ * qué franja se concentra la demanda para planificar reparto y stock. Sin turno → "(sin turno)".
+ */
+export async function salesBySlot(db: Db, window: ReportWindow = {}): Promise<SlotSalesRow[]> {
+  const params: unknown[] = [];
+  const win = windowClause(window, "o.created_at", params);
+  const rows = await db.query<{ slot: string; orders: string; units: string; gmv: string }>(
+    `select coalesce(nullif(trim(o.delivery_window), ''), '(sin turno)') as slot,
+            count(distinct o.id)::text as orders,
+            coalesce(sum(oi.qty),0)::text as units,
+            coalesce(sum(oi.qty * oi.unit_price_minor),0)::text as gmv
+       from orders o
+       join seller_orders so on so.order_id = o.id
+       join order_items oi on oi.seller_order_id = so.id
+      where o.status in ${PAID_STATUSES}${win}
+      group by 1
+      order by sum(oi.qty) desc`,
+    params,
+  );
+  return rows.map((r) => ({ slot: r.slot, orders: Number(r.orders), units: Number(r.units), gmvMinor: BigInt(r.gmv) }));
+}
+
 export interface SubscriptionMetrics {
   /** Suscripciones vigentes (motor de recompra). */
   activeSubs: number;

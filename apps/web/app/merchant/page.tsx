@@ -25,7 +25,9 @@ interface ReportSeries { day: string; orders: number; gmvMinor: string }
 interface ReportTop { productId: string; productName: string; unitsSold: number; revenueMinor: string }
 interface ReportAlert { variantId: string; productName: string; variantName: string; available: number; reserved: number }
 interface ReportSubs { activeSubs: number; pausedSubs: number; cancelledSubs: number; generatedOrders: number; confirmedOrders: number; rejectedOrders: number; pendingOrders: number; confirmationRate: number }
-interface ReportData { summary: ReportSummary; series: ReportSeries[]; top: ReportTop[]; alerts: ReportAlert[]; subs?: ReportSubs }
+interface ReportWeekday { dow: number; orders: number; units: number; gmvMinor: string; topProduct: string | null; topUnits: number }
+interface ReportSlot { slot: string; orders: number; units: number; gmvMinor: string }
+interface ReportData { summary: ReportSummary; series: ReportSeries[]; top: ReportTop[]; alerts: ReportAlert[]; subs?: ReportSubs; byWeekday?: ReportWeekday[]; bySlot?: ReportSlot[] }
 interface Theme {
   "branding.displayName": string;
   "branding.primaryColor": string;
@@ -1738,6 +1740,57 @@ function ReportsTab({ tenant, token, onError }: { tenant: string | null; token: 
           </div>
         )}
       </div>
+
+      {((data.byWeekday && data.byWeekday.length > 0) || (data.bySlot && data.bySlot.length > 0)) && (
+        <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
+          {data.byWeekday && data.byWeekday.length > 0 && (() => {
+            const WD = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+            const byDow = new Map(data.byWeekday!.map((r) => [r.dow, r]));
+            const maxU = Math.max(1, ...data.byWeekday!.map((r) => r.units));
+            const rows = [1, 2, 3, 4, 5, 6, 7].map((dow) => ({ dow, label: WD[dow - 1]!, r: byDow.get(dow) }));
+            return (
+              <div style={card}>
+                <h3 style={sectionTitle}>Por día de la semana <span style={{ fontSize: 12, color: "#9aa2ab", fontWeight: 400 }}>(anticipar stock)</span></h3>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 110 }}>
+                  {rows.map(({ dow, label, r }) => (
+                    <div key={dow} title={r ? `${label}: ${r.units} u · ${r.orders} pedido(s)${r.topProduct ? ` · top: ${r.topProduct}` : ""}` : `${label}: sin ventas`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                      <div style={{ width: "100%", background: r && r.units > 0 ? A : "#e7e9ec", borderRadius: "4px 4px 0 0", height: `${r ? Math.max(4, (r.units / maxU) * 100) : 2}%` }} />
+                      <span style={{ fontSize: 10, color: "#889" }}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+                <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "grid", gap: 4 }}>
+                  {rows.filter((x) => x.r && x.r.topProduct).map(({ dow, label, r }) => (
+                    <li key={dow} style={{ fontSize: 12.5, color: "#556", display: "flex", justifyContent: "space-between", gap: 10 }}>
+                      <span><b>{label}</b> · {r!.units} u</span>
+                      <span style={{ color: MUT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>top: {r!.topProduct} ({r!.topUnits})</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
+          {data.bySlot && data.bySlot.length > 0 && (() => {
+            const maxU = Math.max(1, ...data.bySlot!.map((r) => r.units));
+            return (
+              <div style={card}>
+                <h3 style={sectionTitle}>Por turno de entrega</h3>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {data.bySlot!.map((r) => (
+                    <div key={r.slot} style={{ display: "grid", gridTemplateColumns: "minmax(84px, 34%) 1fr auto", gap: 10, alignItems: "center" }}>
+                      <span title={r.slot} style={{ fontSize: 13, fontWeight: 600, color: "#445", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.slot}</span>
+                      <div style={{ background: "#eef0f3", borderRadius: 6, height: 14, overflow: "hidden" }}>
+                        <div style={{ width: `${Math.max(4, (r.units / maxU) * 100)}%`, height: "100%", background: A, borderRadius: 6 }} />
+                      </div>
+                      <span style={{ fontSize: 12, color: MUT, whiteSpace: "nowrap" }}>{r.units} u · {r.orders} ped.</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
         <div style={card}>

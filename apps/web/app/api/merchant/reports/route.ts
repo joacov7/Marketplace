@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { salesSummary, topProducts, stockAlerts, salesByDay, subscriptionMetrics } from "@commerce/modules/reports";
+import { salesSummary, topProducts, stockAlerts, salesByDay, subscriptionMetrics, salesByWeekday, salesBySlot } from "@commerce/modules/reports";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { requireServiceToken } from "@/lib/auth";
@@ -21,14 +21,16 @@ export async function GET(req: Request) {
   const threshold = Math.max(0, Number(url.searchParams.get("stockThreshold") ?? "5"));
 
   const data = await db().withTenant(tenant.tenantId, async (tx) => {
-    const [summary, series, top, alerts, subs] = await Promise.all([
+    const [summary, series, top, alerts, subs, byWeekday, bySlot] = await Promise.all([
       salesSummary(tx),
       salesByDay(tx, { days }),
       topProducts(tx, { limit: 10 }),
       stockAlerts(tx, { threshold }),
       subscriptionMetrics(tx),
+      salesByWeekday(tx),
+      salesBySlot(tx),
     ]);
-    return { summary, series, top, alerts, subs };
+    return { summary, series, top, alerts, subs, byWeekday, bySlot };
   });
 
   return NextResponse.json({
@@ -56,5 +58,7 @@ export async function GET(req: Request) {
       reserved: r.reserved,
     })),
     subs: data.subs,
+    byWeekday: data.byWeekday.map((r) => ({ dow: r.dow, orders: r.orders, units: r.units, gmvMinor: r.gmvMinor.toString(), topProduct: r.topProduct, topUnits: r.topUnits })),
+    bySlot: data.bySlot.map((r) => ({ slot: r.slot, orders: r.orders, units: r.units, gmvMinor: r.gmvMinor.toString() })),
   });
 }

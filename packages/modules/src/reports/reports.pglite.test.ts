@@ -7,7 +7,7 @@ import { setStock } from "../inventory/inventory.js";
 import { createOrder } from "../orders/orders.js";
 import { FakePaymentProvider } from "../payments/provider.js";
 import { createPaymentIntent, capturePayment } from "../payments/payments.js";
-import { salesSummary, topProducts, stockAlerts, salesByDay, subscriptionMetrics } from "./reports.js";
+import { salesSummary, topProducts, stockAlerts, salesByDay, subscriptionMetrics, salesByWeekday, salesBySlot } from "./reports.js";
 import { createSubscription, updateSubscription } from "../subscriptions/subscriptions.js";
 
 describe("Reports — resumen de ventas, top productos, alertas de stock (RLS)", () => {
@@ -151,5 +151,60 @@ describe("Reports — métrica de suscripción (confirma vs no confirma)", () =>
     expect(m.activeSubs).toBe(1);
     expect(m.pausedSubs).toBe(1);
     expect(m.cancelledSubs).toBe(0);
+  });
+});
+
+describe("Reports — ventas por día de la semana y por turno", () => {
+  let pg: PGlite;
+  let db: TenantAwareDb;
+  let tenantId: string;
+  let merchantId: string;
+  const provider = new FakePaymentProvider();
+
+  beforeAll(async () => {
+    ({ pg, db } = await freshModulesDb());
+    ({ tenantId, merchantId } = await seedTenantMerchant(db));
+  });
+  afterAll(async () => {
+    await pg?.close();
+  });
+
+  async function newVariant(name: string): Promise<string> {
+    return db.withTenant(tenantId, async (tx) => {
+      const { productId } = await createProduct(tx, { tenantId, merchantId, slug: "wd-" + Math.random(), name });
+      const { variantId } = await addVariant(tx, { tenantId, productId, sku: "WD" + Math.random(), name });
+      await setPrice(tx, { tenantId, variantId, amountMinor: 1_000_000n, currency: "ARS" });
+      await setStock(tx, { tenantId, variantId, available: 100 });
+      return variantId;
+    });
+  }
+
+  async function paidOrder(variantId: string, qty: number, key: string, slot: string): Promise<void> {
+    const created = await createOrder(db, { tenantId, sellers: [{ merchantId, items: [{ variantId, qty, unitPriceMinor: 1_000_000n }] }] });
+    if (!created.ok) throw new Error("createOrder falló");
+    const intent = await createPaymentIntent(db, provider, { tenantId, orderId: created.value.orderId, idempotencyKey: key });
+    if (!intent.ok) throw new Error("intent falló");
+    const cap = await capturePayment(db, { tenantId, providerEventId: "evt-" + key, providerRef: intent.value.providerRef });
+    if (!cap.ok) throw new Error("capture falló");
+    await db.withTenant(tenantId, (tx) => tx.query("update orders set delivery_window = $2 where id = $1", [created.value.orderId, slot]));
+  }
+
+  it("agrupa por día (con top producto) y por turno, ordenado por unidades", async () => {
+    const croquetas = await newVariant("Croquetas");
+    const juguete = await newVariant("Juguete");
+    await paidOrder(croquetas, 2, "w1", "Mañana");
+    await paidOrder(croquetas, 2, "w2", "Tarde");
+    await paidOrder(juguete, 1, "w3", "Mañana");
+
+    const wd = await db.withTenant(tenantId, (tx) => salesByWeekday(tx));
+    expect(wd.reduce((a, r) => a + r.units, 0)).toBe(5); // 2+2+1
+    expect(wd.reduce((a, r) => a + r.orders, 0)).toBe(3);
+    expect(wd.some((r) => r.topProduct === "Croquetas" && r.topUnits === 4)).toBe(true);
+
+    const slots = await db.withTenant(tenantId, (tx) => salesBySlot(tx));
+    expect(slots[0]!.slot).toBe("Mañana"); // más unidades (3) primero
+    expect(slots.find((s) => s.slot === "Mañana")!.units).toBe(3);
+    expect(slots.find((s) => s.slot === "Mañana")!.orders).toBe(2);
+    expect(slots.find((s) => s.slot === "Tarde")!.units).toBe(2);
   });
 });
