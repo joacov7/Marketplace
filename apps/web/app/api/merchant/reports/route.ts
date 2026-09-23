@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { salesSummary, topProducts, stockAlerts, salesByDay } from "@commerce/modules/reports";
+import { salesSummary, topProducts, stockAlerts, salesByDay, subscriptionMetrics } from "@commerce/modules/reports";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { requireServiceToken } from "@/lib/auth";
@@ -21,13 +21,14 @@ export async function GET(req: Request) {
   const threshold = Math.max(0, Number(url.searchParams.get("stockThreshold") ?? "5"));
 
   const data = await db().withTenant(tenant.tenantId, async (tx) => {
-    const [summary, series, top, alerts] = await Promise.all([
+    const [summary, series, top, alerts, subs] = await Promise.all([
       salesSummary(tx),
       salesByDay(tx, { days }),
       topProducts(tx, { limit: 10 }),
       stockAlerts(tx, { threshold }),
+      subscriptionMetrics(tx),
     ]);
-    return { summary, series, top, alerts };
+    return { summary, series, top, alerts, subs };
   });
 
   return NextResponse.json({
@@ -54,5 +55,6 @@ export async function GET(req: Request) {
       available: r.available,
       reserved: r.reserved,
     })),
+    subs: data.subs,
   });
 }

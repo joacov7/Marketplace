@@ -24,7 +24,8 @@ interface ReportSummary { paidOrders: number; gmvMinor: string; deliveryRevenueM
 interface ReportSeries { day: string; orders: number; gmvMinor: string }
 interface ReportTop { productId: string; productName: string; unitsSold: number; revenueMinor: string }
 interface ReportAlert { variantId: string; productName: string; variantName: string; available: number; reserved: number }
-interface ReportData { summary: ReportSummary; series: ReportSeries[]; top: ReportTop[]; alerts: ReportAlert[] }
+interface ReportSubs { activeSubs: number; pausedSubs: number; cancelledSubs: number; generatedOrders: number; confirmedOrders: number; rejectedOrders: number; pendingOrders: number; confirmationRate: number }
+interface ReportData { summary: ReportSummary; series: ReportSeries[]; top: ReportTop[]; alerts: ReportAlert[]; subs?: ReportSubs }
 interface Theme {
   "branding.displayName": string;
   "branding.primaryColor": string;
@@ -1676,6 +1677,8 @@ function ReportsTab({ tenant, token, onError }: { tenant: string | null; token: 
   if (!data) return <p style={{ color: "#888" }}>{loading ? "Cargando reportes…" : "Sin datos."}</p>;
   const s = data.summary;
   const maxGmv = Math.max(1, ...data.series.map((r) => Number(r.gmvMinor)));
+  const subPct = data.subs ? Math.round(data.subs.confirmationRate * 100) : 0;
+  const subCol = subPct >= 70 ? A : subPct >= 40 ? "#b5791f" : "#c62828";
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -1690,6 +1693,37 @@ function ReportsTab({ tenant, token, onError }: { tenant: string | null; token: 
         <Metric label="Ticket promedio" value={money(s.avgTicketMinor)} />
         {Number(s.refundsMinor) > 0 && <Metric label="Devoluciones" value={money(s.refundsMinor)} accent="#c62828" />}
       </div>
+
+      {data.subs && (
+        <div style={card}>
+          <h3 style={sectionTitle}>Suscripción · ¿el auto-envío retiene?</h3>
+          {data.subs.generatedOrders === 0 ? (
+            <p style={{ color: "#aaa", margin: 0 }}>Todavía no se generaron envíos automáticos de suscripción. Cuando el cron empiece a generarlos, vas a ver acá qué porcentaje confirma el cliente.</p>
+          ) : (
+            <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ textAlign: "center", minWidth: 110 }}>
+                <div style={{ fontSize: 44, fontWeight: 800, lineHeight: 1, color: subCol }}>{subPct}%</div>
+                <div style={{ fontSize: 12, color: MUT, marginTop: 4 }}>confirma el envío</div>
+                <div style={{ fontSize: 11, color: "#9aa2ab", marginTop: 2 }}>sobre {data.subs.confirmedOrders + data.subs.rejectedOrders} decidido(s)</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))", gap: 8, flex: 1, minWidth: 220 }}>
+                {([["Generados", data.subs.generatedOrders, INK], ["Confirmados", data.subs.confirmedOrders, A_DARK], ["Rechazados", data.subs.rejectedOrders, "#c62828"], ["Pendientes", data.subs.pendingOrders, MUT]] as Array<[string, number, string]>).map(([l, v, c]) => (
+                  <div key={l} style={{ background: "#f6f7f9", borderRadius: 10, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: c }}>{v}</div>
+                    <div style={{ fontSize: 11.5, color: MUT }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14, fontSize: 12.5 }}>
+            <span style={{ background: A_SOFT, color: A_DARK, borderRadius: 999, padding: "4px 12px" }}>Activas: <b>{data.subs.activeSubs}</b></span>
+            <span style={{ background: "#eef0f3", color: "#556", borderRadius: 999, padding: "4px 12px" }}>Pausadas: <b>{data.subs.pausedSubs}</b></span>
+            <span style={{ background: "#eef0f3", color: "#556", borderRadius: 999, padding: "4px 12px" }}>Canceladas: <b>{data.subs.cancelledSubs}</b></span>
+          </div>
+          <p style={{ fontSize: 11.5, color: MUT, margin: "10px 0 0" }}>Confirmado = el envío se volvió venta. Rechazado = el cliente lo canceló. Si este % baja, la suscripción no está reteniendo — ahí hay que revisar frecuencia o precio.</p>
+        </div>
+      )}
 
       <div style={card}>
         <h3 style={sectionTitle}>Ventas últimos 14 días</h3>

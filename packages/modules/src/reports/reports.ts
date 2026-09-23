@@ -201,3 +201,60 @@ export async function salesByDay(db: Db, opts: { days?: number } = {}): Promise<
   );
   return rows.map((r) => ({ day: r.day, orders: Number(r.orders), gmvMinor: BigInt(r.gmv) }));
 }
+
+export interface SubscriptionMetrics {
+  /** Suscripciones vigentes (motor de recompra). */
+  activeSubs: number;
+  pausedSubs: number;
+  cancelledSubs: number;
+  /** Pedidos de auto-envío generados por suscripción en la ventana. */
+  generatedOrders: number;
+  /** De esos, los que se volvieron venta (confirmado/completado). */
+  confirmedOrders: number;
+  /** Los cancelados/rechazados (el cliente no confirmó). */
+  rejectedOrders: number;
+  /** Los que todavía están a aceptar/en curso (aún sin decidir). */
+  pendingOrders: number;
+  /** confirmados / (confirmados + rechazados). 0..1; 0 si nada se decidió aún. */
+  confirmationRate: number;
+}
+
+/**
+ * Métrica de salud de la suscripción: cuántos envíos automáticos se generan y qué porcentaje
+ * el cliente CONFIRMA (se vuelve venta) vs. no confirma (cancela/rechaza). Es el número que dice
+ * si el auto-envío realmente retiene. Los pedidos de suscripción se identifican por
+ * `orders.channel = 'suscripcion'`; el estado del pedido define confirmado/rechazado/pendiente.
+ */
+export async function subscriptionMetrics(db: Db, window: ReportWindow = {}): Promise<SubscriptionMetrics> {
+  const orderParams: unknown[] = [];
+  const win = windowClause(window, "created_at", orderParams);
+  const [o] = await db.query<{ generated: string; confirmed: string; rejected: string; pending: string }>(
+    `select
+       count(*) filter (where channel = 'suscripcion')::text                                as generated,
+       count(*) filter (where channel = 'suscripcion' and status in ${PAID_STATUSES})::text as confirmed,
+       count(*) filter (where channel = 'suscripcion' and status = 'cancelled')::text       as rejected,
+       count(*) filter (where channel = 'suscripcion' and status = 'pending_payment')::text as pending
+     from orders where 1=1${win}`,
+    orderParams,
+  );
+  const [s] = await db.query<{ active: string; paused: string; cancelled: string }>(
+    `select
+       count(*) filter (where status = 'active')::text    as active,
+       count(*) filter (where status = 'paused')::text    as paused,
+       count(*) filter (where status = 'cancelled')::text as cancelled
+     from subscriptions`,
+  );
+  const confirmed = Number(o?.confirmed ?? 0);
+  const rejected = Number(o?.rejected ?? 0);
+  const decided = confirmed + rejected;
+  return {
+    activeSubs: Number(s?.active ?? 0),
+    pausedSubs: Number(s?.paused ?? 0),
+    cancelledSubs: Number(s?.cancelled ?? 0),
+    generatedOrders: Number(o?.generated ?? 0),
+    confirmedOrders: confirmed,
+    rejectedOrders: rejected,
+    pendingOrders: Number(o?.pending ?? 0),
+    confirmationRate: decided > 0 ? confirmed / decided : 0,
+  };
+}

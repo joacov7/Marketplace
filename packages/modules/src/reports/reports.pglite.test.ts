@@ -7,7 +7,8 @@ import { setStock } from "../inventory/inventory.js";
 import { createOrder } from "../orders/orders.js";
 import { FakePaymentProvider } from "../payments/provider.js";
 import { createPaymentIntent, capturePayment } from "../payments/payments.js";
-import { salesSummary, topProducts, stockAlerts, salesByDay } from "./reports.js";
+import { salesSummary, topProducts, stockAlerts, salesByDay, subscriptionMetrics } from "./reports.js";
+import { createSubscription, updateSubscription } from "../subscriptions/subscriptions.js";
 
 describe("Reports — resumen de ventas, top productos, alertas de stock (RLS)", () => {
   let pg: PGlite;
@@ -82,5 +83,73 @@ describe("Reports — resumen de ventas, top productos, alertas de stock (RLS)",
     expect(alerts.some((a) => a.productName === "CasiSinStock" && a.available === 2)).toBe(true);
     // Los de stock 100 no aparecen.
     expect(alerts.every((a) => a.available <= 5)).toBe(true);
+  });
+});
+
+describe("Reports — métrica de suscripción (confirma vs no confirma)", () => {
+  let pg: PGlite;
+  let db: TenantAwareDb;
+  let tenantId: string;
+  let merchantId: string;
+  const provider = new FakePaymentProvider();
+
+  beforeAll(async () => {
+    ({ pg, db } = await freshModulesDb());
+    ({ tenantId, merchantId } = await seedTenantMerchant(db));
+  });
+  afterAll(async () => {
+    await pg?.close();
+  });
+
+  async function subVariant(): Promise<string> {
+    return db.withTenant(tenantId, async (tx) => {
+      const { productId } = await createProduct(tx, { tenantId, merchantId, slug: "sub-" + Math.random(), name: "Alimento Sub" });
+      const { variantId } = await addVariant(tx, { tenantId, productId, sku: "SB" + Math.random(), name: "15kg" });
+      await setPrice(tx, { tenantId, variantId, amountMinor: 1_000_000n, currency: "ARS" });
+      await setStock(tx, { tenantId, variantId, available: 100 });
+      return variantId;
+    });
+  }
+
+  /** Pedido de canal 'suscripcion'. opts.confirm → capturado (venta); opts.cancel → cancelado. */
+  async function subOrder(variantId: string, opts: { confirm?: boolean; cancel?: boolean }, key: string): Promise<void> {
+    const created = await createOrder(db, {
+      tenantId,
+      channel: "suscripcion",
+      sellers: [{ merchantId, items: [{ variantId, qty: 1, unitPriceMinor: 1_000_000n }] }],
+    });
+    if (!created.ok) throw new Error("createOrder falló: " + created.error);
+    const orderId = created.value.orderId;
+    if (opts.confirm) {
+      const intent = await createPaymentIntent(db, provider, { tenantId, orderId, idempotencyKey: key });
+      if (!intent.ok) throw new Error("intent falló");
+      const cap = await capturePayment(db, { tenantId, providerEventId: "evt-" + key, providerRef: intent.value.providerRef });
+      if (!cap.ok) throw new Error("capture falló");
+    }
+    if (opts.cancel) {
+      await db.withTenant(tenantId, (tx) => tx.query("update orders set status = 'cancelled' where id = $1", [orderId]));
+    }
+  }
+
+  it("cuenta generados/confirmados/rechazados/pendientes y calcula la tasa; incluye estado de suscripciones", async () => {
+    const v = await subVariant();
+    await subOrder(v, { confirm: true }, "s1"); // confirmado
+    await subOrder(v, { cancel: true }, "s2");  // rechazado
+    await subOrder(v, {}, "s3");                 // pendiente
+
+    // createSubscription hace su propio withTenant → recibe la db de nivel superior.
+    const a = await createSubscription(db, { tenantId, merchantId, variantId: v, qty: 1, intervalDays: 30 });
+    await createSubscription(db, { tenantId, merchantId, variantId: v, qty: 1, intervalDays: 30 });
+    if (a.ok) await db.withTenant(tenantId, (tx) => updateSubscription(tx, a.value.id, { status: "paused" }));
+
+    const m = await db.withTenant(tenantId, (tx) => subscriptionMetrics(tx));
+    expect(m.generatedOrders).toBe(3);
+    expect(m.confirmedOrders).toBe(1);
+    expect(m.rejectedOrders).toBe(1);
+    expect(m.pendingOrders).toBe(1);
+    expect(m.confirmationRate).toBeCloseTo(0.5, 5);
+    expect(m.activeSubs).toBe(1);
+    expect(m.pausedSubs).toBe(1);
+    expect(m.cancelledSubs).toBe(0);
   });
 });
