@@ -32,6 +32,23 @@ export interface StoreCategory {
   position: number;
   imageUrl: string;
 }
+export interface StoreComboItem {
+  variantId: string;
+  name: string;
+  sub: string;
+  priceMinor: string;
+  qty: number;
+  available: number;
+}
+export interface StoreCombo {
+  id: string;
+  name: string;
+  description: string;
+  imageUrl: string;
+  items: StoreComboItem[];
+  priceMinor: string;
+  inStock: boolean;
+}
 export interface StoreAdoption {
   id: string;
   name: string;
@@ -207,6 +224,7 @@ export default function Storefront(props: {
   content: StoreContent;
   config: StoreConfig;
   adoptions: StoreAdoption[];
+  combos?: StoreCombo[];
   adoptionsTitle: string;
   heroImageUrl: string;
   adoptionsBannerImageUrl: string;
@@ -329,6 +347,19 @@ export default function Storefront(props: {
       if (q <= 0) { const { [variantId]: _d, ...rest } = c; return rest; }
       return { ...c, [variantId]: { ...c[variantId]!, qty: q } };
     });
+  }
+  // Agrega TODOS los ítems de un combo/caja al carrito de una (saltea los sin stock).
+  function addComboToCart(combo: StoreCombo) {
+    setCart((c) => {
+      const next = { ...c };
+      for (const it of combo.items) {
+        if (it.available < it.qty) continue;
+        next[it.variantId] = { name: it.name, sub: it.sub, priceMinor: Number(it.priceMinor), qty: (next[it.variantId]?.qty ?? 0) + it.qty };
+      }
+      return next;
+    });
+    setDone(null);
+    setCartOpen(true);
   }
 
   // Compra rápida: buscamos la última compra del cliente reconocido (logueado).
@@ -609,6 +640,7 @@ export default function Storefront(props: {
         {view === "home" && (
           <HomeView
             G={G} products={products} categories={categories} config={config} threshold={threshold} content={props.content}
+            combos={props.combos ?? []} onAddCombo={addComboToCart}
             heroImageUrl={props.heroImageUrl} adoptionsBannerImageUrl={props.adoptionsBannerImageUrl}
             adoptionsLabel={props.adoptions.length > 0 ? props.adoptionsTitle : ""} onAdoptions={() => go("adopciones")}
             comparatorEnabled={config.foodComparator && foodProducts.length >= 2} onComparar={() => go("comparar")}
@@ -1102,8 +1134,31 @@ const DEFAULT_BENEFITS: Array<{ t: string; s: string }> = [
 ];
 const BENEFIT_ICONS = [Truck, Package, Scale, Tag];
 
+/** Tarjeta de combo/caja: foto, qué incluye, precio (suma de sus ítems) y agregar todo de un clic. */
+function ComboCard({ combo, G, onAdd }: { combo: StoreCombo; G: string; onAdd: () => void }) {
+  const includes = combo.items.map((it) => `${it.qty}× ${it.name}`).join(" · ");
+  return (
+    <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div style={{ position: "relative" }}>
+        <Img src={combo.imageUrl} alt={combo.name} ratio="16 / 10" radius={0} seed={combo.id} />
+        <span style={{ position: "absolute", top: 10, left: 10, background: G, color: C.white, fontSize: 11, fontWeight: 700, letterSpacing: ".06em", padding: "4px 10px", borderRadius: 999 }}>CAJA</span>
+      </div>
+      <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+        <div style={{ fontSize: 16, fontWeight: 700 }}>{combo.name}</div>
+        {combo.description && <div style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.35 }}>{combo.description}</div>}
+        <div style={{ fontSize: 12, color: C.mute, flex: 1, lineHeight: 1.4 }}>Incluye: {includes}</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 10 }}>
+          <span style={{ fontSize: 20, fontWeight: 800, color: G }}>{money(Number(combo.priceMinor))}</span>
+          <button className="sf-btn" onClick={onAdd} disabled={!combo.inStock} style={{ ...primaryBtn(G), padding: "9px 14px", opacity: combo.inStock ? 1 : 0.5, cursor: combo.inStock ? "pointer" : "not-allowed" }}>{combo.inStock ? "Agregar" : "Sin stock"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HomeView(props: {
   G: string; products: StoreProduct[]; categories: { name: string; count: number; imageUrl?: string }[]; config: StoreConfig; threshold: number; content: StoreContent;
+  combos: StoreCombo[]; onAddCombo: (c: StoreCombo) => void;
   heroImageUrl: string; adoptionsBannerImageUrl: string;
   adoptionsLabel: string; onAdoptions: () => void; comparatorEnabled: boolean; onComparar: () => void;
   waLink: string | null; onSeeList: () => void; onCategory: (c: string) => void; onOpen: (p: StoreProduct) => void; onAdd: (p: StoreProduct) => void;
@@ -1156,6 +1211,19 @@ function HomeView(props: {
           );
         })}
       </div>
+
+      {/* Cajas / Combos: sumá varios productos de un clic (llega al mínimo, sube el ticket) */}
+      {props.combos.length > 0 && (
+        <>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "30px 0 14px" }}>
+            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Cajas armadas</h2>
+            <span style={{ fontSize: 13, color: C.mute }}>Todo junto, en un clic</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+            {props.combos.map((cb) => <ComboCard key={cb.id} combo={cb} G={G} onAdd={() => props.onAddCombo(cb)} />)}
+          </div>
+        </>
+      )}
 
       {/* Categorías (imágenes REALES 512×512) */}
       {cats.length > 0 && (

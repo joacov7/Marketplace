@@ -491,6 +491,8 @@ function CatalogTab({ tenant, token, merchantId, onError }: { tenant: string | n
           {items.map((it) => <CatalogRow key={it.variantId} it={it} cats={cats} tenant={tenant} token={token} onSave={save} onError={onError} />)}
         </ul>
       )}
+
+      <CombosSection tenant={tenant} token={token} merchantId={merchantId} items={items} onError={onError} />
     </div>
   );
 }
@@ -1394,6 +1396,135 @@ function DeliveryScheduleEditor({ tenant, token, onError }: { tenant: string | n
 
       <div style={{ marginTop: 16 }}>
         <button onClick={save} disabled={saving} className="mbtn" style={btn}>{saving ? "Guardando…" : "Guardar horarios"}</button>
+      </div>
+    </div>
+  );
+}
+
+interface ComboAdminItem { variantId: string; qty: number; variantName: string; productName: string }
+interface ComboAdminRow { id: string; name: string; description: string | null; imageUrl: string | null; active: boolean; position: number; items: ComboAdminItem[] }
+
+/**
+ * Gestión de Cajas/Combos: bundles con nombre que agrupan varios productos. En la tienda el
+ * cliente los suma de un clic (llega al mínimo de envío y sube el ticket). El precio es la suma
+ * de sus ítems; el descuento, si querés, se hace poniendo esos productos en oferta.
+ */
+function CombosSection({ tenant, token, merchantId, items, onError }: { tenant: string | null; token: string; merchantId: string; items: CatalogItem[]; onError: (s: string | null) => void }) {
+  const auth = { authorization: `Bearer ${token}` };
+  const [combos, setCombos] = useState<ComboAdminRow[]>([]);
+  const [name, setName] = useState("");
+
+  const load = useCallback(async () => {
+    if (!tenant || !merchantId) return;
+    const res = await fetch(`/api/merchant/combos?tenant=${encodeURIComponent(tenant)}&merchantId=${merchantId}`, { headers: auth });
+    const d = await res.json();
+    if (!res.ok) { onError(d.error); return; }
+    setCombos(d.combos);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, merchantId, token]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function create() {
+    if (!name.trim()) { onError("Poné un nombre para la caja (ej: Caja limpieza del mes)"); return; }
+    onError(null);
+    const res = await fetch(`/api/merchant/combos?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "POST", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ merchantId, name: name.trim() }),
+    });
+    const d = await res.json();
+    if (!res.ok) { onError(d.error); return; }
+    setName("");
+    await load();
+  }
+
+  async function patchCombo(id: string, body: Record<string, unknown>) {
+    const res = await fetch(`/api/merchant/combos/${id}?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "PATCH", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); onError(d.error ?? "error"); return false; }
+    return true;
+  }
+  async function removeCombo(id: string, nm: string) {
+    if (!confirm(`¿Borrar la caja "${nm}"? Los productos del catálogo no se tocan.`)) return;
+    const res = await fetch(`/api/merchant/combos/${id}?tenant=${encodeURIComponent(tenant ?? "")}`, { method: "DELETE", headers: auth });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); onError(d.error ?? "error"); return; }
+    await load();
+  }
+
+  return (
+    <div style={{ ...card }}>
+      <h3 style={{ margin: "0 0 4px", fontSize: 15, display: "inline-flex", alignItems: "center", gap: 8 }}><Package size={16} strokeWidth={1.9} /> Cajas / Combos</h3>
+      <p style={{ fontSize: 12, color: MUT, margin: "0 0 12px" }}>Agrupá varios productos en una caja para que el cliente los sume de un clic. El precio es la suma de los productos; para un combo con descuento, poné esos productos en oferta.</p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+        <input placeholder="Nueva caja (ej: Caja limpieza del mes)" value={name} onChange={(e) => setName(e.target.value)} style={{ ...input, flex: 1, minWidth: 220 }} />
+        <button onClick={create} className="mbtn" style={btnGhost}>+ Crear caja</button>
+      </div>
+
+      {combos.length === 0 ? <p style={{ color: "#888", margin: 0, fontSize: 13.5 }}>Todavía no hay cajas. Creá la primera arriba y agregale productos.</p> : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {combos.map((cb) => (
+            <ComboEditor key={cb.id} combo={cb} items={items} tenant={tenant} token={token} onError={onError}
+              onPatch={async (body) => { if (await patchCombo(cb.id, body)) await load(); }}
+              onDelete={() => removeCombo(cb.id, cb.name)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ComboEditor({ combo, items, tenant, token, onError, onPatch, onDelete }: {
+  combo: ComboAdminRow; items: CatalogItem[]; tenant: string | null; token: string; onError: (s: string | null) => void;
+  onPatch: (body: Record<string, unknown>) => Promise<void>; onDelete: () => void;
+}) {
+  const [sel, setSel] = useState("");
+  const [qty, setQty] = useState("1");
+  const current = combo.items.map((i) => ({ variantId: i.variantId, qty: i.qty }));
+  const sumMinor = combo.items.reduce((a, it) => {
+    const ci = items.find((x) => x.variantId === it.variantId);
+    return a + (ci?.priceMinor ? Number(ci.priceMinor) * it.qty : 0);
+  }, 0);
+
+  async function addItem() {
+    if (!sel) { onError("Elegí un producto para agregar a la caja"); return; }
+    const n = Math.max(1, Math.floor(Number(qty) || 1));
+    const exists = current.find((i) => i.variantId === sel);
+    const next = exists ? current.map((i) => (i.variantId === sel ? { ...i, qty: i.qty + n } : i)) : [...current, { variantId: sel, qty: n }];
+    setSel(""); setQty("1");
+    await onPatch({ items: next });
+  }
+  async function removeItem(variantId: string) {
+    await onPatch({ items: current.filter((i) => i.variantId !== variantId) });
+  }
+
+  return (
+    <div style={{ border: `1px solid ${LINE}`, borderRadius: 12, padding: 14, background: combo.active ? "white" : "#f6f7f9", opacity: combo.active ? 1 : 0.75 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <ImageField tenant={tenant} token={token} value={combo.imageUrl ?? ""} onChange={(url) => onPatch({ imageUrl: url })} onError={onError} size={44} />
+        <span style={{ fontSize: 15, fontWeight: 700, flex: 1, minWidth: 140 }}>{combo.name}{!combo.active && <span style={{ color: MUT, fontWeight: 500 }}> · oculta</span>}</span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: A_DARK }}>{money(sumMinor)}</span>
+        <button onClick={() => { const nm = prompt("Nombre de la caja:", combo.name); if (nm && nm.trim() && nm.trim() !== combo.name) void onPatch({ name: nm.trim() }); }} title="Renombrar" className="mbtn" style={{ ...btnGhost, padding: "8px 10px", display: "inline-flex", alignItems: "center" }}><Pencil size={14} strokeWidth={1.9} /></button>
+        <button onClick={() => onPatch({ active: !combo.active })} title={combo.active ? "Ocultar de la tienda" : "Mostrar en la tienda"} className="mbtn" style={{ ...btnGhost, padding: "8px 10px", display: "inline-flex", alignItems: "center", color: combo.active ? A_DARK : "#c62828" }}>{combo.active ? <Eye size={14} strokeWidth={1.9} /> : <EyeOff size={14} strokeWidth={1.9} />}</button>
+        <button onClick={onDelete} title="Borrar caja" className="mbtn" style={{ ...btnGhost, padding: "8px 10px", color: "#c62828", display: "inline-flex", alignItems: "center" }}><X size={14} strokeWidth={2} /></button>
+      </div>
+
+      {combo.items.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+          {combo.items.map((it) => (
+            <span key={it.variantId} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#eef0f3", borderRadius: 999, padding: "4px 8px 4px 12px", fontSize: 12.5, color: "#445" }}>
+              {it.qty}× {it.productName}{it.variantName && it.variantName !== "Único" ? ` ${it.variantName}` : ""}
+              <button onClick={() => removeItem(it.variantId)} title="Quitar" style={{ border: "none", background: "transparent", cursor: "pointer", padding: 0, color: "#c62828", display: "inline-flex" }}><X size={13} strokeWidth={2} /></button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
+        <select value={sel} onChange={(e) => setSel(e.target.value)} style={{ ...input, flex: 1, minWidth: 200 }}>
+          <option value="">Agregar producto…</option>
+          {items.map((it) => <option key={it.variantId} value={it.variantId}>{it.productName}{it.variantName && it.variantName !== "Único" ? ` · ${it.variantName}` : ""}</option>)}
+        </select>
+        <input value={qty} onChange={(e) => setQty(e.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" title="Cantidad" style={{ ...input, width: 64 }} />
+        <button onClick={addItem} className="mbtn" style={{ ...btnGhost, display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={14} strokeWidth={2} /> Agregar</button>
       </div>
     </div>
   );

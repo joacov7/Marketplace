@@ -1,10 +1,10 @@
 import { resolveConfigValue } from "@commerce/platform";
-import { listCatalog, listCategories } from "@commerce/modules/catalog";
+import { listCatalog, listCategories, listCombosStore } from "@commerce/modules/catalog";
 import { listAdoptions, type Adoption } from "@commerce/modules/adoptions";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { safeUrl } from "@/lib/sanitize";
-import Storefront, { type StoreProduct, type StoreConfig, type StoreCategory, type StoreContent } from "./storefront";
+import Storefront, { type StoreProduct, type StoreConfig, type StoreCategory, type StoreContent, type StoreCombo } from "./storefront";
 
 export const dynamic = "force-dynamic"; // depende del tenant resuelto por request
 
@@ -121,12 +121,22 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
         const adoptions = await listAdoptions(tx);
-        if (!merchants[0]) return { catalog: [], categories: [], adoptions };
-        const [catalog, categories] = await Promise.all([listCatalog(tx, merchants[0].id), listCategories(tx, merchants[0].id)]);
-        return { catalog, categories, adoptions };
+        if (!merchants[0]) return { catalog: [], categories: [], adoptions, combos: [] };
+        const [catalog, categories, combos] = await Promise.all([listCatalog(tx, merchants[0].id), listCategories(tx, merchants[0].id), listCombosStore(tx, merchants[0].id)]);
+        return { catalog, categories, adoptions, combos };
       }),
     ]);
-    const { catalog, categories: catRows, adoptions: adoptionRows } = catalog0;
+    const { catalog, categories: catRows, adoptions: adoptionRows, combos: comboRows } = catalog0;
+
+    const storeCombos: StoreCombo[] = comboRows.map((c) => ({
+      id: c.id,
+      name: cleanText(c.name, "Combo"),
+      description: cleanText(c.description ?? "", ""),
+      imageUrl: safeUrl(c.imageUrl ?? ""),
+      priceMinor: c.priceMinor.toString(),
+      inStock: c.inStock,
+      items: c.items.map((it) => ({ variantId: it.variantId, name: it.name, sub: it.sub, priceMinor: it.priceMinor != null ? it.priceMinor.toString() : "0", qty: it.qty, available: it.available })),
+    }));
 
     // Agrupa las variantes por producto: cada producto tiene 1..n talles/pesos con su precio.
     const byProduct = new Map<string, StoreProduct>();
@@ -218,6 +228,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
         content={content}
         config={config}
         adoptions={adoptions}
+        combos={storeCombos}
         adoptionsTitle={cleanText(adoptionsTitle, "Adopciones")}
         heroImageUrl={safeUrl(heroImageUrl)}
         adoptionsBannerImageUrl={safeUrl(adoptionsBannerImageUrl)}
