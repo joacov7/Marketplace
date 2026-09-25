@@ -1,7 +1,17 @@
 import { timingSafeEqual } from "node:crypto";
 import { headers } from "next/headers";
 import { resolveConfigValue } from "@commerce/platform";
+import type { SessionPayload } from "@commerce/platform";
 import { db } from "./db";
+import { readSession } from "./session";
+
+/** Roles que abren el panel de administración. */
+const ADMIN_ROLES = new Set(["owner", "admin", "merchant_admin"]);
+
+/** ¿La sesión tiene un rol de administración del panel? */
+export function hasAdminRole(session: SessionPayload | null): boolean {
+  return !!session && Array.isArray(session.roles) && session.roles.some((r) => ADMIN_ROLES.has(r.role));
+}
 
 /**
  * Comparación en tiempo constante de dos secretos. Evita el side-channel por tiempo de `===`
@@ -27,12 +37,16 @@ function safeEqual(a: string | null | undefined, b: string | null | undefined): 
  */
 export function requireServiceToken(envVar: "ADMIN_API_TOKEN" | "CRON_SECRET"): boolean {
   const expected = process.env[envVar];
-  if (!expected) return false;
   const h = headers();
   const auth = h.get("authorization") ?? "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : null;
   const provided = bearer ?? h.get("x-service-token");
-  return safeEqual(provided, expected);
+  if (expected && safeEqual(provided, expected)) return true;
+  // El panel (ADMIN_API_TOKEN) también se puede abrir con una SESIÓN de admin (login por
+  // usuario + rol). Así se deja de depender de una única llave en el navegador, sin tener que
+  // tocar las ~40 rutas: todas pasan por acá. El token sigue sirviendo como respaldo.
+  if (envVar === "ADMIN_API_TOKEN" && hasAdminRole(readSession())) return true;
+  return false;
 }
 
 /** Lee el código provisto (Bearer o x-service-token) sin compararlo. */

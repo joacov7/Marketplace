@@ -201,17 +201,22 @@ export default function MerchantPanel() {
   const [tab, setTab] = useState<"catalogo" | "pedidos" | "suscripciones" | "contenido" | "reportes" | "diseno" | "adopciones" | "config">("catalogo");
   const [error, setError] = useState<string | null>(null);
   const [migrating, setMigrating] = useState(false);
+  const [authed, setAuthed] = useState(false);          // sesión de admin activa (cookie)
+  const [li, setLi] = useState({ email: "", pass: "" }); // formulario de login
+  const [loginMode, setLoginMode] = useState<"login" | "first" | "code">("login");
 
   useEffect(() => {
     setTenant(new URLSearchParams(window.location.search).get("tenant"));
     try { setToken(localStorage.getItem("merchantToken") ?? ""); } catch { /* */ }
+    // ¿Ya hay una sesión de admin abierta? (login por usuario, cookie httpOnly)
+    fetch("/api/merchant/auth/me").then((r) => r.json()).then((d) => { if (d?.authed) setAuthed(true); }).catch(() => {});
   }, []);
 
   const auth = { authorization: `Bearer ${token}` };
   const q = (p = "") => `?tenant=${encodeURIComponent(tenant ?? "")}${p}`;
 
   const loadMerchants = useCallback(async () => {
-    if (!tenant || !token) return;
+    if (!tenant || (!token && !authed)) return;
     setError(null);
     try {
       const res = await fetch(`/api/admin/merchants${q()}`, { headers: auth });
@@ -221,9 +226,9 @@ export default function MerchantPanel() {
       setMerchantId((m) => m || data.merchants[0]?.id || "");
     } catch (e) { setError(String(e)); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenant, token]);
+  }, [tenant, token, authed]);
 
-  useEffect(() => { if (token && tenant) void loadMerchants(); }, [token, tenant, loadMerchants]);
+  useEffect(() => { if ((token || authed) && tenant) void loadMerchants(); }, [token, authed, tenant, loadMerchants]);
 
   async function newMerchant() {
     const name = prompt("Nombre del comercio:");
@@ -236,7 +241,37 @@ export default function MerchantPanel() {
   }
 
   function saveToken() { try { localStorage.setItem("merchantToken", tokenInput); } catch { /* */ } setToken(tokenInput); }
-  function logout() { try { localStorage.removeItem("merchantToken"); } catch { /* */ } setToken(""); }
+  async function logout() {
+    try { localStorage.removeItem("merchantToken"); } catch { /* */ }
+    setToken("");
+    try { await fetch("/api/merchant/auth/logout", { method: "POST" }); } catch { /* */ }
+    setAuthed(false);
+  }
+
+  /** Login por usuario + contraseña (sesión en cookie). Reemplaza al código único en el navegador. */
+  async function login() {
+    setError(null);
+    const res = await fetch(`/api/merchant/auth/login${q()}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: li.email.trim(), password: li.pass }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { setError(d.error ?? "No se pudo iniciar sesión."); return; }
+    setLi({ email: "", pass: "" });
+    setAuthed(true);
+  }
+
+  /** Primera vez: crea el usuario admin usando el código de acceso maestro y entra. */
+  async function bootstrapAndLogin() {
+    setError(null);
+    if (!tokenInput.trim()) { setError("Pegá tu código de acceso actual para crear el usuario."); return; }
+    if (li.pass.length < 8) { setError("La contraseña debe tener al menos 8 caracteres."); return; }
+    const res = await fetch(`/api/merchant/auth/bootstrap${q()}`, {
+      method: "POST", headers: { authorization: `Bearer ${tokenInput.trim()}`, "content-type": "application/json" }, body: JSON.stringify({ email: li.email.trim(), password: li.pass }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { setError(d.error ?? "No se pudo crear el usuario."); return; }
+    await login();
+  }
 
   /** Corre las migraciones pendientes y siembra categorías + catálogo demo del tenant
    *  actual (idempotente: no duplica; asigna categoría a productos demo sin ella). Útil tras
@@ -255,16 +290,43 @@ export default function MerchantPanel() {
     } catch (e) { setError(String(e)); } finally { setMigrating(false); }
   }
 
-  if (!token) {
+  if (!token && !authed) {
+    const linkStyle: React.CSSProperties = { background: "transparent", border: "none", color: A, cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: 0 };
     return (
       <div style={{ background: `radial-gradient(1200px 500px at 50% -10%, ${A_SOFT}, ${SURF})`, minHeight: "100vh", display: "grid", placeItems: "center", padding: 16, fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", color: INK }}>
         <style>{PANEL_CSS}</style>
-        <div style={{ ...card, maxWidth: 400, width: "100%", padding: 28, textAlign: "center", boxShadow: "0 12px 40px rgba(16,24,40,.10)" }}>
+        <div style={{ ...card, maxWidth: 400, width: "100%", padding: 28, boxShadow: "0 12px 40px rgba(16,24,40,.10)" }}>
           <div style={{ width: 58, height: 58, borderRadius: 16, background: A_SOFT, color: A, display: "grid", placeItems: "center", margin: "0 auto 14px" }}><PawPrint size={28} strokeWidth={1.8} /></div>
-          <h1 style={{ fontSize: 22, margin: "0 0 4px", letterSpacing: "-.01em" }}>Panel del comercio</h1>
-          <p style={{ color: MUT, fontSize: 13.5, marginTop: 0, lineHeight: 1.5 }}>Ingresá tu código de acceso para administrar la tienda.</p>
-          <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveToken()} placeholder="Código de acceso" type="password" style={{ ...input, width: "100%", marginTop: 6, padding: 13, textAlign: "center" }} />
-          <button onClick={saveToken} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>Entrar</button>
+          <h1 style={{ fontSize: 22, margin: "0 0 4px", letterSpacing: "-.01em", textAlign: "center" }}>Panel del comercio</h1>
+
+          {error && <p style={{ color: "#b3261e", fontSize: 12.5, textAlign: "center", margin: "8px 0 0" }}>{error}</p>}
+
+          {loginMode === "login" && (<>
+            <p style={{ color: MUT, fontSize: 13.5, margin: "0 0 12px", textAlign: "center", lineHeight: 1.5 }}>Ingresá con tu usuario.</p>
+            <input value={li.email} onChange={(e) => setLi({ ...li, email: e.target.value })} placeholder="Email" type="email" autoComplete="username" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, marginBottom: 8 }} />
+            <input value={li.pass} onChange={(e) => setLi({ ...li, pass: e.target.value })} onKeyDown={(e) => e.key === "Enter" && login()} placeholder="Contraseña" type="password" autoComplete="current-password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12 }} />
+            <button onClick={login} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>Entrar</button>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
+              <button onClick={() => { setError(null); setLoginMode("first"); }} style={linkStyle}>Primera vez: crear mi acceso</button>
+              <button onClick={() => { setError(null); setLoginMode("code"); }} style={linkStyle}>Usar código</button>
+            </div>
+          </>)}
+
+          {loginMode === "first" && (<>
+            <p style={{ color: MUT, fontSize: 13, margin: "0 0 12px", textAlign: "center", lineHeight: 1.5 }}>Creá tu usuario con el <b>código de acceso</b> actual. Lo hacés una sola vez.</p>
+            <input value={li.email} onChange={(e) => setLi({ ...li, email: e.target.value })} placeholder="Tu email" type="email" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, marginBottom: 8 }} />
+            <input value={li.pass} onChange={(e) => setLi({ ...li, pass: e.target.value })} placeholder="Contraseña nueva (mín. 8)" type="password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, marginBottom: 8 }} />
+            <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} placeholder="Código de acceso actual" type="password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12 }} />
+            <button onClick={bootstrapAndLogin} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>Crear y entrar</button>
+            <div style={{ textAlign: "center", marginTop: 14 }}><button onClick={() => { setError(null); setLoginMode("login"); }} style={linkStyle}>← Volver</button></div>
+          </>)}
+
+          {loginMode === "code" && (<>
+            <p style={{ color: MUT, fontSize: 13, margin: "0 0 12px", textAlign: "center", lineHeight: 1.5 }}>Acceso de respaldo con el código maestro.</p>
+            <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveToken()} placeholder="Código de acceso" type="password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, textAlign: "center" }} />
+            <button onClick={saveToken} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>Entrar con código</button>
+            <div style={{ textAlign: "center", marginTop: 14 }}><button onClick={() => { setError(null); setLoginMode("login"); }} style={linkStyle}>← Volver</button></div>
+          </>)}
         </div>
       </div>
     );
