@@ -63,8 +63,13 @@ export async function POST(req: Request) {
 
   const applied: string[] = [];
   try {
+    // Mismo tracking que el deploy automático: solo aplica las migraciones nuevas y las registra.
+    await rawExec(`create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())`);
+    const done = new Set((await db().query<{ name: string }>(`select name from schema_migrations`)).map((r) => r.name));
     for (const m of MIGRATIONS) {
+      if (done.has(m.name)) continue;
       await rawExec(m.sql);
+      await db().query(`insert into schema_migrations (name) values ($1) on conflict do nothing`, [m.name]);
       applied.push(m.name);
     }
   } catch (e) {

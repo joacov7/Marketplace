@@ -19,7 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "echo \"(lint boundaries pendiente F1)\" && exit 0",
-    "migrate": "node scripts/migrate.mjs",
+    "migrate": "node scripts/migrate-prod.mjs",
     "seed": "node scripts/seed-demo.mjs"
   },
   "devDependencies": {
