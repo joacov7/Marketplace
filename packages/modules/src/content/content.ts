@@ -3,7 +3,6 @@ import type {
   ContentTemplate,
   ContentPost,
   GeneratePostInput,
-  BrandKit,
   FeaturedProduct,
 } from "./types.js";
 import { THEME_LABEL } from "./types.js";

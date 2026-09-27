@@ -763,7 +763,7 @@ function PrepNote({ orders }: { orders: SellerOrder[] }) {
       <h2 style="margin:0 0 2px">Nota de preparación</h2>
       <div style="color:#6b7280;font-size:13px;margin-bottom:16px">${new Date().toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })} · ${orders.length} pedido(s)</div>
       <table style="width:100%;border-collapse:collapse;font-size:15px">${rows}</table>
-      <script>window.onload=function(){window.print()}<\/script></body></html>`);
+      <script>window.onload=function(){window.print()}</scr${""}ipt></body></html>`);
     w.document.close();
   }
 
@@ -987,10 +987,10 @@ function DeliveryRadiusBar({ tenant, token, onError }: { tenant: string | null; 
               <input placeholder="ej: 8" inputMode="decimal" value={radius} onChange={(e) => setRadius(e.target.value.replace(/[^0-9.]/g, ""))} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 3 }} />
             </label>
             <label style={{ fontSize: 12, color: MUT }}>Latitud del local
-              <input placeholder="-33.146" inputMode="decimal" value={lat} onChange={(e) => setLat(e.target.value.replace(/[^0-9.\-]/g, ""))} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 3 }} />
+              <input placeholder="-33.146" inputMode="decimal" value={lat} onChange={(e) => setLat(e.target.value.replace(/[^0-9.-]/g, ""))} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 3 }} />
             </label>
             <label style={{ fontSize: 12, color: MUT }}>Longitud del local
-              <input placeholder="-59.309" inputMode="decimal" value={lng} onChange={(e) => setLng(e.target.value.replace(/[^0-9.\-]/g, ""))} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 3 }} />
+              <input placeholder="-59.309" inputMode="decimal" value={lng} onChange={(e) => setLng(e.target.value.replace(/[^0-9.-]/g, ""))} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 3 }} />
             </label>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>

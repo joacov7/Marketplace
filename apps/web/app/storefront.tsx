@@ -2160,7 +2160,7 @@ function FoodCalculator({ G, kcalPerKg, netWeightKg, factors }: { G: string; kca
 // ── Adopciones / callejeritos ────────────────────────────────────────────────────
 const SPECIES_LABEL: Record<string, string> = { perro: "Perro", gato: "Gato", otro: "Mascota" };
 
-function AdoptionsView({ G, title, adoptions, storeWhatsapp }: { G: string; title: string; adoptions: StoreAdoption[]; storeWhatsapp: string }) {
+function AdoptionsView({ title, adoptions, storeWhatsapp }: { G: string; title: string; adoptions: StoreAdoption[]; storeWhatsapp: string }) {
   return (
     <>
       <div style={{ fontSize: 12.5, color: C.mute, marginBottom: 14 }}>Inicio / {title}</div>

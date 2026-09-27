@@ -18,14 +18,19 @@
     "clean": "tsc --build --clean",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "echo \"(lint boundaries pendiente F1)\" && exit 0",
+    "lint": "eslint packages apps",
     "migrate": "node scripts/migrate-prod.mjs",
     "seed": "node scripts/seed-demo.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@eslint/js": "^9.39.5",
+    "@next/eslint-plugin-next": "^15.5.26",
     "@types/node": "^20.14.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "typescript": "^5.6.0",
+    "typescript-eslint": "^8.70.1",
     "vitest": "^2.1.9"
   }
 }

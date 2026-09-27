@@ -129,7 +129,7 @@ async function seedTenant(slug: string) {
         where status in ('confirmed','completed','partially_refunded','refunded') and payment_status = 'pendiente'`,
     );
 
-    let m = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
+    const m = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
     let merchantId = m[0]?.id;
     if (!merchantId) {
       const r = await tx.query<{ id: string }>(
