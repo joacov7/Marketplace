@@ -1,9 +1,11 @@
 import { resolveConfigValue } from "@commerce/platform";
 import { listCatalog, listCategories, listCombosStore } from "@commerce/modules/catalog";
 import { listAdoptions, type Adoption } from "@commerce/modules/adoptions";
+import { isMpEnabled } from "@commerce/modules/payments";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { safeUrl } from "@/lib/sanitize";
+import { paymentsEncryptionKey } from "@/lib/mercadopago";
 import Storefront, { type StoreProduct, type StoreConfig, type StoreCategory, type StoreContent, type StoreCombo } from "./storefront";
 
 export const dynamic = "force-dynamic"; // depende del tenant resuelto por request
@@ -121,12 +123,17 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
         const adoptions = await listAdoptions(tx);
-        if (!merchants[0]) return { catalog: [], categories: [], adoptions, combos: [] };
-        const [catalog, categories, combos] = await Promise.all([listCatalog(tx, merchants[0].id), listCategories(tx, merchants[0].id), listCombosStore(tx, merchants[0].id)]);
-        return { catalog, categories, adoptions, combos };
+        if (!merchants[0]) return { catalog: [], categories: [], adoptions, combos: [], mercadoPago: false };
+        const [catalog, categories, combos, mercadoPago] = await Promise.all([
+          listCatalog(tx, merchants[0].id),
+          listCategories(tx, merchants[0].id),
+          listCombosStore(tx, merchants[0].id),
+          paymentsEncryptionKey() ? isMpEnabled(tx, merchants[0].id) : Promise.resolve(false),
+        ]);
+        return { catalog, categories, adoptions, combos, mercadoPago };
       }),
     ]);
-    const { catalog, categories: catRows, adoptions: adoptionRows, combos: comboRows } = catalog0;
+    const { catalog, categories: catRows, adoptions: adoptionRows, combos: comboRows, mercadoPago } = catalog0;
 
     const storeCombos: StoreCombo[] = comboRows.map((c) => ({
       id: c.id,
@@ -212,6 +219,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       deliveryDays: Array.isArray(deliveryDays) ? deliveryDays.map(Number).filter((n) => n >= 0 && n <= 6) : [1, 2, 3, 4, 5, 6],
       deliveryCutoffHour: num(cutoffHour, 18),
       auxilioWindow: cleanText(auxilioWindow, "20:00 a 23:00"),
+      mercadoPagoEnabled: mercadoPago,
     };
 
     return (

@@ -5,7 +5,8 @@ import {
   enqueueEvent,
 } from "@commerce/platform";
 import { type Result, ok, err, type CurrencyCode, type TenantContext } from "@commerce/contracts";
-import { confirmReservation } from "../inventory/inventory.js";
+import { confirmReservation, reserveStock } from "../inventory/inventory.js";
+import { cancelOrder } from "../orders/orders.js";
 import { computeAllocations, type Allocation } from "./allocations.js";
 import { postLedger, type LedgerEntry } from "./ledger.js";
 import type { PaymentProvider } from "./provider.js";
@@ -26,10 +27,15 @@ interface Quote {
   allocations: Allocation[];
 }
 
-/** Cotiza un pedido: comisión y delivery desde CONFIG (gratis sobre umbral) + allocations. */
+/**
+ * Cotiza un pedido: comisión desde CONFIG + el envío que se le COBRÓ al cliente + allocations.
+ * El envío sale del pedido (`delivery_charge_minor`, fijado en el checkout: zona, auxilio o
+ * gratis sobre umbral), no se recalcula: lo que se cobra (MP o en la puerta) y lo que asienta
+ * el ledger tienen que ser exactamente lo que el cliente vio al confirmar.
+ */
 async function quoteOrder(tx: Db, tenantId: string, orderId: string): Promise<Quote> {
-  const [order] = await tx.query<{ currency: CurrencyCode; total_minor: string }>(
-    `select currency, total_minor from orders where id = $1`,
+  const [order] = await tx.query<{ currency: CurrencyCode; total_minor: string; delivery_charge_minor: string | null }>(
+    `select currency, total_minor, delivery_charge_minor from orders where id = $1`,
     [orderId],
   );
   if (!order) throw new Error("order_not_found");
@@ -40,11 +46,9 @@ async function quoteOrder(tx: Db, tenantId: string, orderId: string): Promise<Qu
 
   const chain = { tenantId };
   const commissionBps = (await resolveConfigValue<number>(tx, "commission.rateBps", chain)).value;
-  const freeOver = (await resolveConfigValue<number>(tx, "delivery.freeOverOrderTotalMinor", chain)).value;
-  const baseCharge = (await resolveConfigValue<number>(tx, "delivery.customerChargeMinor", chain)).value;
 
   const gmv = BigInt(order.total_minor);
-  const deliveryChargeMinor = gmv >= BigInt(freeOver) ? 0n : BigInt(baseCharge);
+  const deliveryChargeMinor = BigInt(order.delivery_charge_minor ?? "0");
 
   const { total, allocations } = computeAllocations({
     currency: order.currency,
@@ -69,7 +73,7 @@ export async function createPaymentIntent(
   db: TenantAwareDb,
   provider: PaymentProvider,
   input: { tenantId: string; orderId: string; idempotencyKey: string },
-): Promise<Result<{ paymentId: string; providerRef: string }, string>> {
+): Promise<Result<{ paymentId: string; providerRef: string; redirectUrl?: string; amountMinor: bigint }, string>> {
   try {
     return ok(
       await db.withTenant(input.tenantId, async (tx) => {
@@ -84,7 +88,12 @@ export async function createPaymentIntent(
            values ($1,$2,$3,$4,'pending',$5,$6) returning id`,
           [input.tenantId, input.orderId, provider.name, handle.providerRef, quote.total.toString(), quote.currency],
         );
-        return { paymentId: p!.id, providerRef: handle.providerRef };
+        return {
+          paymentId: p!.id,
+          providerRef: handle.providerRef,
+          amountMinor: quote.total,
+          ...(handle.redirectUrl ? { redirectUrl: handle.redirectUrl } : {}),
+        };
       }),
     );
   } catch (e) {
@@ -97,11 +106,23 @@ export async function createPaymentIntent(
  * `providerEventId` (dedup en processed_webhooks): un webhook repetido NO duplica pago ni
  * pedido (criterio de aceptación). Postea el ledger de doble partida (DEBE customer total,
  * HABER cada allocation), persiste las allocations, confirma las reservas y el pedido.
+ *
+ * - `paidAmountMinor` (lo que el PSP dice que cobró): si no coincide con el monto del pago,
+ *   NO se captura (`amount_mismatch`) — nunca se confirma un pedido pagado de menos.
+ * - Si la reserva de stock ya venció (el cliente tardó en pagar y el cron la liberó), se
+ *   re-reserva del stock actual. Si ya no hay, el cobro igual se registra (la plata entró) y
+ *   se emite `order.stock_shortfall` para que el comercio resuelva (reponer o reembolsar).
  */
 export async function capturePayment(
   db: TenantAwareDb,
-  input: { tenantId: string; providerEventId: string; providerRef: string },
-): Promise<Result<{ paymentId: string; alreadyProcessed: boolean }, string>> {
+  input: {
+    tenantId: string;
+    providerEventId: string;
+    providerRef: string;
+    paidAmountMinor?: bigint;
+    providerPaymentId?: string;
+  },
+): Promise<Result<{ paymentId: string; alreadyProcessed: boolean; stockShortfall?: string[] }, string>> {
   try {
     return ok(
       await db.withTenant(input.tenantId, async (tx) => {
@@ -111,12 +132,15 @@ export async function capturePayment(
         );
         if (seen) return { paymentId: seen.payment_id ?? "", alreadyProcessed: true };
 
-        const [payment] = await tx.query<{ id: string; order_id: string; status: string }>(
-          `select id, order_id, status from payments where provider_ref = $1`,
+        const [payment] = await tx.query<{ id: string; order_id: string; status: string; amount_minor: string }>(
+          `select id, order_id, status, amount_minor from payments where provider_ref = $1 order by created_at desc limit 1`,
           [input.providerRef],
         );
         if (!payment) throw new Error("payment_not_found");
         if (payment.status !== "pending") throw new Error(`payment_not_pending:${payment.status}`);
+        if (input.paidAmountMinor !== undefined && input.paidAmountMinor !== BigInt(payment.amount_minor)) {
+          throw new Error(`amount_mismatch: ${input.paidAmountMinor} != ${payment.amount_minor}`);
+        }
 
         const quote = await quoteOrder(tx, input.tenantId, payment.order_id);
 
@@ -147,20 +171,39 @@ export async function capturePayment(
         const posted = await postLedger(tx, input.tenantId, payment.id, entries);
         if (!posted.ok) throw new Error(posted.error);
 
-        await tx.query(`update payments set status = 'captured', updated_at = now() where id = $1`, [payment.id]);
+        await tx.query(
+          `update payments set status = 'captured', provider_payment_id = coalesce($2, provider_payment_id), updated_at = now() where id = $1`,
+          [payment.id, input.providerPaymentId ?? null],
+        );
 
         // Confirmar reservas + pedido.
-        const items = await tx.query<{ reservation_id: string | null }>(
-          `select oi.reservation_id from order_items oi
+        const items = await tx.query<{ id: string; variant_id: string; qty: number; reservation_id: string | null }>(
+          `select oi.id, oi.variant_id, oi.qty, oi.reservation_id from order_items oi
              join seller_orders so on so.id = oi.seller_order_id
             where so.order_id = $1`,
           [payment.order_id],
         );
+        const shortfall: string[] = [];
         for (const it of items) {
-          if (it.reservation_id) {
-            const c = await confirmReservation(tx, it.reservation_id);
-            if (!c.ok) throw new Error(`reservation_confirm_failed:${it.reservation_id}`);
+          if (!it.reservation_id) continue;
+          const c = await confirmReservation(tx, it.reservation_id);
+          if (c.ok) continue;
+          // Reserva vencida/liberada: re-reservar del stock actual (como al aceptar un pedido viejo).
+          const re = await reserveStock(tx, { tenantId: input.tenantId, variantId: it.variant_id, qty: it.qty, orderId: payment.order_id });
+          if (!re.ok) {
+            shortfall.push(it.variant_id);
+            continue;
           }
+          const c2 = await confirmReservation(tx, re.value.reservationId);
+          if (!c2.ok) throw new Error(`reservation_confirm_failed:${re.value.reservationId}`);
+          await tx.query(`update order_items set reservation_id = $2 where id = $1`, [it.id, re.value.reservationId]);
+        }
+        if (shortfall.length > 0) {
+          await enqueueEvent(tx, {
+            tenantId: input.tenantId,
+            type: "order.stock_shortfall",
+            payload: { orderId: payment.order_id, paymentId: payment.id, variantIds: shortfall },
+          });
         }
         await tx.query(`update orders set status = 'confirmed', payment_status = 'pagado', updated_at = now() where id = $1`, [payment.order_id]);
 
@@ -172,7 +215,7 @@ export async function capturePayment(
         await enqueueEvent(tx, { tenantId: input.tenantId, type: "payment.captured", payload: { paymentId: payment.id, orderId: payment.order_id } });
         await enqueueEvent(tx, { tenantId: input.tenantId, type: "order.confirmed", payload: { orderId: payment.order_id } });
 
-        return { paymentId: payment.id, alreadyProcessed: false };
+        return { paymentId: payment.id, alreadyProcessed: false, ...(shortfall.length > 0 ? { stockShortfall: shortfall } : {}) };
       }),
     );
   } catch (e) {
@@ -313,4 +356,80 @@ export async function refundAllocation(
   } catch (e) {
     return err(e instanceof Error ? e.message : String(e));
   }
+}
+
+/**
+ * Pedidos con "Pagar ahora" que nunca se pagaron (el cliente fue a MP y abandonó). Pasado
+ * `olderThanHours` se cancelan (libera stock si quedaba reservado) y su pago pendiente pasa a
+ * 'failed'. Si después llegara una aprobación tardía, ya no reabre el pedido: se reporta como
+ * pago tardío para que el comercio lo reembolse (ver applyMercadoPagoPayment).
+ * Lo corre el cron diario por tenant. Devuelve cuántos canceló.
+ */
+export async function expireAbandonedOnlinePayments(
+  db: TenantAwareDb,
+  tenantId: string,
+  olderThanHours = 72,
+): Promise<number> {
+  const stale = await db.withTenant(tenantId, (tx) =>
+    tx.query<{ id: string }>(
+      `select id from orders
+        where status = 'pending_payment' and payment_method = 'online'
+          and created_at < now() - ($1 || ' hours')::interval`,
+      [String(olderThanHours)],
+    ),
+  );
+  let cancelled = 0;
+  for (const o of stale) {
+    // Primero el pago (así una aprobación que llegue en el medio no confirma un pedido cancelado).
+    await db.withTenant(tenantId, (tx) =>
+      tx.query(`update payments set status = 'failed', updated_at = now() where order_id = $1 and status = 'pending'`, [o.id]),
+    );
+    const r = await cancelOrder(db, tenantId, o.id);
+    if (r.ok) cancelled += 1;
+  }
+  return cancelled;
+}
+
+/**
+ * Marca un pago aprobado por el PSP que llegó DESPUÉS de cancelar el pedido por abandono:
+ * se guarda el id del pago del PSP para que el comercio lo vea en el panel y lo reembolse.
+ */
+export async function flagLatePayment(
+  db: TenantAwareDb,
+  input: { tenantId: string; providerRef: string; providerPaymentId: string },
+): Promise<void> {
+  await db.withTenant(input.tenantId, (tx) =>
+    tx.query(
+      `update payments set provider_payment_id = $2, updated_at = now()
+        where provider_ref = $1 and status = 'failed' and provider_payment_id is null`,
+      [input.providerRef, input.providerPaymentId],
+    ),
+  );
+}
+
+export interface PaymentToReview {
+  orderId: string;
+  providerPaymentId: string;
+  amountMinor: bigint;
+  currency: string;
+  petName: string | null;
+  updatedAt: string;
+}
+
+/** Pagos online cobrados sobre pedidos ya cancelados (a reembolsar desde el PSP). */
+export async function listLatePayments(tx: Db): Promise<PaymentToReview[]> {
+  const rows = await tx.query<{ order_id: string; provider_payment_id: string; amount_minor: string; currency: string; pet_name: string | null; updated_at: string }>(
+    `select p.order_id, p.provider_payment_id, p.amount_minor, p.currency, o.pet_name, p.updated_at
+       from payments p join orders o on o.id = p.order_id
+      where p.status = 'failed' and p.provider_payment_id is not null
+      order by p.updated_at desc limit 50`,
+  );
+  return rows.map((r) => ({
+    orderId: r.order_id,
+    providerPaymentId: r.provider_payment_id,
+    amountMinor: BigInt(r.amount_minor),
+    currency: r.currency,
+    petName: r.pet_name,
+    updatedAt: new Date(r.updated_at).toISOString(),
+  }));
 }

@@ -386,7 +386,7 @@ export default function MerchantPanel() {
         : tab === "contenido" ? <ContentStudioTab tenant={tenant} token={token} onError={setError} />
         : tab === "reportes" ? <ReportsTab tenant={tenant} token={token} onError={setError} />
         : tab === "diseno" ? <DesignTab tenant={tenant} token={token} onError={setError} />
-        : tab === "config" ? <><SettingsTab tenant={tenant} token={token} onError={setError} /><div style={{ height: 14 }} /><DeliveryScheduleEditor tenant={tenant} token={token} onError={setError} /></>
+        : tab === "config" ? <><MercadoPagoSettings tenant={tenant} token={token} onError={setError} /><div style={{ height: 14 }} /><SettingsTab tenant={tenant} token={token} onError={setError} /><div style={{ height: 14 }} /><DeliveryScheduleEditor tenant={tenant} token={token} onError={setError} /></>
         : <AdoptionsTab tenant={tenant} token={token} onError={setError} />}
       </main>
     </div>
@@ -1347,6 +1347,156 @@ function SettingsTab({ tenant, token, onError }: { tenant: string | null; token:
         </button>
         {dirtyKeys.length > 0 && !saving && <span style={{ fontSize: 12.5, color: MUT }}>Hay cambios sin guardar.</span>}
       </div>
+    </div>
+  );
+}
+
+// ── Cobros online: conexión de Mercado Pago ──────────────────────────────────────
+type MpStatus = {
+  configured: boolean; enabled: boolean; liveMode: boolean; tokenHint: string | null;
+  hasWebhookSecret: boolean; accountId: string | null; accountNickname: string | null;
+  encryptionReady: boolean; webhookUrl: string;
+  latePayments: Array<{ orderId: string; providerPaymentId: string; amountMinor: string; currency: string; petName: string | null; updatedAt: string }>;
+};
+
+/**
+ * Conectar Mercado Pago para ofrecer "Pagar ahora" en la tienda. El comercio pega su Access
+ * Token (se valida con MP y se guarda cifrado; nunca vuelve al navegador) y, opcionalmente, la
+ * clave secreta de webhooks. Con un interruptor se activa/desactiva sin borrar nada.
+ */
+function MercadoPagoSettings({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const auth = { authorization: `Bearer ${token}` };
+  const [st, setSt] = useState<MpStatus | null>(null);
+  const [accessToken, setAccessToken] = useState("");
+  const [secret, setSecret] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const url = `/api/merchant/payments/mercadopago?tenant=${encodeURIComponent(tenant ?? "")}`;
+
+  const load = useCallback(async () => {
+    if (!tenant) return;
+    const res = await fetch(url, { headers: auth });
+    if (!res.ok) { onError((await res.json()).error ?? "error"); return; }
+    setSt(await res.json());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function put(body: Record<string, unknown>, okMsg: string) {
+    setBusy(true);
+    onError(null);
+    const res = await fetch(url, { method: "PUT", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(body) });
+    setBusy(false);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { onError(d.error ?? "error"); return; }
+    setAccessToken(""); setSecret(""); setEditing(false);
+    await load();
+    onError(okMsg);
+  }
+
+  async function disconnect() {
+    if (!confirm("¿Desconectar Mercado Pago? La tienda deja de ofrecer \"Pagar ahora\" (los pedidos ya pagados no cambian).")) return;
+    setBusy(true);
+    const res = await fetch(url, { method: "DELETE", headers: auth });
+    setBusy(false);
+    if (!res.ok) { onError((await res.json()).error ?? "error"); return; }
+    await load();
+    onError("✓ Mercado Pago desconectado.");
+  }
+
+  if (!st) return <div style={card}><div style={{ fontSize: 13, color: MUT }}>Cargando cobros online…</div></div>;
+  const money = (m: string) => (Number(m) / 100).toLocaleString("es-AR", { style: "currency", currency: "ARS" });
+  const showForm = !st.configured || editing;
+
+  return (
+    <div style={card}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 6 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: INK }}>Cobros online — Mercado Pago</div>
+        {st.configured && (
+          <span style={{ fontSize: 11.5, fontWeight: 700, borderRadius: 7, padding: "4px 8px", background: st.enabled ? "#e9f4ea" : "#f1f1f1", color: st.enabled ? A_DARK : MUT }}>
+            {st.enabled ? (st.liveMode ? "Activo" : "Activo (modo prueba)") : "Pausado"}
+          </span>
+        )}
+      </div>
+      <p style={{ fontSize: 12.5, color: MUT, margin: "0 0 12px" }}>
+        Con Mercado Pago conectado, la tienda ofrece <b>Pagar ahora</b> (tarjeta, débito o dinero en cuenta). El pedido entra
+        confirmado apenas se acredita el pago. Pagar al recibir sigue funcionando igual.
+      </p>
+
+      {!st.encryptionReady && (
+        <div style={{ fontSize: 12.5, color: "#8a5a00", background: "#fff6e0", borderRadius: 9, padding: "10px 12px", marginBottom: 12 }}>
+          Falta un paso técnico: configurar la llave <b>PAYMENTS_ENCRYPTION_KEY</b> en Vercel (ver el manual de operación). Sin ella no se pueden guardar las credenciales.
+        </div>
+      )}
+
+      {st.configured && !editing && (
+        <div style={{ display: "grid", gap: 6, fontSize: 13, color: INK, marginBottom: 12 }}>
+          <div>Cuenta: <b>{st.accountNickname ?? st.accountId ?? "—"}</b> · Access Token <code>{st.tokenHint}</code></div>
+          <div>Clave secreta de webhooks: {st.hasWebhookSecret ? <b>cargada ✓</b> : <span style={{ color: MUT }}>no cargada (recomendada)</span>}</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+            <button className="mbtn" style={btn} disabled={busy} onClick={() => put({ enabled: !st.enabled }, st.enabled ? "✓ Pagar ahora pausado." : "✓ Pagar ahora activado.")}>
+              {st.enabled ? "Pausar Pagar ahora" : "Activar Pagar ahora"}
+            </button>
+            <button className="mbtn" style={btnGhost} disabled={busy} onClick={() => setEditing(true)}>Cambiar credenciales</button>
+            <button className="mbtn" style={btnDanger} disabled={busy} onClick={disconnect}>Desconectar</button>
+          </div>
+        </div>
+      )}
+
+      {showForm && (
+        <div style={{ display: "grid", gap: 10, marginBottom: 12 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: INK }}>
+            Access Token de producción
+            <input type="password" autoComplete="off" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="APP_USR-…" style={{ ...input, width: "100%", marginTop: 4 }} />
+            <span style={{ display: "block", fontSize: 11.5, color: MUT, fontWeight: 400, marginTop: 3 }}>
+              En Mercado Pago: Tus integraciones → tu aplicación → Credenciales de producción. Para probar sin plata real, usá el de prueba (TEST-…).
+            </span>
+          </label>
+          <label style={{ fontSize: 13, fontWeight: 600, color: INK }}>
+            Clave secreta de webhooks <span style={{ fontWeight: 400, color: MUT }}>(opcional, recomendada)</span>
+            <input type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={st.hasWebhookSecret ? "Dejalo vacío para conservar la actual" : ""} style={{ ...input, width: "100%", marginTop: 4 }} />
+          </label>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="mbtn" style={{ ...btn, opacity: accessToken.trim() && !busy && st.encryptionReady ? 1 : 0.5 }} disabled={!accessToken.trim() || busy || !st.encryptionReady}
+              onClick={() => put({ accessToken, ...(secret.trim() ? { webhookSecret: secret } : {}) }, "✓ Mercado Pago conectado. Ya aparece Pagar ahora en la tienda.")}>
+              {busy ? "Validando con Mercado Pago…" : "Conectar"}
+            </button>
+            {editing && <button className="mbtn" style={btnGhost} onClick={() => { setEditing(false); setAccessToken(""); setSecret(""); }}>Cancelar</button>}
+          </div>
+        </div>
+      )}
+
+      {st.configured && !editing && !st.hasWebhookSecret && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+          <input type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Pegá la clave secreta de webhooks" style={{ ...input, flex: 1 }} />
+          <button className="mbtn" style={{ ...btn, opacity: secret.trim() && !busy ? 1 : 0.5 }} disabled={!secret.trim() || busy} onClick={() => put({ webhookSecret: secret }, "✓ Clave secreta guardada.")}>Guardar clave</button>
+        </div>
+      )}
+
+      <details style={{ fontSize: 12.5, color: MUT }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600, color: INK }}>Configurar los avisos (webhooks) en Mercado Pago</summary>
+        <div style={{ marginTop: 8, lineHeight: 1.6 }}>
+          Los avisos ya van incluidos en cada cobro, así que funciona sin configurar nada. Para más seguridad: en Mercado Pago →
+          Tus integraciones → tu aplicación → <b>Webhooks</b>, pegá esta URL, marcá el evento <b>Pagos</b>, guardá y copiá acá la
+          <b> clave secreta</b> que te muestra.
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <code style={{ flex: 1, background: "#f6f7f9", padding: "6px 8px", borderRadius: 7, overflowX: "auto", whiteSpace: "nowrap" }}>{st.webhookUrl}</code>
+            <button className="mbtn" style={{ ...btn, padding: "6px 10px" }} onClick={() => { void navigator.clipboard?.writeText(st.webhookUrl); onError("✓ URL copiada."); }}>Copiar</button>
+          </div>
+        </div>
+      </details>
+
+      {st.latePayments.length > 0 && (
+        <div style={{ marginTop: 12, fontSize: 12.5, color: "#8a1c1c", background: "#fdecea", borderRadius: 9, padding: "10px 12px" }}>
+          <b>Pagos para reembolsar:</b> estos pagos se aprobaron en Mercado Pago después de que el pedido se canceló por falta de pago.
+          Reembolsalos desde tu cuenta de Mercado Pago (Actividad → el pago → Devolver dinero) o contactá al cliente.
+          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+            {st.latePayments.map((p) => (
+              <li key={p.providerPaymentId}>Pago MP #{p.providerPaymentId} — {money(p.amountMinor)}{p.petName ? ` (pedido de ${p.petName})` : ""} · pedido #{p.orderId.slice(0, 8)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

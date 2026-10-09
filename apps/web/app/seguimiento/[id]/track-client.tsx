@@ -13,6 +13,8 @@ interface Track {
   currency: string;
   deliveryWindow: string | null;
   createdAt: string;
+  paymentMethod: string | null;
+  paymentStatus: string;
 }
 
 const C = { green: "#2e7d32", soft: "#e9f4ea", ink: "#1f2a2e", mut: "#6b7280", line: "#e7e9ec", bg: "#f4f6f5", white: "#fff", red: "#c0392b" };
@@ -24,8 +26,9 @@ const STEPS: Array<{ key: string; label: string; Icon: typeof ClipboardList }> =
   { key: "entregado", label: "Entregado", Icon: PartyPopper },
 ];
 
-export default function TrackClient({ id, tenant }: { id: string; tenant: string }) {
+export default function TrackClient({ id, tenant, pago, mpPaymentId }: { id: string; tenant: string; pago: string; mpPaymentId: string }) {
   const [t, setT] = useState<Track | null>(null);
+  const [synced, setSynced] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -39,7 +42,17 @@ export default function TrackClient({ id, tenant }: { id: string; tenant: string
     finally { setLoading(false); }
   }, [id, tenant]);
 
-  useEffect(() => { void load(); }, [load]);
+  // Volvió de Mercado Pago: verificamos el pago contra MP (no esperamos solo al webhook) y
+  // recién después cargamos el estado. Si falla, el webhook igual lo confirma.
+  useEffect(() => {
+    if (!mpPaymentId || !tenant || synced) { void load(); return; }
+    setSynced(true);
+    fetch(`/api/payments/mercadopago/sync?tenant=${encodeURIComponent(tenant)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ orderId: id, paymentId: mpPaymentId }),
+    }).catch(() => {}).finally(() => void load());
+  }, [load, id, tenant, mpPaymentId, synced]);
   // Auto-refresh en vivo cada 20 s (sin recargar la página).
   useEffect(() => {
     const iv = setInterval(() => void load(), 20000);
@@ -48,6 +61,8 @@ export default function TrackClient({ id, tenant }: { id: string; tenant: string
 
   const pet = t?.petName?.trim();
   const cancelled = t?.stage === "cancelado";
+  // Pago online todavía no acreditado (se fue a MP y no pagó, o MP lo está procesando).
+  const awaitingOnline = t?.paymentMethod === "online" && t.paymentStatus !== "pagado" && !cancelled;
 
   return (
     <div style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", background: C.bg, minHeight: "100vh", color: C.ink }}>
@@ -66,6 +81,18 @@ export default function TrackClient({ id, tenant }: { id: string; tenant: string
           <div style={{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 14, padding: 22, textAlign: "center", color: C.mut }}>{error}</div>
         ) : t ? (
           <>
+            {t.paymentMethod === "online" && t.paymentStatus === "pagado" && (
+              <Banner color={C.green} bg={C.soft}>✓ Pago con Mercado Pago aprobado. ¡Gracias!</Banner>
+            )}
+            {awaitingOnline && (
+              <Banner color={pago === "error" ? C.red : "#8a5a00"} bg={pago === "error" ? "#fdecea" : "#fff6e0"}>
+                {pago === "error"
+                  ? "El pago no se completó. Podés volver a intentarlo desde Mercado Pago o escribirnos por WhatsApp."
+                  : pago === "pendiente"
+                    ? "Mercado Pago está procesando tu pago. Apenas se acredite, tu pedido pasa a preparación."
+                    : "Estamos esperando la confirmación del pago de Mercado Pago."}
+              </Banner>
+            )}
             <div style={{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 16, padding: 22, boxShadow: "0 1px 2px rgba(16,24,40,.04)" }}>
               <div style={{ textAlign: "center", marginBottom: cancelled ? 0 : 22 }}>
                 <span style={{ fontSize: 13, color: C.mut }}>Estado actual</span>
@@ -108,6 +135,14 @@ export default function TrackClient({ id, tenant }: { id: string; tenant: string
           </>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function Banner({ color, bg, children }: { color: string; bg: string; children: React.ReactNode }) {
+  return (
+    <div style={{ background: bg, color, border: `1px solid ${color}33`, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 13.5, fontWeight: 600, textAlign: "center" }}>
+      {children}
     </div>
   );
 }

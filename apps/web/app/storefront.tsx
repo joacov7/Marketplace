@@ -86,6 +86,8 @@ export interface StoreConfig {
   deliveryDays: number[];
   deliveryCutoffHour: number;
   auxilioWindow: string;
+  /** El comercio conectó Mercado Pago → se ofrece "Pagar ahora". */
+  mercadoPagoEnabled: boolean;
 }
 
 // ── Design tokens (handoff) ────────────────────────────────────────────────────
@@ -524,12 +526,23 @@ export default function Storefront(props: {
       if (!res.ok) {
         if (d.error === "outside_delivery_radius") {
           setError(`Tu ubicación está fuera de nuestra zona de envío (a ${d.distanceKm} km; llegamos hasta ${d.radiusKm} km).`);
+        } else if (d.error === "mercadopago_unavailable") {
+          setError("El pago con Mercado Pago no está disponible en este momento. Elegí pagar al recibir.");
+        } else if (d.error === "mercadopago_error") {
+          setError("No pudimos abrir Mercado Pago. Probá de nuevo o elegí pagar al recibir.");
         } else if (d.error === "below_minimum") {
           const falta = money(Number(d.missingMinor));
           setError(d.hasFood === false
             ? `Sin alimento, el mínimo de envío es ${money(Number(d.minMinor))}. Te faltan ${falta} — sumá algo más o agregá una bolsa de alimento.`
             : `Te faltan ${falta} para llegar al mínimo de envío.`);
         } else { setError(d.error ?? "error en el checkout"); }
+        return;
+      }
+      // Pagar ahora: vamos a Mercado Pago. Al terminar, MP lo devuelve al seguimiento del pedido.
+      if (d.redirectUrl) {
+        setCart({});
+        try { localStorage.setItem(storageKey, "{}"); } catch { /* */ }
+        window.location.href = d.redirectUrl;
         return;
       }
       // Mostramos el total cotizado (con descuento) que el cliente confirmó.
@@ -1892,14 +1905,18 @@ function CheckoutView(props: {
             <RadioCard G={G} on={props.payment === "transferencia"} title="Transferencia bancaria" sub={`${props.config.transferDiscountPercent}% de descuento`} onClick={() => props.setPayment("transferencia")} />
             <RadioCard G={G} on={props.payment === "pos"} title="Tarjeta (POS al recibir)" sub="Débito o crédito al momento de la entrega" onClick={() => props.setPayment("pos")} />
             <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em", margin: "14px 0 8px" }}>Pagar ahora</div>
-            <div style={{ display: "flex", gap: 13, alignItems: "center", padding: 14, borderRadius: 11, border: `1.5px solid ${C.border}`, background: C.surf, opacity: 0.7 }}>
-              <span style={{ width: 18, height: 18, borderRadius: "50%", border: `1.5px solid ${C.radioOff}`, flexShrink: 0 }} />
-              <span style={{ flex: 1 }}>
-                <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>Mercado Pago</span>
-                <span style={{ display: "block", fontSize: 12.5, color: C.mute }}>Débito, crédito o dinero en cuenta</span>
-              </span>
-              <span style={{ fontSize: 11.5, fontWeight: 700, color: C.mute, background: C.white, borderRadius: 7, padding: "4px 8px" }}>Próximamente</span>
-            </div>
+            {props.config.mercadoPagoEnabled ? (
+              <RadioCard G={G} on={props.payment === "mercadopago"} title="Mercado Pago" sub="Débito, crédito o dinero en cuenta. Te llevamos a pagar y volvés acá." onClick={() => props.setPayment("mercadopago")} />
+            ) : (
+              <div style={{ display: "flex", gap: 13, alignItems: "center", padding: 14, borderRadius: 11, border: `1.5px solid ${C.border}`, background: C.surf, opacity: 0.7 }}>
+                <span style={{ width: 18, height: 18, borderRadius: "50%", border: `1.5px solid ${C.radioOff}`, flexShrink: 0 }} />
+                <span style={{ flex: 1 }}>
+                  <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>Mercado Pago</span>
+                  <span style={{ display: "block", fontSize: 12.5, color: C.mute }}>Débito, crédito o dinero en cuenta</span>
+                </span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: C.mute, background: C.white, borderRadius: 7, padding: "4px 8px" }}>Próximamente</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1930,7 +1947,7 @@ function CheckoutView(props: {
                 : <>Sin alimento el mínimo de envío es <b>{money(minMinor)}</b>. Te faltan {money(missingMin)} — sumá algo más o agregá una bolsa de alimento. 🐾</>}
             </p>
           )}
-          <button className="sf-btn" onClick={props.onConfirm} disabled={props.busy || props.outsideRadius || belowMin} style={{ ...primaryBtn(G), width: "100%", padding: 15, marginTop: 18, ...(props.outsideRadius || belowMin ? { opacity: 0.55, cursor: "not-allowed" } : {}) }}>{props.busy ? "Procesando…" : "CONFIRMAR PEDIDO"}</button>
+          <button className="sf-btn" onClick={props.onConfirm} disabled={props.busy || props.outsideRadius || belowMin} style={{ ...primaryBtn(G), width: "100%", padding: 15, marginTop: 18, ...(props.outsideRadius || belowMin ? { opacity: 0.55, cursor: "not-allowed" } : {}) }}>{props.busy ? "Procesando…" : props.payment === "mercadopago" ? "IR A PAGAR CON MERCADO PAGO" : "CONFIRMAR PEDIDO"}</button>
           <p style={{ fontSize: 11.5, color: C.mute, textAlign: "center", marginTop: 10, marginBottom: 0 }}>Te confirmamos el pedido por WhatsApp antes de salir a entregar.</p>
         </div>
       </div>

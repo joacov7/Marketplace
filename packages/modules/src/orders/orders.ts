@@ -385,6 +385,10 @@ export interface TrackingView {
   currency: string;
   deliveryWindow: string | null;
   createdAt: string;
+  /** online | efectivo | pos | transferencia (null en pedidos viejos). */
+  paymentMethod: string | null;
+  /** pendiente | pagado. Para online: "pendiente" = todavía no se acreditó el pago. */
+  paymentStatus: string;
 }
 
 const STAGE_LABEL: Record<TrackingStage, string> = {
@@ -422,8 +426,11 @@ export async function getOrderTracking(db: Db, orderId: string): Promise<Trackin
     delivery_window: string | null;
     item_count: string;
     created_at: string;
+    payment_method: string | null;
+    payment_status: string;
   }>(
     `select o.status, o.pet_name, o.currency, o.total_minor, o.delivery_charge_minor, o.delivery_window, o.created_at,
+            o.payment_method, o.payment_status,
             (select count(*) from order_items oi join seller_orders so on so.id = oi.seller_order_id where so.order_id = o.id) as item_count,
             (select so.status from seller_orders so where so.order_id = o.id order by so.created_at limit 1) as fulfillment
        from orders o where o.id = $1`,
@@ -441,6 +448,8 @@ export async function getOrderTracking(db: Db, orderId: string): Promise<Trackin
     currency: o.currency,
     deliveryWindow: o.delivery_window,
     createdAt: new Date(o.created_at).toISOString(),
+    paymentMethod: o.payment_method,
+    paymentStatus: o.payment_status,
   };
 }
 

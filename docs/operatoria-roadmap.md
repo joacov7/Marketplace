@@ -75,7 +75,8 @@
 - **Nuestro (config/feature, sin terceros)**: pago al recibir, aceptar/rechazar, cobro al
   entregar, pantalla de reparto, ficha de cliente por teléfono, recompra por WhatsApp,
   dirección + ubicación opcional, zonas de reparto, pedido manual/mostrador.
-- **Necesita cuenta del cliente**: **Mercado Pago** (para "Pagar ahora" online).
+- **Necesita cuenta del cliente**: **Mercado Pago** (para "Pagar ahora" online) — ya integrado;
+  solo falta que el comercio conecte su cuenta desde el panel.
 
 ## Orden de construcción propuesto (cuando dé el OK)
 1. ✅ **Pago al recibir + Aceptar/Rechazar** + **pedido manual/mostrador** + **teléfono como
@@ -85,7 +86,24 @@
 3. ✅ **Direcciones + seguimiento**: referencias + "compartir ubicación" GPS opcional en
    checkout; "Cómo llegar" en reparto va al pin exacto si lo hay; **seguimiento en vivo para el
    cliente** (link sin login). **IMPLEMENTADO** (ver abajo). Falta **zonas de reparto**.
-4. **Mercado Pago** real: cuando el cliente tenga la cuenta, se suma "Pagar ahora".
+4. ✅ **Mercado Pago** real ("Pagar ahora", Checkout Pro). **IMPLEMENTADO** (ver abajo).
+
+### ✅ Mercado Pago — implementado (Checkout Pro)
+- El comercio conecta su cuenta desde el panel (Configuración → Cobros online): pega el Access
+  Token, se valida contra MP (`/users/me`) y se guarda **cifrado** (AES-256-GCM, clave en
+  `PAYMENTS_ENCRYPTION_KEY`). Se puede pausar o desconectar. Clave secreta de webhooks opcional.
+- Checkout "Pagar ahora" → preferencia con `external_reference` = pedido, 30 min para pagar
+  (reserva y preferencia vencen a la par), sin efectivo/cajero (acreditación diferida).
+- Confirmación por **webhook** y por **verificación al volver** (seguimiento): ambos consultan el
+  pago a la API de MP y capturan con control de monto; idempotentes entre sí.
+- El pedido pagado entra al panel **confirmado** (no pasa por "por aceptar"). Si la reserva
+  venció, se re-reserva; si ya no hay stock, el cobro se registra igual y se avisa.
+- Pedidos online sin pagar: no aparecen en la cola; el cron diario los cancela a los 3 días.
+  Una aprobación posterior queda en "Pagos para reembolsar" en el panel.
+- **Corrección del ledger**: el envío que asienta el ledger (MP y cobro al entregar) ahora es el
+  que pagó el cliente (zona/auxilio/gratis/suscripción), no el recalculado desde config.
+- Follow-ups: reembolsos desde el panel, cobro recurrente de suscripciones (preapproval),
+  conexión por OAuth en vez de pegar el token.
 
 ### ✅ Eslabón 3 — implementado (ubicación + seguimiento en vivo)
 - **Ubicación GPS opcional** en el checkout: botón "📍 Compartir mi ubicación" (Geolocation del

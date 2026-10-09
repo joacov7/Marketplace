@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getVariantWithPrice } from "@commerce/modules/catalog";
-import { createOrder, type PaymentMethod } from "@commerce/modules/orders";
-import { createPaymentIntent, FakePaymentProvider } from "@commerce/modules/payments";
+import { createOrder, cancelOrder, type PaymentMethod } from "@commerce/modules/orders";
+import { createPaymentIntent } from "@commerce/modules/payments";
 import { addAddress, ensureCustomerForUser, findOrCreateCustomerByPhone } from "@commerce/modules/customer";
 import { zoneChargeByName, checkDeliveryRadius, cartHasFood, resolveMinOrderConfig, applyMinOrder } from "@commerce/modules/delivery";
 import { createPet, listPets, type Species } from "@commerce/modules/pets";
@@ -9,12 +9,9 @@ import { resolveConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { readSession } from "@/lib/session";
+import { mercadoPagoCredentials, mercadoPagoProvider, publicOrigin, webhookUrl, MP_PAY_WINDOW_SECONDS } from "@/lib/mercadopago";
 
 export const dynamic = "force-dynamic";
-
-// V1: proveedor "fake" (pago a la operación propia). Se reemplaza por Mercado Pago sin
-// tocar este handler (Payment Orchestrator).
-const provider = new FakePaymentProvider();
 
 interface Addr { street?: string; city?: string; zone?: string; phone?: string; notes?: string; label?: string; lat?: number; lng?: number }
 interface CheckoutBody {
@@ -127,6 +124,13 @@ export async function POST(req: Request) {
 
   const session = readSession();
   const isOnline = ONLINE_METHODS.has(body.payment ?? "");
+
+  // "Pagar ahora" solo si el comercio conectó Mercado Pago (credenciales activas). Se valida
+  // ANTES de crear el pedido para no reservar stock de un pedido que no se puede pagar.
+  const mpCreds = isOnline ? await mercadoPagoCredentials(tenant.tenantId, priced.merchantId) : null;
+  if (isOnline && !mpCreds?.enabled) {
+    return NextResponse.json({ error: "mercadopago_unavailable" }, { status: 400 });
+  }
   const paymentMethod = methodFor(body.payment);
   const phone = body.phone?.trim();
 
@@ -189,8 +193,9 @@ export async function POST(req: Request) {
     deliveryWindow,
     deliveryChargeMinor: priced.deliveryChargeMinor,
     // Pago al recibir se acepta más tarde: retenemos el stock 7 días (no 15 min) para no
-    // perderlo mientras el comercio decide. Online se captura enseguida por webhook (TTL corto).
-    ...(isOnline ? {} : { reservationTtlSeconds: 7 * 24 * 3600 }),
+    // perderlo mientras el comercio decide. Online: el mismo plazo que tiene para pagar en MP
+    // (la preferencia vence a la par; si no paga, la reserva vence sola).
+    reservationTtlSeconds: isOnline ? MP_PAY_WINDOW_SECONDS : 7 * 24 * 3600,
     sellers: [{ merchantId: priced.merchantId, items: priced.items }],
   });
   if (!order.ok) return NextResponse.json({ error: order.error }, { status: 409 });
@@ -213,17 +218,30 @@ export async function POST(req: Request) {
   }
 
   // Pago al recibir → NO se cobra ahora: el pedido queda "a aceptar" (pending_payment) y el
-  // comercio lo Acepta/Rechaza; el cobro se registra al entregar (fuera de este eslabón).
-  // Pago online → intent (V1 fake; MP se enchufa después) para capturar por webhook.
-  let providerRef: string | null = null;
-  if (isOnline) {
-    const intent = await createPaymentIntent(db(), provider, {
-      tenantId: tenant.tenantId,
-      orderId: order.value.orderId,
-      idempotencyKey,
+  // comercio lo Acepta/Rechaza; el cobro se registra al entregar.
+  // Pago online → preferencia de Mercado Pago (Checkout Pro). El cliente paga en MP y vuelve al
+  // seguimiento; el pedido se confirma cuando MP aprueba (webhook o verificación al volver).
+  let redirectUrl: string | null = null;
+  if (isOnline && mpCreds) {
+    const orderId = order.value.orderId;
+    const origin = publicOrigin(req);
+    const back = (estado: string) => `${origin}/seguimiento/${orderId}?tenant=${encodeURIComponent(tenant.slug)}&pago=${estado}`;
+    const shopName = (await resolveConfigValue<string>(db(), "branding.displayName", chain)).value || tenant.name;
+    const provider = mercadoPagoProvider(mpCreds, {
+      notificationUrl: webhookUrl(origin, priced.merchantId, tenant.slug),
+      backUrls: { success: back("aprobado"), pending: back("pendiente"), failure: back("error") },
+      title: who.petName ? `Pedido de ${who.petName} — ${shopName}` : `Pedido ${shopName}`,
+      statementDescriptor: shopName,
+      expiresInSeconds: MP_PAY_WINDOW_SECONDS,
     });
-    if (!intent.ok) return NextResponse.json({ error: intent.error }, { status: 500 });
-    providerRef = intent.value.providerRef;
+    const intent = await createPaymentIntent(db(), provider, { tenantId: tenant.tenantId, orderId, idempotencyKey });
+    if (!intent.ok || !intent.value.redirectUrl) {
+      // No se pudo abrir el pago: cancelamos el pedido (libera el stock) para no dejarlo colgado.
+      await cancelOrder(db(), tenant.tenantId, orderId).catch(() => {});
+      console.error(`[checkout:mercadopago] tenant=${tenant.slug} order=${orderId} ${intent.ok ? "sin init_point" : intent.error}`);
+      return NextResponse.json({ error: "mercadopago_error" }, { status: 502 });
+    }
+    redirectUrl = intent.value.redirectUrl;
   }
 
   return NextResponse.json(
@@ -235,7 +253,7 @@ export async function POST(req: Request) {
       petName: who.petName,
       paymentMethod,
       payOnDelivery: !isOnline,
-      ...(providerRef ? { providerRef } : {}),
+      ...(redirectUrl ? { redirectUrl } : {}),
     },
     { status: 201 },
   );

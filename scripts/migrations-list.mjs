@@ -23,4 +23,5 @@ export const MIGRATION_FILES = [
   ["0017_images", "packages/modules/src/catalog/migrations/0017_images.sql"],
   ["0018_category_hidden", "packages/modules/src/catalog/migrations/0018_category_hidden.sql"],
   ["0019_combos", "packages/modules/src/catalog/migrations/0019_combos.sql"],
+  ["0020_mercadopago", "packages/modules/src/payments/migrations/0020_mercadopago.sql"],
 ];

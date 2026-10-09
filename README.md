@@ -20,7 +20,7 @@ propio (Pet Shop Gualeguay) y evoluciona a marketplace / White Label / multi-ver
 Fases F1–F5 completas y la app operando el ciclo completo de un pet shop: tienda PWA,
 checkout, panel del comercio, reparto, seguimiento, suscripciones y Vendedor IA.
 
-**171 tests en verde** (+2 gated a Neon) · lint con límites de módulos · typecheck · `next build`
+**190 tests en verde** (+2 gated a Neon) · lint con límites de módulos · typecheck · `next build`
 — todo corre en CI (`.github/workflows/ci.yml`).
 
 ### Core de plataforma (`@commerce/platform`)
@@ -42,7 +42,7 @@ checkout, panel del comercio, reparto, seguimiento, suscripciones y Vendedor IA.
 | **catalog** | Productos, variantes, precios versionados (con precio de lista), categorías ordenables/ocultables, fotos subidas como archivo (guardadas en la base), info nutricional, **combos/cajas**. |
 | **inventory** | Reserva atómica anti-oversell (`available >= qty`), ciclo reserve(TTL)→confirm/release, barrido de vencidas. |
 | **orders** | Order → SellerOrder → OrderItem (multi-seller sin rehacer el modelo), máquina de estados, canales (web / manual / suscripción), pago al recibir, **aceptar/rechazar**, pedido manual/mostrador, seguimiento del cliente. |
-| **payments** | `PaymentProvider` abstracto, allocations exactas, **ledger de doble partida**, captura idempotente, refund parcial, **cobro al entregar** (`settleCashOnDelivery`). |
+| **payments** | `PaymentProvider` abstracto con **Mercado Pago (Checkout Pro)** real: credenciales por comercio cifradas, webhook verificado contra la API de MP, control de monto. Allocations exactas, **ledger de doble partida**, captura idempotente, refund parcial, **cobro al entregar** (`settleCashOnDelivery`). |
 | **delivery** | Costeo por zona (costo + ETA por barrio) o plano por config, gratis sobre umbral, mínimo de envío por segmento, agenda de entrega (turnos, días, corte, franjas), radio y pin del local. |
 | **customer** / **pets** | Ficha de cliente **por teléfono** (sin obligar registro) y perfil de mascota — la mascota es protagonista del pedido ("Pedido de Bruno"). |
 | **subscriptions** | Auto-envío cada X días: genera el pedido solo, cobro al recibir, descuento opcional por config. |
@@ -56,8 +56,8 @@ checkout, panel del comercio, reparto, seguimiento, suscripciones y Vendedor IA.
 
 | Pantalla | Qué es |
 |----------|--------|
-| `/` | Tienda PWA: tenant por subdominio, branding por config, catálogo, checkout (dirección + referencias + GPS opcional, zona, horario sugerido, pago al recibir), cuenta del cliente (mascotas, pedidos, "repetir última compra", reposición, suscripciones), **Vendedor IA** flotante. |
-| `/merchant` | Panel del comercio (login por usuario + rol admin): pedidos (aceptar/rechazar, preparar, pedido manual), catálogo, categorías, combos, zonas y agenda de reparto, suscripciones, adopciones, diseño, contenido, reportes y **Configuración** (parámetros y funciones activables). |
+| `/` | Tienda PWA: tenant por subdominio, branding por config, catálogo, checkout (dirección + referencias + GPS opcional, zona, horario sugerido, pago al recibir o **Mercado Pago**), cuenta del cliente (mascotas, pedidos, "repetir última compra", reposición, suscripciones), **Vendedor IA** flotante. |
+| `/merchant` | Panel del comercio (login por usuario + rol admin): pedidos (aceptar/rechazar, preparar, pedido manual), catálogo, categorías, combos, zonas y agenda de reparto, suscripciones, adopciones, diseño, contenido, reportes y **Configuración** (cobros online con Mercado Pago, parámetros y funciones activables). |
 | `/reparto` | Pantalla del repartidor (PWA instalable): entregas del día, "Cómo llegar" (al pin exacto si hay), WhatsApp, En camino → Entregado + registro del cobro. |
 | `/seguimiento/[id]` | Seguimiento público del pedido (sin login): Recibido → En preparación → En camino → Entregado. |
 
@@ -65,18 +65,18 @@ API principal (route handlers en `apps/web/app/api/`):
 
 | Grupo | Rutas |
 |-------|-------|
-| Tienda | `catalog`, `checkout`, `checkout/quote`, `zones`, `customer/lookup`, `track/[id]`, `adoptions`, `images/[id]`, `agent/query` |
+| Tienda | `catalog`, `checkout`, `checkout/quote`, `zones`, `customer/lookup`, `track/[id]`, `adoptions`, `images/[id]`, `agent/query`, `payments/mercadopago/sync` |
 | Cuenta del cliente | `auth/*`, `account/{orders,pets,reorder,replenishment}`, `subscriptions` |
-| Panel | `merchant/*` (auth, catalog, categories, combos, orders, zones, delivery-*, subscriptions, adoptions, branding, images, content, reports, settings) |
+| Panel | `merchant/*` (auth, catalog, categories, combos, orders, zones, delivery-*, subscriptions, adoptions, branding, images, content, reports, settings, payments/mercadopago) |
 | Reparto | `delivery/orders`, `delivery/orders/[id]/{status,deliver}` |
 | Plataforma | `admin/{tenants,merchants,migrate}` (gated por `ADMIN_API_TOKEN` o sesión admin), `webhooks/payments/[merchantId]`, `health` |
-| Cron | `cron/daily` (outbox + reservas vencidas + suscripciones; único cron en `apps/web/vercel.json`), y `cron/{outbox,reservations,subscriptions}` para dispararlos a mano |
+| Cron | `cron/daily` (outbox + reservas vencidas + suscripciones + pedidos online abandonados; único cron en `apps/web/vercel.json`), y `cron/{outbox,reservations,subscriptions}` para dispararlos a mano |
 
 - **Resolución de tenant en el borde**: subdominio del Host (o `x-tenant` en dev) → id →
   `withTenant`/RLS. Nunca de un parámetro del body.
 - **Migraciones automáticas**: corren en el `postbuild` del deploy (`scripts/migrate-prod.mjs`)
   con tracking (`schema_migrations`) y lock de Postgres. El orden vive en
-  `scripts/migrations-list.mjs` (0000–0019).
+  `scripts/migrations-list.mjs` (0000–0020).
 
 ## Estructura
 
@@ -124,15 +124,17 @@ valida `withTenant` (postgres.js) en el entorno real. Sin esa variable se saltan
 | `CRON_SECRET` | Autoriza los Vercel Cron (`/api/cron/*`). |
 | `ANTHROPIC_API_KEY` | Vendedor IA. Sin ella, el agente degrada a un responder determinista. |
 | `VENDOR_MODEL` | Modelo del Vendedor IA (default `claude-haiku-4-5`). |
+| `PAYMENTS_ENCRYPTION_KEY` | Cifra los Access Tokens de Mercado Pago en la base (32+ caracteres). Sin ella no se ofrece "Pagar ahora". |
+| `PUBLIC_BASE_URL` | Opcional: URL pública para los links de vuelta y avisos de MP. |
 | `TEST_DATABASE_URL` | Opcional: tests de integración contra Neon. |
 
-Ver [`.env.example`](.env.example). Los secretos de proveedores de pago van cifrados por
-merchant, nunca en el `.env`.
+Ver [`.env.example`](.env.example). Las credenciales de Mercado Pago de cada comercio se cargan
+desde el panel y se guardan cifradas en la base, nunca en el `.env`.
 
 ## Pendiente
 
-- **Mercado Pago real** ("Pagar ahora" y cobro recurrente de suscripciones): espera la cuenta
-  del comercio; hoy el botón dice "Próximamente".
+- **Mercado Pago — siguientes pasos**: reembolsos desde el panel (hoy desde la cuenta de MP),
+  cobro recurrente de suscripciones (preapproval) y conexión por OAuth (hoy se pega el token).
 - **Auth**: login por repartidor (hoy código compartido) y MFA.
 - **Flywheel**: recordatorio proactivo de reposición (WhatsApp/push), referidos, "alimento
   habitual" + recomendaciones en compra rápida.

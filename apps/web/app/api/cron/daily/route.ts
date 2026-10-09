@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { drainOutbox } from "@commerce/platform";
 import { releaseExpiredReservations } from "@commerce/modules/inventory";
 import { generateDueOrdersForTenant } from "@commerce/modules/subscriptions";
+import { expireAbandonedOnlinePayments } from "@commerce/modules/payments";
 import { db } from "@/lib/db";
 import { requireServiceToken } from "@/lib/auth";
 
@@ -9,10 +10,11 @@ export const dynamic = "force-dynamic";
 
 /**
  * Cron diario consolidado (una sola entrada en vercel.json). El plan Hobby de Vercel limita la
- * cantidad de cron jobs, así que las tres tareas de mantenimiento corren desde acá:
+ * cantidad de cron jobs, así que las tareas de mantenimiento corren desde acá:
  *   1) drena el outbox (eventos pendientes),
  *   2) libera reservas de stock vencidas y repone inventario,
- *   3) genera los pedidos de las suscripciones vencidas (auto-envío).
+ *   3) genera los pedidos de las suscripciones vencidas (auto-envío),
+ *   4) cancela los pedidos "Pagar ahora" abandonados (nunca pagados en Mercado Pago).
  * Cada tarea está aislada: si una falla, las otras igual corren y se reporta el error.
  * Gated por CRON_SECRET. Las rutas individuales (/api/cron/outbox|reservations|subscriptions)
  * siguen existiendo para disparar cada tarea a mano.
@@ -57,6 +59,22 @@ export async function GET() {
     result.subscriptions = { created, skipped, tenants: tenants.length };
   } catch (e) {
     fail("subscriptions", e);
+  }
+
+  // 4) Pedidos "Pagar ahora" abandonados (nunca se pagaron en MP) → cancelados.
+  try {
+    const tenants = await db().query<{ id: string }>("select id from tenants where status = 'active'");
+    let abandoned = 0;
+    for (const t of tenants) {
+      try {
+        abandoned += await expireAbandonedOnlinePayments(db(), t.id);
+      } catch (e) {
+        fail(`abandoned_payments:${t.id}`, e);
+      }
+    }
+    result.abandonedOnlineOrders = abandoned;
+  } catch (e) {
+    fail("abandoned_payments", e);
   }
 
   return NextResponse.json({ ok: errors.length === 0, ...result, ...(errors.length ? { errors } : {}) });

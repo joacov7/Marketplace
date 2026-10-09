@@ -49,6 +49,18 @@ export function requireServiceToken(envVar: "ADMIN_API_TOKEN" | "CRON_SECRET"): 
   return false;
 }
 
+/**
+ * Gate del panel para operaciones sensibles de UN tenant (p. ej. credenciales de cobro): el
+ * código maestro, o una sesión de admin DE ESE MISMO tenant. A diferencia de
+ * `requireServiceToken`, una sesión de admin de otro tenant no alcanza.
+ */
+export function requireAdminForTenant(tenantId: string): boolean {
+  const expected = process.env.ADMIN_API_TOKEN;
+  if (expected && safeEqual(providedToken(), expected)) return true;
+  const session = readSession();
+  return hasAdminRole(session) && session!.tenantId === tenantId;
+}
+
 /** Lee el código provisto (Bearer o x-service-token) sin compararlo. */
 function providedToken(): string | null {
   const h = headers();

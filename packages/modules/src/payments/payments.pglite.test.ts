@@ -33,6 +33,7 @@ describe("Payments — captura, ledger de doble partida, idempotencia, refund pa
     });
     const created = await createOrder(db, {
       tenantId,
+      deliveryChargeMinor: 150_000n, // envío que vio el cliente en el checkout
       sellers: [{ merchantId, items: [{ variantId, qty: 1, unitPriceMinor: 3_000_000n }] }], // GMV $30.000
     });
     if (!created.ok) throw new Error("create falló: " + created.error);

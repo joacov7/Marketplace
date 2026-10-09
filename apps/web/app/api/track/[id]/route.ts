@@ -27,5 +27,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     currency: t.currency,
     deliveryWindow: t.deliveryWindow,
     createdAt: t.createdAt,
+    paymentMethod: t.paymentMethod,
+    paymentStatus: t.paymentStatus,
   });
 }

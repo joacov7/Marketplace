@@ -16,6 +16,8 @@ export interface PaymentHandle {
   providerRef: string;
   /** Datos para que el cliente complete el pago (brick/redirect). Opaco para el dominio. */
   clientSecret?: string;
+  /** Checkout por redirect (p. ej. Checkout Pro de MP): URL a donde mandar al cliente. */
+  redirectUrl?: string;
 }
 
 export interface WebhookEvent {

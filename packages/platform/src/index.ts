@@ -14,6 +14,8 @@ export * from "./auth/users.js";
 // DB port + driver de producción (postgres.js). El adaptador PGlite es solo para tests.
 export * from "./db/port.js";
 export * from "./db/pg.js";
+// Cifrado de secretos guardados en la base (tokens de proveedores)
+export * from "./crypto/secretbox.js";
 // Outbox
 export * from "./outbox/outbox.js";
 // Tenant provisioning

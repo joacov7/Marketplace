@@ -42,6 +42,8 @@ Postgres en **Neon**. Tiempo estimado: ~15 min.
    | `CRON_SECRET` | un secreto fuerte (Vercel lo manda como `Authorization: Bearer` al cron) |
    | `ANTHROPIC_API_KEY` | *(opcional)* activa el Vendedor IA con Claude; sin ella el chat usa un responder básico |
    | `VENDOR_MODEL` | *(opcional)* modelo del Vendedor IA (default `claude-haiku-4-5`) |
+   | `PAYMENTS_ENCRYPTION_KEY` | frase larga (32+ caracteres): cifra el Access Token de Mercado Pago en la base. Necesaria para "Pagar ahora". **No cambiarla** después de conectar MP |
+   | `PUBLIC_BASE_URL` | *(opcional)* URL pública (`https://tudominio.com`) para los links de vuelta y avisos de MP; si falta, se toma del request |
 
 5. Deploy. En cada deploy Vercel corre, en orden:
    - `prebuild`: compila los paquetes del monorepo (`tsc --build`);
@@ -115,7 +117,8 @@ igual):
 
 1. drena el **outbox** (eventos pendientes);
 2. libera **reservas de stock vencidas** y repone inventario;
-3. genera los pedidos de las **suscripciones** vencidas (auto-envío).
+3. genera los pedidos de las **suscripciones** vencidas (auto-envío);
+4. cancela los pedidos **"Pagar ahora" abandonados** (más de 3 días sin pagarse en Mercado Pago).
 
 Cada tarea también tiene su ruta para dispararla a mano:
 
@@ -175,11 +178,31 @@ Pantallas:
 | `/reparto?tenant=gualeguay` | Pantalla del repartidor (instalable en el celular) |
 | `/seguimiento/<orderId>?tenant=gualeguay` | Seguimiento público de un pedido |
 
-## Pendiente antes de operar con plata online
+## 8. Mercado Pago ("Pagar ahora")
 
-- **Mercado Pago**: implementar el `PaymentProvider` real (hoy `FakePaymentProvider`) con
-  verificación de firma por-merchant. Ver `docs/fase-0/05-pagos-y-economia.md`. Hasta
-  entonces, "Pagar ahora" queda en "Próximamente" y se cobra al recibir.
+Con `PAYMENTS_ENCRYPTION_KEY` cargada, el comercio conecta su cuenta desde el panel
+(Configuración → Cobros online): pega su Access Token, la app lo valida contra MP y lo guarda
+cifrado. Paso a paso para el comercio en [`MANUAL-OPERACION.md`](MANUAL-OPERACION.md#cobrar-online-con-mercado-pago-pagar-ahora).
+
+Cómo funciona (Checkout Pro):
+
+1. Checkout con `payment: "mercadopago"` → reserva stock por 30 min, crea la preferencia en MP
+   (`external_reference` = id del pedido, vence a los 30 min, sin efectivo/cajero) y devuelve
+   `redirectUrl`.
+2. El cliente paga en MP y vuelve a `/seguimiento/<id>?pago=aprobado|pendiente|error`.
+3. MP avisa a `/api/webhooks/payments/<merchantId>?tenant=<slug>`. La app **consulta el pago a
+   la API de MP** con el token del comercio (nunca confía en el body del aviso), controla el
+   monto y captura: ledger + pedido confirmado. Si el comercio cargó la clave secreta de
+   webhooks, también valida la firma `x-signature`.
+4. Al volver, el seguimiento llama a `/api/payments/mercadopago/sync` (misma verificación):
+   no depende solo del webhook. Ambos caminos son idempotentes.
+
+Probar el circuito sin plata real: Access Token de prueba (`TEST-…`) y las tarjetas de prueba
+de MP. Para desarrollo local sin MP, `MERCADOPAGO_API_BASE` apunta a un simulador (se ignora
+en producción).
+
+## Pendiente antes de escalar
+
 - **MFA** para el panel y **login por repartidor** (hoy entra con un código compartido).
 - **Validación fiscal** (contador/abogado AR) antes de facturar.
 - **Tests de aislamiento contra Neon en CI**: setear el secret `TEST_DATABASE_URL`

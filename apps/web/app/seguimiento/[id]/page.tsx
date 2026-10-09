@@ -9,7 +9,9 @@ export default function SeguimientoPage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams: { tenant?: string };
+  searchParams: { tenant?: string; pago?: string; payment_id?: string; collection_id?: string };
 }) {
-  return <TrackClient id={params.id} tenant={searchParams.tenant ?? ""} />;
+  // Al volver de Mercado Pago llegan `pago` (aprobado/pendiente/error) y el id del pago.
+  const mpPaymentId = searchParams.payment_id ?? searchParams.collection_id ?? "";
+  return <TrackClient id={params.id} tenant={searchParams.tenant ?? ""} pago={searchParams.pago ?? ""} mpPaymentId={/^[0-9]{1,20}$/.test(mpPaymentId) ? mpPaymentId : ""} />;
 }

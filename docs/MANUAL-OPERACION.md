@@ -111,6 +111,7 @@ Environment Variables**. No las compartas ni las subas a ningún lado.
 | `CRON_SECRET` | Protege las tareas automáticas diarias. | Las tareas automáticas dejan de correr o quedan expuestas. |
 | `ANTHROPIC_API_KEY` | Motor del **Vendedor IA** (el chat que asesora en la tienda). | El chat responde de forma básica, sin IA. El resto de la tienda funciona igual. |
 | `VENDOR_MODEL` | *(Opcional)* Elige el modelo de IA del Vendedor IA. | Usa uno por defecto. |
+| `PAYMENTS_ENCRYPTION_KEY` | Cifra el Access Token de Mercado Pago guardado en la base. Una frase larga (32+ caracteres). | No se puede conectar Mercado Pago y "Pagar ahora" no aparece. **No la cambies** una vez conectado MP (ver abajo). |
 
 ### Rotar (cambiar) una llave
 
@@ -120,6 +121,11 @@ Se cambia una llave cuando se pudo haber filtrado, o por seguridad periódica.
 2. Vercel → Settings → Environment Variables → editá el valor → **Save**.
 3. **Redeploy**: Deployments → último → **Redeploy** (para que tome el valor nuevo).
 
+> **Ojo con `PAYMENTS_ENCRYPTION_KEY`:** con ella se cifró el Access Token de Mercado Pago.
+> Si la cambiás, la app ya no puede leer el token guardado y "Pagar ahora" falla. Si
+> necesitás cambiarla: cambiala, hacé Redeploy y **volvé a conectar Mercado Pago** desde el
+> panel (pegando el Access Token de nuevo).
+
 > **Ojo con `ADMIN_API_TOKEN` y `SESSION_SECRET`:** si `SESSION_SECRET` **no** está definida,
 > las sesiones se firman con `ADMIN_API_TOKEN`. En ese caso, cambiar `ADMIN_API_TOKEN`
 > **cierra la sesión de todos** (tienen que volver a entrar). Para evitarlo, definí una
@@ -127,10 +133,53 @@ Se cambia una llave cuando se pudo haber filtrado, o por seguridad periódica.
 
 ---
 
+## Cobrar online con Mercado Pago ("Pagar ahora")
+
+Con Mercado Pago conectado, la tienda ofrece **Pagar ahora**: el cliente paga en la página
+de Mercado Pago (tarjeta, débito o dinero en cuenta) y vuelve al seguimiento de su pedido.
+El pedido entra al panel **ya confirmado y pagado**; no hay que aceptarlo. Pagar al recibir
+sigue funcionando igual. La plata la cobra **tu cuenta de Mercado Pago** directamente.
+
+### Conectarlo (una sola vez, ~10 min)
+
+1. **Llave de cifrado** (si no está): en Vercel → Settings → Environment Variables, agregá
+   `PAYMENTS_ENCRYPTION_KEY` con una frase larga inventada (32+ caracteres) → Save →
+   **Redeploy**. Guardala en un lugar seguro.
+2. **Credenciales de Mercado Pago:** entrá a
+   [mercadopago.com.ar/developers](https://www.mercadopago.com.ar/developers) con la cuenta
+   del negocio → **Tus integraciones** → **Crear aplicación** (tipo "Pagos online", producto
+   "Checkout Pro"). Adentro: **Credenciales de producción** → copiá el **Access Token**
+   (empieza con `APP_USR-`).
+3. **Pegarlo en el panel:** Configuración → **Cobros online — Mercado Pago** → pegá el Access
+   Token → **Conectar**. La app lo valida con Mercado Pago y lo guarda cifrado. Si sale bien,
+   ves el nombre de tu cuenta y la etiqueta **Activo**: "Pagar ahora" ya aparece en la tienda.
+4. **Recomendado — avisos firmados:** en el panel abrí "Configurar los avisos (webhooks)",
+   copiá la URL. En Mercado Pago → tu aplicación → **Webhooks** → pegá la URL, marcá el
+   evento **Pagos** y guardá. Mercado Pago te muestra una **clave secreta**: pegala en el
+   panel → **Guardar clave**. (Funciona sin esto, pero así la tienda rechaza avisos falsos.)
+
+> **Para probar sin plata real:** usá el Access Token **de prueba** (empieza con `TEST-`) y
+> pagá con las tarjetas de prueba de Mercado Pago. El panel muestra "Activo (modo prueba)".
+> Cuando termines, cambiá al token de producción con **Cambiar credenciales**.
+
+### El día a día
+- **Pausar "Pagar ahora"** (p. ej. un problema con tu cuenta de MP): botón **Pausar** en el
+  mismo panel. No borra nada; se reactiva con un clic.
+- **El cliente tiene 30 minutos para pagar.** Si no paga, el stock se libera solo y el
+  pedido no aparece en tu cola. A los 3 días se cancela automáticamente.
+- **Reembolsos:** se hacen desde tu cuenta de Mercado Pago (Actividad → el pago → Devolver
+  dinero).
+- **"Pagos para reembolsar"** (recuadro rojo en el panel): son pagos que Mercado Pago aprobó
+  *después* de que el pedido se canceló por falta de pago (raro). Devolvé ese dinero desde
+  Mercado Pago o contactá al cliente para entregarle igual.
+
+---
+
 ## Tareas automáticas (crons)
 
 Todos los días a las **6:00** corre una tarea que: procesa reservas de stock vencidas,
-suscripciones y avisos pendientes. La dispara Vercel sola.
+suscripciones, avisos pendientes y cancela los pedidos "Pagar ahora" que nunca se pagaron.
+La dispara Vercel sola.
 
 - Verla: Vercel → tu proyecto → **Cron Jobs**. Ahí figura la última ejecución.
 - Si una falla, no pasa nada grave de inmediato; se reintenta al día siguiente. Si falla
@@ -168,9 +217,21 @@ nada; sacá una captura del error y pedí ayuda.
   anterior, sana). No toques la base. Sacá captura del mensaje de error completo y pedí ayuda
   a quien mantiene el código: es un problema del cambio nuevo, no de tu operación.
 
-### El estudio de contenido no genera textos
+### El Vendedor IA responde de forma básica
 - Revisá `ANTHROPIC_API_KEY` en Vercel (que esté cargada y vigente). El resto de la tienda
   funciona igual sin esto.
+
+### "Pagar ahora" no aparece en la tienda
+- Panel → Configuración → Cobros online: ¿dice **Activo**? Si dice Pausado, activalo. Si
+  pide la llave `PAYMENTS_ENCRYPTION_KEY`, cargala en Vercel y hacé Redeploy.
+
+### Un cliente pagó con Mercado Pago pero el pedido no aparece
+- Pedile el número de operación de Mercado Pago y buscalo en tu cuenta de MP: ¿figura
+  **Aprobado**? Normalmente el pedido aparece en segundos. Si no:
+  1. Revisá que el Access Token siga vigente (panel → Cobros online → Cambiar credenciales y
+     volvé a pegarlo).
+  2. Si cargaste la clave secreta de webhooks, verificá que sea la de esa misma aplicación.
+  3. En Vercel → Logs, buscá líneas `[webhook:mercadopago]` y sacá captura para pedir ayuda.
 
 ---
 
