@@ -48,19 +48,32 @@ Postgres en **Neon**. Tiempo estimado: ~15 min.
 5. Deploy. En cada deploy Vercel corre, en orden:
    - `prebuild`: compila los paquetes del monorepo (`tsc --build`);
    - `next build`;
-   - `postbuild`: **aplica las migraciones pendientes** (ver abajo).
+   - `postbuild`: **aplica las migraciones pendientes**, solo en el deploy de producción
+     (ver abajo).
 
    Y registra el cron diario de `vercel.json`.
 
 ### Migraciones (automáticas)
 
-No hay que correr nada a mano: `scripts/migrate-prod.mjs` corre en el `postbuild` de cada
-deploy y:
+No hay que correr nada a mano: `scripts/migrate-prod.mjs --deploy` corre en el `postbuild`
+de cada build y:
+
+- **Solo migra en producción**: decide según `VERCEL_ENV` (variable de sistema que Vercel pone
+  en cada build; no hay que cargarla):
+
+  | Build | Qué hace |
+  |-------|----------|
+  | `VERCEL_ENV=production` | aplica las migraciones pendientes |
+  | `VERCEL_ENV=preview` / `development` | **no toca la base** (aunque tenga `DATABASE_URL`) |
+  | en Vercel pero sin `VERCEL_ENV` | **falla el build** (no puede saber si es producción) |
+  | build local (fuera de Vercel) | no toca la base |
+
+  La regla está en `scripts/migrate-guard.mjs` (probada en `scripts/migrate-guard.test.ts`).
 
 - **Trackea** lo aplicado en la tabla `schema_migrations` → solo corre las migraciones nuevas.
   El primer deploy aplica todas (0000–0019, idempotentes) y pobla el tracking.
 - Toma un **lock de Postgres** → dos deploys simultáneos no se pisan.
-- **Sin `DATABASE_URL`** (p. ej. un preview sin base) no hace nada y el build sigue OK.
+- **Sin `DATABASE_URL`** no hace nada y el build sigue OK.
 - **Si una migración falla**, el build falla y el deploy **no se promociona** (el sitio sigue
   en la versión anterior).
 
@@ -70,7 +83,7 @@ En los logs del build buscá las líneas `[migrate]`. El orden de las migracione
 **Alternativas manuales** (no deberían hacer falta):
 
 ```bash
-# desde tu máquina
+# desde tu máquina (corrida manual: migra la base que pongas en DATABASE_URL, revisala bien)
 npm install && npm run build
 DATABASE_URL="postgres://...-pooler.../db?sslmode=require" npm run migrate
 

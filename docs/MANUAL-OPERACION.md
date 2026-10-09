@@ -74,6 +74,8 @@ Cómo saber que se aplicaron: en Vercel → Deployments → abrí el último →
 Logs** y buscá líneas que empiezan con `[migrate]`. Vas a ver:
 
 - `[migrate] Base al día — nada que aplicar.` → todo en orden, no había nada nuevo.
+- `[migrate] Entorno "preview" (no es producción)…` → normal en las versiones de prueba
+  (Preview): esas nunca tocan la base. Las migraciones corren solo al publicar en producción.
 - `[migrate] Aplicando N migración(es) nueva(s)…` + `✓ ...` → aplicó cambios nuevos, bien.
 - `[migrate] ERROR ...` → algo falló; **el deploy no se publica** (mejor eso que dejar la
   base a medias). Mirá **"Cuando algo se rompe"**.

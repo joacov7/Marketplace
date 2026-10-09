@@ -1,5 +1,8 @@
 // Aplica las migraciones pendientes contra la base, en el DEPLOY (postbuild de apps/web).
 // Seguro y automático:
+//   - Con --deploy (postbuild) SOLO migra en el deploy de producción de Vercel
+//     (VERCEL_ENV=production); las Preview y los builds locales no tocan la base.
+//     Ver scripts/migrate-guard.mjs. Sin --deploy (`npm run migrate`) es una corrida manual.
 //   - Trackea qué migración se aplicó (tabla schema_migrations): solo corre las nuevas.
 //   - Toma un lock de Postgres (pg_advisory_lock): dos deploys a la vez no se pisan.
 //   - Sin DATABASE_URL (p. ej. un preview sin base) → NO hace nada y sale OK (no rompe el build).
@@ -11,15 +14,22 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { MIGRATION_FILES } from "./migrations-list.mjs";
+import { migrationDecision } from "./migrate-guard.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LOCK_KEY = 8274529; // clave arbitraria y estable para el advisory lock de migraciones
 const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
-if (!url) {
-  console.log("[migrate] Sin DATABASE_URL/POSTGRES_URL — salto migraciones (build sin base).");
+const decision = migrationDecision({ deploy: process.argv.includes("--deploy"), env: process.env });
+if (decision.action === "fail") {
+  console.error(`[migrate] ERROR: ${decision.reason}`);
+  process.exit(1);
+}
+if (decision.action === "skip") {
+  console.log(`[migrate] ${decision.reason}`);
   process.exit(0);
 }
+console.log(`[migrate] ${decision.reason}`);
 
 async function connect(retries = 3) {
   let lastErr;
