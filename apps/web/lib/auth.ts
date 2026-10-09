@@ -1,9 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 import { headers } from "next/headers";
-import { resolveConfigValue } from "@commerce/platform";
+import { NextResponse } from "next/server";
+import { resolveConfigValue, failureStatus, recordFailures } from "@commerce/platform";
 import type { SessionPayload } from "@commerce/platform";
 import { db } from "./db";
 import { readSession } from "./session";
+import { checkDeliveryAccess } from "./delivery-access";
+import { clientIp } from "./rate-limit";
 
 /** Roles que abren el panel de administración. */
 const ADMIN_ROLES = new Set(["owner", "admin", "merchant_admin"]);
@@ -70,15 +73,28 @@ function providedToken(): string | null {
 }
 
 /**
- * Acceso a la pantalla de reparto: lo abre el token de admin (el comercio) O el PIN de reparto
- * del tenant (`ops.deliveryPin`, config, nunca hardcodeado), pensado para el repartidor sin
- * darle la llave del panel. Si el tenant no tiene PIN configurado, solo el token de admin abre.
+ * Acceso a la pantalla de reparto: código maestro o PIN de reparto del comercio
+ * (`ops.deliveryPin`), con bloqueo por intentos fallidos. Ver lib/delivery-access.ts.
+ * Devuelve la respuesta de error lista para devolver, o null si puede pasar.
  */
-export async function requireDeliveryAccess(tenantId: string): Promise<boolean> {
-  const provided = providedToken();
-  if (!provided) return false;
-  const admin = process.env.ADMIN_API_TOKEN;
-  if (safeEqual(provided, admin)) return true;
-  const pin = (await resolveConfigValue<string>(db(), "ops.deliveryPin", { tenantId })).value;
-  return typeof pin === "string" && pin.length > 0 && safeEqual(provided, pin);
+export async function deliveryAccessDenied(req: Request, tenantId: string): Promise<NextResponse | null> {
+  const r = await checkDeliveryAccess({
+    tenantId,
+    ip: clientIp(req),
+    provided: providedToken(),
+    adminToken: process.env.ADMIN_API_TOKEN,
+    loadPin: async () => (await resolveConfigValue<string>(db(), "ops.deliveryPin", { tenantId })).value,
+    failures: {
+      status: (keys) => failureStatus(db(), keys),
+      record: (keys, windowMs) => recordFailures(db(), keys, windowMs),
+    },
+  });
+  if (r.ok) return null;
+  if (r.status === 429) {
+    return NextResponse.json(
+      { error: "Demasiados intentos con un PIN incorrecto. Esperá unos minutos y volvé a probar." },
+      { status: 429, headers: { "retry-after": String(r.retryAfterSec ?? 900) } },
+    );
+  }
+  return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 }

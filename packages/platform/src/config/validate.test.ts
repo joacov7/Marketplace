@@ -17,3 +17,16 @@ describe("Config — validación por JSON Schema al escribir", () => {
     expect(validateConfigValue(schema, 7.5).ok).toBe(false);
   });
 });
+
+describe("ops.deliveryPin — largo mínimo", () => {
+  it("acepta vacío o 6–32 caracteres; rechaza PINs cortos", async () => {
+    const { getConfigKeyDef } = await import("./registry.js");
+    const schema = getConfigKeyDef("ops.deliveryPin")!.jsonSchema;
+    expect(validateConfigValue(schema, "").ok).toBe(true);
+    expect(validateConfigValue(schema, "482915").ok).toBe(true);
+    expect(validateConfigValue(schema, "a".repeat(32)).ok).toBe(true);
+    expect(validateConfigValue(schema, "2468").ok).toBe(false);
+    expect(validateConfigValue(schema, "12345").ok).toBe(false);
+    expect(validateConfigValue(schema, "a".repeat(33)).ok).toBe(false);
+  });
+});

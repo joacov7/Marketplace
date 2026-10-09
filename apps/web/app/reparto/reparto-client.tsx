@@ -53,7 +53,7 @@ export default function RepartoClient() {
     try {
       const res = await fetch(`/api/delivery/orders?tenant=${encodeURIComponent(tenant)}`, { headers: auth });
       const d = await res.json();
-      if (!res.ok) { setError(d.error ?? "error"); setOrders([]); }
+      if (!res.ok) { setError(res.status === 401 ? "PIN incorrecto." : (d.error ?? "error")); setOrders([]); }
       else setOrders(d.orders);
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }

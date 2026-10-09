@@ -453,11 +453,12 @@ export const CONFIG_KEYS = {
   },
   "ops.deliveryPin": {
     key: "ops.deliveryPin",
-    jsonSchema: { type: "string", maxLength: 32 },
+    // Vacío, o entre 6 y 32 caracteres: un PIN corto se adivina probando (ver delivery-access).
+    jsonSchema: { type: "string", maxLength: 32, pattern: "^(|.{6,32})$" },
     defaultValue: "",
     category: "ops",
     sensitive: true,
-    description: "PIN de acceso a la pantalla de reparto (lo usa el repartidor en vez del token de admin). Vacío = solo el token de admin abre reparto.",
+    description: "PIN de acceso a la pantalla de reparto (lo usa el repartidor en vez del token de admin). Mínimo 6 caracteres. Vacío = solo el token de admin abre reparto.",
   },
   "tenant.vertical": {
     key: "tenant.vertical",

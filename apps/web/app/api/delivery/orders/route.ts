@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { listDeliveryOrders } from "@commerce/modules/orders";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
-import { requireDeliveryAccess } from "@/lib/auth";
-import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { deliveryAccessDenied } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -16,19 +15,10 @@ export async function GET(req: Request) {
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
-  // El acceso a reparto usa un PIN corto (brute-forceable) y esta cola expone PII del cliente
-  // (nombre, teléfono, dirección). Limitamos los intentos FALLIDOS por IP: el polling legítimo
-  // (con PIN correcto) no consume cupo; adivinar el PIN sí, y se frena a los pocos intentos.
-  if (!(await requireDeliveryAccess(tenant.tenantId))) {
-    const rl = rateLimit(`delivery-auth:${tenant.tenantId}:${clientIp(req)}`, 10, 60_000);
-    if (!rl.ok) {
-      return NextResponse.json(
-        { error: "rate_limited" },
-        { status: 429, headers: { "retry-after": String(Math.ceil(rl.retryAfterMs / 1000)) } },
-      );
-    }
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  // Esta cola expone PII del cliente (nombre, teléfono, dirección): acceso por PIN con bloqueo
+  // por intentos fallidos (ver lib/delivery-access.ts).
+  const denied = await deliveryAccessDenied(req, tenant.tenantId);
+  if (denied) return denied;
 
   const rows = await db().withTenant(tenant.tenantId, (tx) => listDeliveryOrders(tx));
   return NextResponse.json({

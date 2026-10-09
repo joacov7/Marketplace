@@ -208,6 +208,14 @@ nada; sacá una captura del error y pedí ayuda.
 - Verificá en Vercel que `DATABASE_URL` esté cargada y sea la de Neon (con `-pooler` y
   `sslmode=require`).
 
+### El repartidor no puede entrar a Reparto
+- **"PIN incorrecto"**: revisá el PIN en el panel (Pedidos → PIN de reparto). Tiene que tener
+  **6 caracteres o más**. Si el panel dice que el PIN es muy corto, definí uno nuevo.
+- **"Demasiados intentos con un PIN incorrecto"**: alguien probó PINs equivocados y el acceso se
+  bloqueó por **15 minutos** (protege los datos de los clientes). Esperá y volvé a probar. Si
+  pasa seguido sin que nadie se equivoque, puede ser alguien intentando adivinar el PIN:
+  cambialo por uno nuevo. Mientras tanto, el código maestro sigue abriendo Reparto.
+
 ### No puedo entrar al panel
 - ¿Email y contraseña correctos? Probá de nuevo.
 - Si a todos les pide entrar de repente, quizás se rotó `ADMIN_API_TOKEN` sin tener

@@ -3,7 +3,7 @@ import { transitionSellerOrder, completeOrder } from "@commerce/modules/orders";
 import { settleCashOnDelivery } from "@commerce/modules/payments";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
-import { requireDeliveryAccess } from "@/lib/auth";
+import { deliveryAccessDenied } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,8 @@ const COD_METHODS = new Set(["efectivo", "pos", "transferencia"]);
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
-  if (!(await requireDeliveryAccess(tenant.tenantId))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const denied = await deliveryAccessDenied(req, tenant.tenantId);
+  if (denied) return denied;
 
   let body: { collect?: string };
   try {

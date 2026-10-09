@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { drainOutbox } from "@commerce/platform";
+import { drainOutbox, purgeExpiredFailures } from "@commerce/platform";
 import { releaseExpiredReservations } from "@commerce/modules/inventory";
 import { generateDueOrdersForTenant } from "@commerce/modules/subscriptions";
 import { expireAbandonedOnlinePayments } from "@commerce/modules/payments";
@@ -14,7 +14,8 @@ export const dynamic = "force-dynamic";
  *   1) drena el outbox (eventos pendientes),
  *   2) libera reservas de stock vencidas y repone inventario,
  *   3) genera los pedidos de las suscripciones vencidas (auto-envío),
- *   4) cancela los pedidos "Pagar ahora" abandonados (nunca pagados en Mercado Pago).
+ *   4) cancela los pedidos "Pagar ahora" abandonados (nunca pagados en Mercado Pago),
+ *   5) borra contadores de intentos fallidos vencidos.
  * Cada tarea está aislada: si una falla, las otras igual corren y se reporta el error.
  * Gated por CRON_SECRET. Las rutas individuales (/api/cron/outbox|reservations|subscriptions)
  * siguen existiendo para disparar cada tarea a mano.
@@ -75,6 +76,13 @@ export async function GET() {
     result.abandonedOnlineOrders = abandoned;
   } catch (e) {
     fail("abandoned_payments", e);
+  }
+
+  // 5) Contadores de intentos fallidos vencidos (auth_failures).
+  try {
+    result.expiredAuthFailures = await purgeExpiredFailures(db());
+  } catch (e) {
+    fail("auth_failures", e);
   }
 
   return NextResponse.json({ ok: errors.length === 0, ...result, ...(errors.length ? { errors } : {}) });

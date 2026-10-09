@@ -616,6 +616,7 @@ function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | nu
   const [showNew, setShowNew] = useState(false);
   const [pin, setPin] = useState("");
   const [pinSaved, setPinSaved] = useState<string | null>(null);
+  const PIN_MIN = 6;
   const auth = { authorization: `Bearer ${token}` };
 
   // PIN de reparto (config del tenant): el cadete entra con esto, no con el token de admin.
@@ -680,11 +681,13 @@ function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | nu
       {/* PIN de reparto: lo usa el cadete para entrar a /reparto (sin el token del panel). */}
       <div style={{ ...card, marginBottom: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <span style={{ fontSize: 13.5, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}><Bike size={16} strokeWidth={1.8} />PIN de reparto:</span>
-        <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="ej: 2468" maxLength={32}
-          style={{ ...input, width: 130 }} />
-        <button onClick={savePin} className="mbtn" style={btn} disabled={pin === pinSaved}>Guardar</button>
-        <span style={{ fontSize: 12.5, color: "#6b7280" }}>
-          {pinSaved ? "El cadete entra a Reparto con este PIN." : "Sin PIN: reparto solo abre con el token de admin."}
+        <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder={`mín. ${PIN_MIN} caracteres`} maxLength={32}
+          style={{ ...input, width: 150 }} />
+        <button onClick={savePin} className="mbtn" style={btn} disabled={pin === pinSaved || (pin.length > 0 && pin.length < PIN_MIN)}>Guardar</button>
+        <span style={{ fontSize: 12.5, color: pinSaved && pinSaved.length < PIN_MIN ? "#c0392b" : "#6b7280" }}>
+          {pinSaved && pinSaved.length < PIN_MIN
+            ? `Este PIN es muy corto y ya no abre Reparto: definí uno de ${PIN_MIN} caracteres o más.`
+            : pinSaved ? "El cadete entra a Reparto con este PIN." : "Sin PIN: reparto solo abre con el token de admin."}
         </span>
       </div>
 

@@ -76,7 +76,7 @@ API principal (route handlers en `apps/web/app/api/`):
   `withTenant`/RLS. Nunca de un parámetro del body.
 - **Migraciones automáticas**: corren en el `postbuild` del deploy (`scripts/migrate-prod.mjs`)
   con tracking (`schema_migrations`) y lock de Postgres. El orden vive en
-  `scripts/migrations-list.mjs` (0000–0020).
+  `scripts/migrations-list.mjs` (0000–0021).
 
 ## Estructura
 
