@@ -109,8 +109,8 @@ Environment Variables**. No las compartas ni las subas a ningún lado.
 | `ADMIN_API_TOKEN` | Contraseña maestra para crear tu usuario y tareas de administración. | No podés crear el primer usuario. |
 | `SESSION_SECRET` | Firma las sesiones (mantiene abierto tu login). | Si no está, usa el `ADMIN_API_TOKEN` como respaldo. **Conviene ponerla aparte** (ver rotación). |
 | `CRON_SECRET` | Protege las tareas automáticas diarias. | Las tareas automáticas dejan de correr o quedan expuestas. |
-| `ANTHROPIC_API_KEY` | Motor del estudio de contenido (genera textos). | El estudio de contenido no genera textos. El resto de la tienda funciona igual. |
-| `VENDOR_MODEL` | *(Opcional)* Elige el modelo de IA del contenido. | Usa uno por defecto. |
+| `ANTHROPIC_API_KEY` | Motor del **Vendedor IA** (el chat que asesora en la tienda). | El chat responde de forma básica, sin IA. El resto de la tienda funciona igual. |
+| `VENDOR_MODEL` | *(Opcional)* Elige el modelo de IA del Vendedor IA. | Usa uno por defecto. |
 
 ### Rotar (cambiar) una llave
 
