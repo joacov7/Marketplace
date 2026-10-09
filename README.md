@@ -2,140 +2,145 @@
 
 White Label **Multi-Tenant Commerce OS**. Core agnóstico de vertical,
 *configuration-first*, multi-tenant con **aislamiento por RLS**. Arranca como Pet Shop
-propio y evoluciona a marketplace / White Label / multi-vertical **sin rehacer el core**.
+propio (Pet Shop Gualeguay) y evoluciona a marketplace / White Label / multi-vertical
+**sin rehacer el core**.
 
 - **Diseño (Fase 0):** [`docs/fase-0/`](docs/fase-0/) — auditoría, decisiones, arquitectura,
   ERD, flujos, modelo económico. Empezá por [`docs/fase-0/11-cierre.md`](docs/fase-0/11-cierre.md).
-- **Deploy:** full-stack **Next.js en Vercel** + **Neon** (Postgres) + **Upstash** (Redis/cola).
+- **Operatoria y roadmap de producto:** [`docs/operatoria-roadmap.md`](docs/operatoria-roadmap.md)
+  — compra → entrega, flywheel de recompra, detalle de cada eslabón implementado.
+- **Deploy:** [`docs/DEPLOY.md`](docs/DEPLOY.md) — full-stack **Next.js en Vercel** + **Neon**
+  (Postgres) + **Upstash** (Redis/cola).
+- **Manual de operación (no técnico):** [`docs/MANUAL-OPERACION.md`](docs/MANUAL-OPERACION.md)
+  — panel, usuarios, backups, rotar llaves, "cuando algo se rompe".
 - **Agent Core:** repo separado, integrado in-process como SDK (no se toca desde acá).
 
-## Estado: Fase 1 — F1 (Fundaciones) en curso
+## Estado
 
-Cimiento de todo lo demás. Ya implementado y testeado:
+Fases F1–F5 completas y la app operando el ciclo completo de un pet shop: tienda PWA,
+checkout, panel del comercio, reparto, seguimiento, suscripciones y Vendedor IA.
 
-| Pieza | Qué hace | Dónde |
-|-------|----------|-------|
-| **Port de DB** | Los módulos dependen de `Db`/`TenantAwareDb`, no del driver. Adaptador postgres.js (Neon, prod) y PGlite (tests). | `packages/platform/src/db/port.ts`, `pg.ts` |
-| **Aislamiento multi-tenant (RLS)** | Postgres niega filas de otros tenants aunque el código olvide el `WHERE`. `withTenant()` setea `app.tenant_id` por transacción. **Probado sobre Postgres real.** | `packages/platform/src/db/` |
-| **Configuration Engine** | Resolución por herencia (platform→tenant→region→merchant→user), versionado, effective-dating, validación por JSON Schema. Registro tipado de claves + **repositorio** (persistencia). | `packages/platform/src/config/` |
-| **Provisioning de tenant** | `createTenant()` crea tenant + región y aplica una **plantilla de vertical** (Pet Shop) — todo por datos, cero código por tenant. | `packages/platform/src/tenant/` |
-| **RBAC scopeado** | Permisos verbo:recurso con contención por scope; sin cruce entre tenants; flag de MFA | `packages/platform/src/rbac/` |
-| **Money** | Aritmética en centavos (nunca float) + `allocate` que reparte sin perder centavos (PaymentAllocation) | `packages/platform/src/money/` |
-| **Outbox transaccional** | Evento en la misma tx que el cambio de estado; drenado por Cron/QStash | `packages/platform/src/outbox/` |
-| **Contracts** | Tipos canónicos sin lógica (Money, TenantContext, Config, RBAC, Event) | `packages/contracts/` |
+**171 tests en verde** (+2 gated a Neon) · lint con límites de módulos · typecheck · `next build`
+— todo corre en CI (`.github/workflows/ci.yml`).
 
-**37 tests** (35 verdes + 2 gated a Neon). Pendiente de F1: app **Next.js** (BFF + route
-handlers con resolución de tenant en el borde), **Identity/auth + MFA**.
+### Core de plataforma (`@commerce/platform`)
 
-### F2 — Catálogo + Inventario ✅
+| Pieza | Qué hace |
+|-------|----------|
+| **Port de DB** | Los módulos dependen de `Db`/`TenantAwareDb`, no del driver. Adaptador postgres.js (Neon, prod) y PGlite (tests). |
+| **Aislamiento multi-tenant (RLS)** | Postgres niega filas de otros tenants aunque el código olvide el `WHERE`. `withTenant()` setea `app.tenant_id` por transacción. Probado sobre Postgres real. |
+| **Configuration Engine** | Herencia platform→tenant→region→merchant→user, versionado, effective-dating, validación por JSON Schema, registro tipado de claves. |
+| **Provisioning de tenant** | `createTenant()` crea tenant + región y aplica una **plantilla de vertical** (Pet Shop) — todo por datos. |
+| **Auth + RBAC** | Usuarios, hash de contraseña, sesiones firmadas en cookie httpOnly, permisos verbo:recurso con contención por scope. |
+| **Money** | Aritmética en centavos (nunca float) + `allocate` que reparte sin perder centavos. |
+| **Outbox transaccional** | Evento en la misma tx que el cambio de estado; drenado por cron. |
 
-| Pieza | Qué hace | Dónde |
-|-------|----------|-------|
-| **Catálogo** | Productos, variantes y precios versionados (precio actual = último vigente; base para re-cotizar recompras) | `packages/modules/src/catalog/` |
-| **Inventario + reserva atómica** | Guard anti-oversell ([G1]): decremento condicional `available >= qty`; ciclo reserve(TTL)→confirm/release; barrido de vencidas por cron. **Probado.** | `packages/modules/src/inventory/` |
+### Módulos de dominio (`@commerce/modules`)
 
-**46 tests** en total (44 verdes + 2 gated a Neon). Los módulos de dominio viven en
-`@commerce/modules`, dueños de sus tablas (migración `0001_catalog_inventory.sql`).
+| Módulo | Qué hace |
+|--------|----------|
+| **catalog** | Productos, variantes, precios versionados (con precio de lista), categorías ordenables/ocultables, fotos subidas como archivo (guardadas en la base), info nutricional, **combos/cajas**. |
+| **inventory** | Reserva atómica anti-oversell (`available >= qty`), ciclo reserve(TTL)→confirm/release, barrido de vencidas. |
+| **orders** | Order → SellerOrder → OrderItem (multi-seller sin rehacer el modelo), máquina de estados, canales (web / manual / suscripción), pago al recibir, **aceptar/rechazar**, pedido manual/mostrador, seguimiento del cliente. |
+| **payments** | `PaymentProvider` abstracto, allocations exactas, **ledger de doble partida**, captura idempotente, refund parcial, **cobro al entregar** (`settleCashOnDelivery`). |
+| **delivery** | Costeo por zona (costo + ETA por barrio) o plano por config, gratis sobre umbral, mínimo de envío por segmento, agenda de entrega (turnos, días, corte, franjas), radio y pin del local. |
+| **customer** / **pets** | Ficha de cliente **por teléfono** (sin obligar registro) y perfil de mascota — la mascota es protagonista del pedido ("Pedido de Bruno"). |
+| **subscriptions** | Auto-envío cada X días: genera el pedido solo, cobro al recibir, descuento opcional por config. |
+| **agent** | Customer Shopping Agent **propose-only** (garantía estructural: no puede cobrar ni crear pedidos), presupuesto de IA por tenant. |
+| **content** | Estudio de Contenido: post del día (texto + placa) para redes. |
+| **reports** | Ventas, ventas por día de la semana y por turno, métrica de suscripción (% que confirma). |
+| **profitability** | Motor de rentabilidad (fórmula corregida de Fase 0) + simulador de escenarios y break-even. |
+| **adoptions** | Mascotas en adopción de protectoras asociadas. |
 
-### F3 — Orders (parte 1) ✅
+### App (`apps/web`, Next.js App Router sobre Vercel)
 
-| Pieza | Qué hace | Dónde |
-|-------|----------|-------|
-| **Modelo Order/SellerOrder/OrderItem** | Items cuelgan de seller_order → multi-seller = N seller_orders, **sin rehacer Order** ([E1]). Todo bajo RLS. | `orders/migrations/0002_orders.sql` |
-| **Máquina de estados** | Transiciones válidas del pedido (pago/global) y del seller_order (cumplimiento), con estados de compensación ([G2]) | `orders/state.ts` |
-| **createOrder / confirm / cancel** | Reserva stock atómica, enforce `maxSellersPerOrder` **por config** (V1=1; subir el flag habilita multi-seller), rollback atómico, eventos por outbox | `orders/orders.ts` |
+| Pantalla | Qué es |
+|----------|--------|
+| `/` | Tienda PWA: tenant por subdominio, branding por config, catálogo, checkout (dirección + referencias + GPS opcional, zona, horario sugerido, pago al recibir), cuenta del cliente (mascotas, pedidos, "repetir última compra", reposición, suscripciones), **Vendedor IA** flotante. |
+| `/merchant` | Panel del comercio (login por usuario + rol admin): pedidos (aceptar/rechazar, preparar, pedido manual), catálogo, categorías, combos, zonas y agenda de reparto, suscripciones, adopciones, diseño, contenido, reportes y **Configuración** (parámetros y funciones activables). |
+| `/reparto` | Pantalla del repartidor (PWA instalable): entregas del día, "Cómo llegar" (al pin exacto si hay), WhatsApp, En camino → Entregado + registro del cobro. |
+| `/seguimiento/[id]` | Seguimiento público del pedido (sin login): Recibido → En preparación → En camino → Entregado. |
 
-### F3 — Payments + Ledger ✅
+API principal (route handlers en `apps/web/app/api/`):
 
-| Pieza | Qué hace | Dónde |
-|-------|----------|-------|
-| **Payment Orchestrator** | Abstracción `PaymentProvider` (no atarse a MP); provider fake para tests y para el flujo V1 "pago a la operación" | `payments/provider.ts` |
-| **Allocations** | Reparto exacto GMV+delivery (partición sin perder centavos); fórmula corregida de Fase 0 (comisión sobre GMV, GMV no es ingreso) | `payments/allocations.ts` |
-| **Ledger de doble partida** | Fuente de verdad del dinero; `postLedger` exige balance; saldos por cuenta para conciliación/payouts | `payments/ledger.ts` |
-| **capture / refund** | Captura idempotente por `provider_event_id` (webhook repetido no duplica); refund parcial que **preserva las demás partidas** (#9) | `payments/payments.ts` |
-
-**63 tests** (61 verdes + 2 gated a Neon). Todos los invariantes de dinero probados sobre
-Postgres. Pendiente de F3: integración real de Mercado Pago (difere a conexión de cuenta).
-
-### F4 — Delivery + Profitability + Simulador ✅
-
-| Pieza | Qué hace | Dónde |
-|-------|----------|-------|
-| **Delivery** | Costeo por zona (`delivery_rates`) o config, gratis sobre umbral, subsidio con fuente explícita; ciclo pending→…→delivered con eventos; `routes` listo para consolidación V4 | `modules/src/delivery/` |
-| **Profitability Engine** | Fórmula **corregida** de Fase 0: contribución de plataforma y de comercio separadas (GMV no es sumando) | `modules/src/profitability/engine.ts` |
-| **Simulador** | 3 escenarios (sin/con plataforma/con plataforma+Agent) + break-even; uplift del agente como supuesto editable | `modules/src/profitability/simulator.ts` |
-
-**74 tests** (72 verdes + 2 gated a Neon). Los motores reproducen los números de Fase 0:
-$1.000/pedido plataforma, $5.250/pedido comercio, break-even 500 pedidos/mes.
-
-### App Next.js (BFF sobre Vercel) ✅
-
-`apps/web` — full-stack Next.js (App Router) desplegable en Vercel. **Compila con
-`next build`.**
-
-| Ruta | Qué hace |
-|------|----------|
-| `/` | Home PWA: resuelve tenant por subdominio, branding por config, catálogo del comercio |
-| `GET /api/health` | Health + ping a la DB |
-| `GET /api/catalog` | Catálogo del tenant resuelto (con contexto RLS) |
-| `POST /api/checkout` | Crea pedido (reserva stock) + intent de pago; requiere `Idempotency-Key` |
-| `POST /api/webhooks/payments/[merchantId]` | Captura idempotente (ledger + confirma pedido) |
-| `POST /api/admin/tenants` | Provisioning White Label por plantilla (gated por `ADMIN_API_TOKEN`) |
-| `GET /api/cron/outbox`, `/api/cron/reservations` | Vercel Cron: drena outbox / barre reservas vencidas |
+| Grupo | Rutas |
+|-------|-------|
+| Tienda | `catalog`, `checkout`, `checkout/quote`, `zones`, `customer/lookup`, `track/[id]`, `adoptions`, `images/[id]`, `agent/query` |
+| Cuenta del cliente | `auth/*`, `account/{orders,pets,reorder,replenishment}`, `subscriptions` |
+| Panel | `merchant/*` (auth, catalog, categories, combos, orders, zones, delivery-*, subscriptions, adoptions, branding, images, content, reports, settings) |
+| Reparto | `delivery/orders`, `delivery/orders/[id]/{status,deliver}` |
+| Plataforma | `admin/{tenants,merchants,migrate}` (gated por `ADMIN_API_TOKEN` o sesión admin), `webhooks/payments/[merchantId]`, `health` |
+| Cron | `cron/daily` (outbox + reservas vencidas + suscripciones; único cron en `apps/web/vercel.json`), y `cron/{outbox,reservations,subscriptions}` para dispararlos a mano |
 
 - **Resolución de tenant en el borde**: subdominio del Host (o `x-tenant` en dev) → id →
-  `withTenant`/RLS. Nunca de un parámetro del body. Función pura testeada.
-- **Deploy**: setear `DATABASE_URL` (Neon, rol no-superusuario), `ADMIN_API_TOKEN`,
-  `CRON_SECRET`. `vercel.json` define los crons.
-
-```bash
-# correr la app en dev (necesita DATABASE_URL apuntando a un Postgres con las migraciones)
-npm run build            # compila los paquetes del monorepo (dist)
-npm run dev -w @commerce/web
-# probar con un tenant: curl -H "x-tenant: gualeguay" localhost:3000/api/catalog
-```
-
-**79 tests** en total (77 verdes + 2 gated a Neon).
-
-### F5 — Customer Shopping Agent (propose-only) ✅
-
-| Pieza | Qué hace | Dónde |
-|-------|----------|-------|
-| **Enforcement** | Garantía **estructural** propose-only: registro de tools solo read/prepare; tools de dinero prohibidas; presupuesto de IA por tenant (falla cerrado) | `modules/src/agent/enforcement.ts` |
-| **Tools** | buscar_producto, recomendar, comparar, detectar_recompra, estimar_presupuesto, armar_carrito (prepara, no compra) | `modules/src/agent/tools.ts` |
-| **runCustomerAgent** | Busca, detecta recompra del historial, prepara carrito dentro de presupuesto; responder determinista (reemplazable por LLM) | `modules/src/agent/agent.ts` |
-| **`POST /api/agent/query`** | Devuelve un carrito **propuesto** que el humano confirma por `/api/checkout` | `apps/web` |
-
-El agente **no importa** la capa de pedidos/pagos: no puede cobrar. Espeja el modelo de
-agent-core (autonomía + intercepción de tools de escritura + presupuesto) **sin tocar ese
-repo**. Un LLM/agent-core real se enchufa inyectando el responder.
-
-**90 tests** (88 verdes + 2 gated a Neon).
+  `withTenant`/RLS. Nunca de un parámetro del body.
+- **Migraciones automáticas**: corren en el `postbuild` del deploy (`scripts/migrate-prod.mjs`)
+  con tracking (`schema_migrations`) y lock de Postgres. El orden vive en
+  `scripts/migrations-list.mjs` (0000–0019).
 
 ## Estructura
 
 ```
 packages/
   contracts/   @commerce/contracts   tipos canónicos (sin lógica)
-  platform/    @commerce/platform     multi-tenancy (RLS), config engine, rbac, money, outbox
+  platform/    @commerce/platform    multi-tenancy (RLS), config, auth/rbac, money, outbox
+  modules/     @commerce/modules     dominio: catalog, inventory, orders, payments, delivery, …
 apps/
-  web/         (próximo) Next.js — PWA + API (BFF) sobre Vercel
-docs/fase-0/   diseño y decisiones (revisión Fase 0)
+  web/         Next.js — tienda PWA, panel, reparto y API (BFF) sobre Vercel
+scripts/       migraciones (prod + generación para el panel) y seed de demo
+docs/          Fase 0, operatoria/roadmap, deploy, manual de operación
 ```
+
+Límites de módulos (enforced por ESLint): `contracts` → nada, `platform` → contracts,
+`modules` → contracts + platform, `apps/web` → todo. Un import "hacia arriba" rompe el CI.
 
 ## Desarrollo
 
 ```bash
 npm install
-npm run build       # tsc --build (project references)
+npm run build       # tsc --build — compila los paquetes (dist). Hacelo ANTES de los tests:
+                    # los tests de módulos importan los paquetes compilados.
 npm run typecheck
-npm test            # vitest — incluye la prueba de aislamiento RLS sobre Postgres (WASM)
+npm run lint
+npm test            # vitest — incluye RLS sobre Postgres en WASM (PGlite), sin servidor
+
+# app en dev (necesita DATABASE_URL apuntando a un Postgres con las migraciones)
+npm run migrate                 # aplica migraciones pendientes
+npm run seed                    # datos de demo (opcional)
+npm run dev -w @commerce/web
+# probar con un tenant: curl -H "x-tenant: gualeguay" localhost:3000/api/catalog
 ```
 
-**Tests de aislamiento contra Neon:** seteá `TEST_DATABASE_URL` y corre `npm test`; el
-test `db/isolation.test.ts` valida el helper `withTenant` (postgres.js) en el entorno
-real. Sin esa variable, igual corre `db/rls.pglite.test.ts`, que prueba la política RLS
-sobre Postgres en WASM (sin servidor).
+**Tests contra Neon:** seteá `TEST_DATABASE_URL` y corré `npm test`; `db/isolation.test.ts`
+valida `withTenant` (postgres.js) en el entorno real. Sin esa variable se saltan (los 2 gated).
+
+### Variables de entorno
+
+| Variable | Para qué |
+|----------|----------|
+| `DATABASE_URL` | Postgres (Neon, con pooler y rol no-superusuario). |
+| `ADMIN_API_TOKEN` | Código maestro del panel / rutas de plataforma (respaldo del login por usuario). |
+| `SESSION_SECRET` | Firma de sesiones (si falta, cae a `ADMIN_API_TOKEN`). |
+| `CRON_SECRET` | Autoriza los Vercel Cron (`/api/cron/*`). |
+| `ANTHROPIC_API_KEY` | Vendedor IA. Sin ella, el agente degrada a un responder determinista. |
+| `VENDOR_MODEL` | Modelo del Vendedor IA (default `claude-haiku-4-5`). |
+| `TEST_DATABASE_URL` | Opcional: tests de integración contra Neon. |
+
+Ver [`.env.example`](.env.example). Los secretos de proveedores de pago van cifrados por
+merchant, nunca en el `.env`.
+
+## Pendiente
+
+- **Mercado Pago real** ("Pagar ahora" y cobro recurrente de suscripciones): espera la cuenta
+  del comercio; hoy el botón dice "Próximamente".
+- **Auth**: login por repartidor (hoy código compartido) y MFA.
+- **Flywheel**: recordatorio proactivo de reposición (WhatsApp/push), referidos, "alimento
+  habitual" + recomendaciones en compra rápida.
+- **Menores**: ordenar la cola de reparto por zona, que el cliente edite cadencia/cantidad de
+  su suscripción, búsqueda semántica con `pgvector`, imputar descuento por transferencia al
+  ledger.
+
+Detalle y contexto en [`docs/operatoria-roadmap.md`](docs/operatoria-roadmap.md).
 
 ## Principio rector
 
