@@ -326,6 +326,44 @@ export async function listSellerOrders(db: Db, opts: { limit?: number } = {}): P
   }));
 }
 
+export interface OrderAttentionSummary {
+  /** Pago al recibir esperando Aceptar/Rechazar. */
+  needsAcceptance: number;
+  /** Confirmados (pagados online o aceptados) que todavía nadie empezó a preparar. */
+  toPrepare: number;
+  /** El pedido más reciente de la cola (para detectar que entró uno nuevo). */
+  latestOrderId: string | null;
+  latestCreatedAt: string | null;
+}
+
+/**
+ * Resumen liviano de la cola del comercio para avisar pedidos nuevos (el panel lo consulta
+ * cada pocos segundos). Mismo criterio de visibilidad que `listSellerOrders`: un pedido online
+ * todavía sin pagar no cuenta. Corre con contexto de tenant (RLS).
+ */
+export async function orderAttentionSummary(db: Db): Promise<OrderAttentionSummary> {
+  const [r] = await db.query<{ needs: string; prep: string; latest_id: string | null; latest_at: string | null }>(
+    `with q as (
+       select o.id, o.status as order_status, so.status, o.created_at
+         from seller_orders so
+         join orders o on o.id = so.order_id
+        where o.status in ('confirmed','completed','partially_refunded')
+           or (o.status = 'pending_payment' and o.payment_method in ('efectivo','pos','transferencia'))
+     )
+     select count(*) filter (where order_status = 'pending_payment')::text as needs,
+            count(*) filter (where order_status = 'confirmed' and status = 'pending')::text as prep,
+            (select id from q order by created_at desc, id desc limit 1) as latest_id,
+            (select max(created_at) from q)::text as latest_at
+       from q`,
+  );
+  return {
+    needsAcceptance: Number(r?.needs ?? 0),
+    toPrepare: Number(r?.prep ?? 0),
+    latestOrderId: r?.latest_id ?? null,
+    latestCreatedAt: r?.latest_at ? new Date(r.latest_at).toISOString() : null,
+  };
+}
+
 /**
  * Transiciona el estado de CUMPLIMIENTO de un seller_order (pending→preparing→ready→
  * in_transit→delivered, o rejected/failed) validando la máquina de estados. Emite evento.

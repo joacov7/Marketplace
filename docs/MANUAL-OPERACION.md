@@ -135,6 +135,23 @@ Se cambia una llave cuando se pudo haber filtrado, o por seguridad periódica.
 
 ---
 
+## Avisos de pedidos nuevos
+
+El panel revisa solo cada 30 segundos si entró un pedido, en cualquier pestaña:
+- La pestaña **Pedidos** muestra cuántos esperan que los aceptes o prepares (en rojo si hay
+  nuevos sin ver), y el título de la pestaña del navegador dice "(1) Nuevo pedido".
+- Con **Activar avisos** (arriba a la derecha) además **suena** y aparece una notificación
+  del sistema. El navegador pide permiso la primera vez: aceptalo. Si recargás la página,
+  tocá cualquier lugar del panel para que el sonido vuelva a funcionar (regla del navegador).
+- Dejá el panel abierto en una pestaña mientras atendés. Si la compu se suspende, al volver
+  se actualiza solo.
+
+La pantalla de **Reparto** también se actualiza sola cada 30 segundos y suena (y vibra en el
+celular) cuando aparece una entrega nueva lista para salir. El sonido se habilita con el
+primer toque en la pantalla.
+
+---
+
 ## Cobrar online con Mercado Pago ("Pagar ahora")
 
 Con Mercado Pago conectado, la tienda ofrece **Pagar ahora**: el cliente paga en la página

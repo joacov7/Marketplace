@@ -130,7 +130,7 @@ export default function TrackClient({ id, tenant, pago, mpPaymentId }: { id: str
             </div>
 
             <p style={{ textAlign: "center", color: C.mut, fontSize: 11.5, marginTop: 18 }}>
-              Se actualiza solo. Te avisamos por WhatsApp cuando salga a entregar.
+              Se actualiza solo. Guardá este link para seguir tu pedido.
             </p>
           </>
         ) : null}

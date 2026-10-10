@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   PawPrint, Bike, MapPin, Pencil, X, Plus, Package, Tags, BarChart3, Palette, Dog, Cat, RotateCcw, SlidersHorizontal, Clock,
-  Megaphone, Sparkles, Copy, Download, ImagePlus, ChevronUp, ChevronDown, Eye, EyeOff,
+  Megaphone, Sparkles, Copy, Download, ImagePlus, ChevronUp, ChevronDown, Eye, EyeOff, Bell, BellOff,
 } from "lucide-react";
 import { WEEKDAYS } from "@/lib/delivery-schedule";
+import { ALERT_POLL_MS, createChime, newIds, systemNotify, titleWithCount } from "@/lib/order-alerts";
 
 /** Icono de especie con lucide (Dog / Cat / PawPrint). Nunca emoji. */
 function PetSpeciesIcon({ species, size = 15 }: { species: string; size?: number }) {
@@ -215,6 +216,79 @@ export default function MerchantPanel() {
   const auth = { authorization: `Bearer ${token}` };
   const q = (p = "") => `?tenant=${encodeURIComponent(tenant ?? "")}${p}`;
 
+  // ── Avisos de pedidos nuevos ────────────────────────────────────────────────────
+  // Se consulta un resumen liviano cada 30 s (en cualquier pestaña del panel). Si entró un
+  // pedido: contador en "Pedidos", título del navegador, sonido y notificación del sistema
+  // (estos dos, si se activaron). La lista de Pedidos se recarga sola cuando la cola cambia.
+  const chime = useRef(createChime());
+  const [alertsOn, setAlertsOn] = useState(false);
+  const [unseen, setUnseen] = useState(0);
+  const [attention, setAttention] = useState(0);
+  const [ordersRefresh, setOrdersRefresh] = useState(0);
+  const lastLatest = useRef<string[] | null>(null);
+  const lastSig = useRef<string | null>(null);
+  const baseTitle = useRef<string>("");
+
+  useEffect(() => {
+    baseTitle.current = document.title || "Panel del comercio";
+    try { setAlertsOn(localStorage.getItem("orderAlerts") === "on"); } catch { /* */ }
+  }, []);
+
+  // El navegador solo deja sonar audio tras un click: lo habilitamos con el primer click.
+  useEffect(() => {
+    if (!alertsOn) return;
+    const unlock = () => chime.current.unlock();
+    document.addEventListener("pointerdown", unlock);
+    return () => document.removeEventListener("pointerdown", unlock);
+  }, [alertsOn]);
+
+  const pollOrders = useCallback(async () => {
+    if (!tenant || (!token && !authed)) return;
+    try {
+      const res = await fetch(`/api/merchant/orders/summary${q()}`, { headers: auth, cache: "no-store" });
+      if (!res.ok) return;
+      const d = (await res.json()) as { needsAcceptance: number; toPrepare: number; latestOrderId: string | null };
+      setAttention(d.needsAcceptance + d.toPrepare);
+      const latest = d.latestOrderId ? [d.latestOrderId] : [];
+      const fresh = newIds(lastLatest.current, latest);
+      lastLatest.current = latest;
+      if (fresh.length > 0) {
+        setUnseen((u) => u + 1);
+        if (alertsOn) {
+          chime.current.play();
+          systemNotify("Nuevo pedido", d.needsAcceptance > 0 ? "Hay pedidos para aceptar." : "Hay un pedido para preparar.");
+        }
+      }
+      const sig = `${d.needsAcceptance}|${d.toPrepare}|${d.latestOrderId ?? ""}`;
+      if (lastSig.current !== null && sig !== lastSig.current) setOrdersRefresh((n) => n + 1);
+      lastSig.current = sig;
+    } catch { /* sin conexión: se reintenta en la próxima vuelta */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token, authed, alertsOn]);
+
+  useEffect(() => {
+    void pollOrders();
+    const iv = setInterval(() => void pollOrders(), ALERT_POLL_MS);
+    const onVisible = () => { if (document.visibilityState === "visible") void pollOrders(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVisible); };
+  }, [pollOrders]);
+
+  // Ver la pestaña Pedidos marca los nuevos como vistos.
+  useEffect(() => { if (tab === "pedidos") setUnseen(0); }, [tab, ordersRefresh]);
+  useEffect(() => { if (baseTitle.current) document.title = titleWithCount(baseTitle.current, unseen); }, [unseen]);
+
+  async function toggleAlerts() {
+    const next = !alertsOn;
+    if (next) {
+      chime.current.unlock();
+      try { if (typeof Notification !== "undefined" && Notification.permission === "default") await Notification.requestPermission(); } catch { /* */ }
+      setTimeout(() => chime.current.play(), 150); // prueba de sonido
+    }
+    setAlertsOn(next);
+    try { localStorage.setItem("orderAlerts", next ? "on" : "off"); } catch { /* */ }
+  }
+
   const loadMerchants = useCallback(async () => {
     if (!tenant || (!token && !authed)) return;
     setError(null);
@@ -356,6 +430,11 @@ export default function MerchantPanel() {
             <button onClick={newMerchant} className="mbtn" style={{ ...btnGhost, padding: "6px 10px", fontSize: 12.5 }}>+ Comercio</button>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={toggleAlerts} className="mbtn" style={{ ...btnGhost, display: "inline-flex", alignItems: "center", gap: 6, ...(alertsOn ? { color: A, borderColor: A_SOFT } : {}) }}
+              title={alertsOn ? "Suena y avisa cuando entra un pedido. Tocá para silenciar." : "Activá el sonido y la notificación cuando entra un pedido"}>
+              {alertsOn ? <Bell size={16} strokeWidth={1.8} /> : <BellOff size={16} strokeWidth={1.8} />}
+              {alertsOn ? "Avisos activados" : "Activar avisos"}
+            </button>
             <a href={`/reparto?tenant=${encodeURIComponent(tenant ?? "")}`} target="_blank" rel="noopener noreferrer" className="mbtn" style={{ ...btnGhost, textDecoration: "none", display: "inline-flex", alignItems: "center", color: A, borderColor: A_SOFT }} title="Pantalla del repartidor (se abre en otra pestaña; instalable en el celular)"><Bike size={16} strokeWidth={1.8} style={{marginRight:6}} />Reparto</a>
             <button onClick={runMigrate} disabled={migrating} className="mbtn" style={btnGhost} title="Aplica migraciones pendientes tras un deploy con cambios de esquema">
               {migrating ? "Migrando…" : "Migrar base"}
@@ -370,6 +449,9 @@ export default function MerchantPanel() {
         {TABS.map(([t, Ico, label]) => (
           <button key={t} onClick={() => setTab(t)} className={`mbtn mtab${tab === t ? " mtab-on" : ""}`} style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
             <Ico size={16} strokeWidth={1.9} />{label}
+            {t === "pedidos" && attention > 0 && (
+              <span title="Pedidos para aceptar o preparar" style={{ minWidth: 20, height: 20, padding: "0 6px", borderRadius: 999, background: unseen > 0 ? "#c0392b" : A, color: "white", fontSize: 11.5, fontWeight: 700, display: "inline-grid", placeItems: "center" }}>{attention}</span>
+            )}
           </button>
         ))}
       </div>
@@ -381,7 +463,7 @@ export default function MerchantPanel() {
       )}
 
       {tab === "catalogo" ? <CatalogTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
-        : tab === "pedidos" ? <OrdersTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
+        : tab === "pedidos" ? <OrdersTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} refreshKey={ordersRefresh} />
         : tab === "suscripciones" ? <SubscriptionsTab tenant={tenant} token={token} onError={setError} />
         : tab === "contenido" ? <ContentStudioTab tenant={tenant} token={token} onError={setError} />
         : tab === "reportes" ? <ReportsTab tenant={tenant} token={token} onError={setError} />
@@ -610,7 +692,7 @@ function CatalogRow({ it, cats, tenant, token, onSave, onError }: { it: CatalogI
   );
 }
 
-function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | null; token: string; merchantId: string; onError: (s: string | null) => void }) {
+function OrdersTab({ tenant, token, merchantId, onError, refreshKey = 0 }: { tenant: string | null; token: string; merchantId: string; onError: (s: string | null) => void; refreshKey?: number }) {
   const [orders, setOrders] = useState<SellerOrder[]>([]);
   const [loading, setLoading] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -649,6 +731,8 @@ function OrdersTab({ tenant, token, merchantId, onError }: { tenant: string | nu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant, token]);
   useEffect(() => { void load(); }, [load]);
+  // La cola cambió (pedido nuevo, pago acreditado, entrega desde reparto): recargar sola.
+  useEffect(() => { if (refreshKey > 0) void load(); }, [refreshKey, load]);
 
   async function transition(id: string, to: string) {
     const res = await fetch(`/api/merchant/orders/${id}/transition?tenant=${encodeURIComponent(tenant ?? "")}`, {

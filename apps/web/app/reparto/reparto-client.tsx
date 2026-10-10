@@ -1,10 +1,11 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   Bike, RefreshCw, CheckCircle2, Check, MapPin, StickyNote, Clock,
   Navigation, MessageCircle, Banknote, CreditCard, Landmark,
 } from "lucide-react";
+import { ALERT_POLL_MS, createChime, newIds } from "@/lib/order-alerts";
 
 interface DeliveryItem { name: string; variant: string; qty: number }
 interface DeliveryOrder {
@@ -47,20 +48,54 @@ export default function RepartoClient() {
 
   const auth = { authorization: `Bearer ${token}` };
 
-  const load = useCallback(async () => {
+  // Avisos: la lista se actualiza sola cada 30 s y suena cuando aparece una entrega nueva.
+  const chime = useRef(createChime());
+  const prevIds = useRef<string[] | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  useEffect(() => {
+    const unlock = () => chime.current.unlock(); // el audio se habilita con el primer toque
+    document.addEventListener("pointerdown", unlock);
+    return () => document.removeEventListener("pointerdown", unlock);
+  }, []);
+
+  const load = useCallback(async (silent = false) => {
     if (!tenant || !token) return;
-    setLoading(true); setError(null);
+    if (!silent) { setLoading(true); setError(null); }
     try {
-      const res = await fetch(`/api/delivery/orders?tenant=${encodeURIComponent(tenant)}`, { headers: auth });
+      const res = await fetch(`/api/delivery/orders?tenant=${encodeURIComponent(tenant)}`, { headers: auth, cache: "no-store" });
       const d = await res.json();
-      if (!res.ok) { setError(res.status === 401 ? "PIN incorrecto." : (d.error ?? "error")); setOrders([]); }
-      else setOrders(d.orders);
-    } catch (e) { setError(String(e)); }
-    finally { setLoading(false); }
+      if (res.status === 401) {
+        // PIN inválido (o lo cambiaron): volver a pedirlo y DEJAR de consultar, para no sumar
+        // intentos fallidos que bloqueen el PIN de todo el comercio.
+        try { localStorage.removeItem("deliveryToken"); } catch { /* */ }
+        setToken(""); setOrders([]); prevIds.current = null;
+        setError("PIN incorrecto.");
+        return;
+      }
+      if (!res.ok) { setError(d.message ?? d.error ?? "error"); return; }
+      const list = d.orders as DeliveryOrder[];
+      const ids = list.map((o) => o.sellerOrderId);
+      if (newIds(prevIds.current, ids).length > 0) {
+        chime.current.play();
+        try { navigator.vibrate?.(250); } catch { /* */ }
+      }
+      prevIds.current = ids;
+      setOrders(list);
+      setError(null);
+      setUpdatedAt(new Date());
+    } catch (e) { if (!silent) setError(String(e)); }
+    finally { if (!silent) setLoading(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant, token]);
 
-  useEffect(() => { if (token && tenant) void load(); }, [token, tenant, load]);
+  useEffect(() => {
+    if (!token || !tenant) return;
+    void load();
+    const iv = setInterval(() => void load(true), ALERT_POLL_MS);
+    const onVisible = () => { if (document.visibilityState === "visible") void load(true); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVisible); };
+  }, [token, tenant, load]);
 
   function saveToken() { try { localStorage.setItem("deliveryToken", tokenInput); } catch { /* */ } setToken(tokenInput); }
 
@@ -110,6 +145,7 @@ export default function RepartoClient() {
           <div style={{ textAlign: "center", color: C.green }}><Bike size={34} strokeWidth={1.8} /></div>
           <h1 style={{ fontSize: 22, textAlign: "center", margin: "8px 0 4px", color: C.ink }}>Reparto</h1>
           <p style={{ color: C.mut, fontSize: 13.5, textAlign: "center", marginTop: 0 }}>Ingresá tu PIN de reparto.</p>
+          {error && <p style={{ color: "#b3261e", fontSize: 13, textAlign: "center", margin: "0 0 10px" }}>{error}</p>}
           <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveToken()}
             placeholder="PIN" inputMode="numeric" type="password" style={{ width: "100%", padding: 14, borderRadius: 11, border: `1px solid ${C.line}`, fontSize: 16 }} />
           <button onClick={saveToken} style={{ width: "100%", marginTop: 12, padding: 14, borderRadius: 11, border: "none", background: C.green, color: "white", fontWeight: 700, fontSize: 15 }}>Entrar</button>
@@ -123,9 +159,12 @@ export default function RepartoClient() {
       <header style={{ position: "sticky", top: 0, zIndex: 10, background: C.green, color: "white", padding: "16px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>Entregas de hoy</div>
-          <div style={{ fontSize: 12.5, opacity: 0.9 }}>{orders.length} para repartir</div>
+          <div style={{ fontSize: 12.5, opacity: 0.9 }}>
+            {orders.length} para repartir
+            {updatedAt && ` · actualizado ${updatedAt.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}`}
+          </div>
         </div>
-        <button onClick={load} style={{ background: "rgba(255,255,255,.2)", color: "white", border: "none", borderRadius: 10, padding: "9px 14px", fontWeight: 600, fontSize: 14 }} aria-label="Actualizar">{loading ? "…" : <RefreshCw size={16} strokeWidth={2} />}</button>
+        <button onClick={() => void load()} style={{ background: "rgba(255,255,255,.2)", color: "white", border: "none", borderRadius: 10, padding: "9px 14px", fontWeight: 600, fontSize: 14 }} aria-label="Actualizar">{loading ? "…" : <RefreshCw size={16} strokeWidth={2} />}</button>
       </header>
 
       <main style={{ padding: 14, maxWidth: 560, margin: "0 auto" }}>
