@@ -4,6 +4,7 @@ import { findCustomerByPhone } from "@commerce/modules/customer";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { readSession } from "@/lib/session";
+import { phoneLookupLimited } from "@/lib/abuse";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (body.status && !STATUS.has(body.status)) return NextResponse.json({ error: "invalid_status" }, { status: 400 });
 
   const session = readSession();
+  if (!session?.userId && body.phone) {
+    const limited = await phoneLookupLimited(req, tenant.tenantId, body.phone);
+    if (limited) return limited;
+  }
 
   try {
     const okOwner = await db().withTenant(tenant.tenantId, async (tx) => {

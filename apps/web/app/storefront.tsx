@@ -535,7 +535,7 @@ export default function Storefront(props: {
           setError(d.hasFood === false
             ? `Sin alimento, el mínimo de envío es ${money(Number(d.minMinor))}. Te faltan ${falta} — sumá algo más o agregá una bolsa de alimento.`
             : `Te faltan ${falta} para llegar al mínimo de envío.`);
-        } else { setError(d.error ?? "error en el checkout"); }
+        } else { setError(d.message ?? d.error ?? "error en el checkout"); }
         return;
       }
       // Pagar ahora: vamos a Mercado Pago. Al terminar, MP lo devuelve al seguimiento del pedido.
@@ -817,6 +817,8 @@ function VendorWidget({
       const d = await res.json();
       if (d?.disabled) {
         setMsgs((m) => [...m, { role: "vendor", text: "El asistente no está disponible por ahora." }]);
+      } else if (res.status === 429) {
+        setMsgs((m) => [...m, { role: "vendor", text: d?.message ?? "Recibimos muchas consultas seguidas. Esperá unos minutos." }]);
       } else if (res.ok && typeof d?.reply === "string") {
         setMsgs((m) => [...m, { role: "vendor", text: d.reply, cart: d.proposedCart ?? null }]);
       } else {
@@ -1565,7 +1567,7 @@ function SubscribeModal({
         }),
       });
       const d = await res.json();
-      if (!res.ok) { setError(d.error === "disabled" ? "La suscripción no está disponible por ahora." : (d.error ?? "No pudimos crear la suscripción.")); return; }
+      if (!res.ok) { setError(d.error === "disabled" ? "La suscripción no está disponible por ahora." : (d.message ?? d.error ?? "No pudimos crear la suscripción.")); return; }
       setDone({ nextRunAt: d.nextRunAt, petName: d.petName ?? f.petName.trim() ?? null });
     } catch { setError("No hay conexión en este momento. Probá de nuevo."); }
     finally { setBusy(false); }
@@ -2233,7 +2235,7 @@ function AccountMenu({ G, tenant, showPets, factors, subscriptions }: { G: strin
     setErr(null);
     const res = await fetch(`/api/auth/${mode}?tenant=${encodeURIComponent(tenant)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form) });
     const d = await res.json();
-    if (!res.ok) { setErr(d.error ?? "error"); return; }
+    if (!res.ok) { setErr(d.message ?? d.error ?? "error"); return; }
     setEmail(d.email); setOpen(false); setForm({ email: "", password: "" });
   }
   async function logout() { await fetch("/api/auth/logout", { method: "POST" }); setEmail(null); setOpen(false); }
@@ -2302,6 +2304,7 @@ function MySubscriptionsModal({ G, tenant, onClose }: { G: string; tenant: strin
       const url = `/api/subscriptions?tenant=${encodeURIComponent(tenant)}${ph ? `&phone=${encodeURIComponent(ph)}` : ""}`;
       const r = await fetch(url);
       const d = await r.json();
+      if (r.status === 429) setMsg(d.message ?? "Hiciste muchas consultas seguidas. Esperá un rato.");
       setSubs(Array.isArray(d.subscriptions) ? d.subscriptions : []);
     } catch { setSubs([]); }
     finally { setLoading(false); setAsked(true); }
@@ -2317,7 +2320,7 @@ function MySubscriptionsModal({ G, tenant, onClose }: { G: string; tenant: strin
         method: "PATCH", headers: { "content-type": "application/json" },
         body: JSON.stringify({ status, ...(phone.trim() ? { phone: phone.trim() } : {}) }),
       });
-      if (!r.ok) { const d = await r.json().catch(() => ({})); setMsg(d.error === "forbidden" ? "No pudimos verificar que sea tuya." : "No se pudo actualizar."); return; }
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setMsg(d.error === "forbidden" ? "No pudimos verificar que sea tuya." : (d.message ?? "No se pudo actualizar.")); return; }
       await load(phone.trim() || undefined);
     } catch { setMsg("Sin conexión. Probá de nuevo."); }
   }

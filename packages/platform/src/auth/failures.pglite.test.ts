@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import type { PGlite } from "@electric-sql/pglite";
 import type { TenantAwareDb } from "../db/port.js";
 import { freshDb } from "../db/pglite.testsupport.js";
-import { failureStatus, recordFailures, purgeExpiredFailures } from "./failures.js";
+import { failureStatus, recordFailures, purgeExpiredFailures, consumeRateLimit } from "./failures.js";
 
 describe("auth_failures — contador compartido de intentos fallidos", () => {
   let pg: PGlite;
@@ -54,6 +54,17 @@ describe("auth_failures — contador compartido de intentos fallidos", () => {
       const keys = (await tx.query<{ key: string }>("select key from auth_failures")).map((r) => r.key);
       expect(keys).toContain("nueva");
       expect(keys).not.toContain("vieja");
+    });
+  });
+
+  it("consumeRateLimit: deja pasar hasta el límite, después bloquea y vence la ventana", async () => {
+    await db.tx(async (tx) => {
+      for (let i = 1; i <= 3; i++) expect(await consumeRateLimit(tx, "rl", 3, 60_000)).toMatchObject({ ok: true, count: i });
+      const blocked = await consumeRateLimit(tx, "rl", 3, 60_000);
+      expect(blocked.ok).toBe(false);
+      expect(blocked.retryAfterMs).toBeGreaterThan(0);
+      await tx.query("update auth_failures set reset_at = now() - interval '1 second' where key = 'rl'");
+      expect(await consumeRateLimit(tx, "rl", 3, 60_000)).toMatchObject({ ok: true, count: 1 });
     });
   });
 });

@@ -3,6 +3,8 @@ import { verifyCredentials } from "@commerce/platform";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { buildSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/session";
+import { loginBlocked, loginRules, recordLoginFailure } from "@/lib/abuse";
+import { clientIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +20,16 @@ export async function POST(req: Request) {
   }
   if (!body.email || !body.password) return NextResponse.json({ error: "missing_credentials" }, { status: 400 });
 
+  // Fuerza bruta: bloqueo consultado ANTES de verificar; solo los fallos suman.
+  const rules = loginRules(tenant.tenantId, clientIp(req), body.email);
+  const blocked = await loginBlocked(rules);
+  if (blocked) return blocked;
+
   const user = await db().withTenant(tenant.tenantId, (tx) => verifyCredentials(tx, body.email!, body.password!));
-  if (!user) return NextResponse.json({ error: "credenciales inválidas" }, { status: 401 });
+  if (!user) {
+    await recordLoginFailure(rules);
+    return NextResponse.json({ error: "credenciales inválidas" }, { status: 401 });
+  }
 
   const res = NextResponse.json({ email: user.email, roles: user.roles });
   res.cookies.set(SESSION_COOKIE, buildSessionToken(user, tenant.tenantId), sessionCookieOptions);

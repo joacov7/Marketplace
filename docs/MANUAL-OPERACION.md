@@ -216,6 +216,16 @@ nada; sacá una captura del error y pedí ayuda.
   pasa seguido sin que nadie se equivoque, puede ser alguien intentando adivinar el PIN:
   cambialo por uno nuevo. Mientras tanto, el código maestro sigue abriendo Reparto.
 
+### Un cliente dice "muchos pedidos/consultas seguidas" o "Demasiados intentos"
+La tienda frena a los bots con límites (por conexión y por teléfono). A una persona normal no
+le pasa, pero puede ocurrir si alguien prueba muchas veces seguidas:
+- **Pedidos:** hasta 5 por hora por teléfono y 20 por hora por conexión. Si un cliente real
+  quedó frenado, tomale el pedido por WhatsApp y cargalo como **pedido manual** en el panel.
+- **Contraseña:** después de 5 intentos fallidos con el mismo email se bloquea 15 minutos.
+- **Vendedor IA:** tiene un tope diario de consultas a la IA por comercio; pasado el tope sigue
+  respondiendo, pero de forma básica (sin IA), hasta el día siguiente.
+Los límites se reinician solos; no hay que hacer nada.
+
 ### No puedo entrar al panel
 - ¿Email y contraseña correctos? Probá de nuevo.
 - Si a todos les pide entrar de repente, quizás se rotó `ADMIN_API_TOKEN` sin tener

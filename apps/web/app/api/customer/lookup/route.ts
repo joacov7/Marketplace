@@ -3,16 +3,14 @@ import { findCustomerByPhone, normalizePhone } from "@commerce/modules/customer"
 import { listPets } from "@commerce/modules/pets";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
-import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { phoneLookupLimited } from "@/lib/abuse";
 
 export const dynamic = "force-dynamic";
 
 // Este endpoint es público (lo usa el checkout para reconocer al cliente por teléfono) y
 // devuelve nombre + mascotas. Sin límite, es un oráculo para enumerar teléfonos y cosechar
-// datos personales. Mitigaciones: (1) rate limit por IP, (2) exigir un teléfono completo
+// datos personales. Mitigaciones: (1) límite por IP y por teléfono, (2) exigir un teléfono completo
 // (mín. de dígitos) para que no se pueda sondear por prefijos cortos.
-const LOOKUP_LIMIT = 15; // consultas
-const LOOKUP_WINDOW_MS = 60_000; // por minuto por IP
 const MIN_PHONE_DIGITS = 8;
 
 /**
@@ -26,14 +24,10 @@ export async function GET(req: Request) {
   const tenant = await resolveTenant(url.searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
-  // Rate limit por IP (best-effort) para frenar la enumeración masiva de teléfonos.
-  const rl = rateLimit(`lookup:${tenant.tenantId}:${clientIp(req)}`, LOOKUP_LIMIT, LOOKUP_WINDOW_MS);
-  if (!rl.ok) {
-    return NextResponse.json(
-      { error: "rate_limited" },
-      { status: 429, headers: { "retry-after": String(Math.ceil(rl.retryAfterMs / 1000)) } },
-    );
-  }
+  // Límite compartido (todas las instancias) por IP y por teléfono: frena la enumeración
+  // masiva de teléfonos para cosechar nombres + mascotas.
+  const limited = await phoneLookupLimited(req, tenant.tenantId, url.searchParams.get("phone") ?? "");
+  if (limited) return limited;
 
   const phone = normalizePhone(url.searchParams.get("phone"));
   // Exigimos un teléfono completo: no respondemos a prefijos cortos (evita sondeo).

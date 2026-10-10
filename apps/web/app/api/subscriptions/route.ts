@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { createSubscription, listCustomerSubscriptions } from "@commerce/modules/subscriptions";
 import { getVariantWithPrice } from "@commerce/modules/catalog";
-import { ensureCustomerForUser, findOrCreateCustomerByPhone, findCustomerByPhone } from "@commerce/modules/customer";
+import { ensureCustomerForUser, findOrCreateCustomerByPhone, findCustomerByPhone, normalizePhone } from "@commerce/modules/customer";
 import { createPet, listPets, type Species } from "@commerce/modules/pets";
 import { resolveConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { readSession } from "@/lib/session";
+import { rateLimited, rule, LIMITS, phoneLookupLimited } from "@/lib/abuse";
+import { clientIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +53,17 @@ export async function POST(req: Request) {
 
   const session = readSession();
   const phone = (body.address?.phone || body.phone || "").trim();
+
+  // Anti-bots: cada suscripción genera pedidos solos para siempre. Por IP y por teléfono.
+  const subPhone = normalizePhone(phone);
+  const limited = await rateLimited(
+    [
+      rule(`subscribe:ip:${tenant.tenantId}:${clientIp(req)}`, LIMITS.subscribePerIp),
+      ...(subPhone ? [rule(`subscribe:phone:${tenant.tenantId}:${subPhone}`, LIMITS.subscribePerPhone)] : []),
+    ],
+    "Ya registramos varias suscripciones seguidas. Esperá un rato o escribinos por WhatsApp.",
+  );
+  if (limited) return limited;
   const discount = (await resolveConfigValue<number>(db(), "subscriptions.discountPercent", { tenantId: tenant.tenantId })).value ?? 0;
 
   const prepared = await db().withTenant(tenant.tenantId, async (tx) => {
@@ -137,6 +150,12 @@ export async function GET(req: Request) {
   const session = readSession();
   const phoneParam = url.searchParams.get("phone");
 
+  // Invitado consultando por teléfono: límite para frenar el barrido de teléfonos ajenos.
+  if (!session?.userId && phoneParam) {
+    const limited = await phoneLookupLimited(req, tenant.tenantId, phoneParam);
+    if (limited) return limited;
+  }
+
   const subs = await db().withTenant(tenant.tenantId, async (tx) => {
     let customerId: string | null = session?.userId ?? null;
     if (!customerId && phoneParam) {
@@ -149,3 +168,4 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ subscriptions: subs });
 }
+

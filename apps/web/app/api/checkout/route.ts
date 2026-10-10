@@ -9,6 +9,9 @@ import { resolveConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { readSession } from "@/lib/session";
+import { rateLimited, rule, LIMITS } from "@/lib/abuse";
+import { clientIp } from "@/lib/rate-limit";
+import { normalizePhone } from "@commerce/modules/customer";
 import { mercadoPagoCredentials, mercadoPagoProvider, publicOrigin, webhookUrl, MP_PAY_WINDOW_SECONDS } from "@/lib/mercadopago";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +63,18 @@ export async function POST(req: Request) {
   if (!Array.isArray(body.items) || body.items.length === 0) {
     return NextResponse.json({ error: "empty_cart" }, { status: 400 });
   }
+
+  // Anti-bots: cada pedido reserva stock (hasta 7 días si es pago al recibir). Sin límite, un
+  // script deja el catálogo "sin stock". Por IP y por teléfono (contadores compartidos).
+  const checkoutPhone = normalizePhone(body.phone ?? body.address?.phone);
+  const limited = await rateLimited(
+    [
+      rule(`checkout:ip:${tenant.tenantId}:${clientIp(req)}`, LIMITS.checkoutPerIp),
+      ...(checkoutPhone ? [rule(`checkout:phone:${tenant.tenantId}:${checkoutPhone}`, LIMITS.checkoutPerPhone)] : []),
+    ],
+    "Recibimos muchos pedidos seguidos desde acá. Esperá un rato o escribinos por WhatsApp.",
+  );
+  if (limited) return limited;
 
   const chain = { tenantId: tenant.tenantId };
   const [threshold, standardCost, auxilioCost, minOrderCfg] = await Promise.all([

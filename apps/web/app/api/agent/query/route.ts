@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { readSession } from "@/lib/session";
 import { makeVendorResponder } from "@/lib/vendor-responder";
+import { rateLimited, overQuota, rule, LIMITS } from "@/lib/abuse";
+import { clientIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +19,11 @@ const MAX_MESSAGE_LEN = 500;
  * recomienda y devuelve un carrito propuesto que el humano confirma por /api/checkout; el
  * agente nunca cobra. Activable por comercio (`features.aiAssistant`).
  *
- * `customerId` sale de la SESIÓN verificada (no del cliente), para no exponer el historial de
- * otro cliente del mismo tenant. El header `x-customer-id` queda solo como fallback de dev.
+ * `customerId` sale SOLO de la SESIÓN verificada (no del cliente), para no exponer el historial
+ * de otro cliente del mismo tenant.
+ *
+ * Costo: límite por IP (bots) y un cupo diario de llamadas a Claude por comercio; pasado el
+ * cupo, el Vendedor sigue respondiendo con el responder determinista (sin IA, sin costo).
  */
 export async function POST(req: Request) {
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
@@ -27,6 +32,12 @@ export async function POST(req: Request) {
   // El comercio decide si el Vendedor existe (feature flag por tenant).
   const enabled = (await resolveConfigValue<boolean>(db(), "features.aiAssistant", { tenantId: tenant.tenantId })).value;
   if (enabled === false) return NextResponse.json({ disabled: true });
+
+  const limited = await rateLimited(
+    [rule(`vendor:ip:${tenant.tenantId}:${clientIp(req)}`, LIMITS.vendorPerIp)],
+    "Recibimos muchas consultas seguidas. Esperá unos minutos y volvé a escribir.",
+  );
+  if (limited) return limited;
 
   let body: { message?: string; budgetMinor?: string | number };
   try {
@@ -37,12 +48,15 @@ export async function POST(req: Request) {
   if (!body.message || typeof body.message !== "string") {
     return NextResponse.json({ error: "missing_message" }, { status: 400 });
   }
+  if (body.budgetMinor !== undefined && !/^[0-9]{1,15}$/.test(String(body.budgetMinor))) {
+    return NextResponse.json({ error: "invalid_budget" }, { status: 400 });
+  }
   const message = body.message.trim().slice(0, MAX_MESSAGE_LEN);
   if (!message) return NextResponse.json({ error: "missing_message" }, { status: 400 });
 
-  // Identidad del cliente desde la sesión (no falsificable). Header solo como fallback dev.
+  // Identidad del cliente desde la sesión (no falsificable).
   const session = readSession();
-  const customerId = session?.userId ?? req.headers.get("x-customer-id") ?? undefined;
+  const customerId = session?.userId ?? undefined;
 
   // Contexto para personalizar (la mascota es el centro). Best-effort: si falla, seguimos sin él.
   let context: ResponderContext | undefined;
@@ -62,7 +76,12 @@ export async function POST(req: Request) {
 
   // El Vendedor con Claude (si hay ANTHROPIC_API_KEY). Si no, o si el LLM falla, cae al
   // responder determinista para no romper la experiencia.
-  const vendor = makeVendorResponder();
+  // Cupo diario de IA por comercio: se descuenta solo si hay IA configurada.
+  const aiConfigured = Boolean(process.env.ANTHROPIC_API_KEY);
+  const quotaLeft = aiConfigured
+    ? !(await overQuota(rule(`vendor-llm:tenant:${tenant.tenantId}:${new Date().toISOString().slice(0, 10)}`, LIMITS.vendorLlmPerTenantDay)))
+    : false;
+  const vendor = quotaLeft ? makeVendorResponder() : undefined;
   const responder = vendor
     ? {
         async compose(input: Parameters<typeof deterministicResponder.compose>[0]) {

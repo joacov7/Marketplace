@@ -3,6 +3,8 @@ import { createUser, verifyCredentials } from "@commerce/platform";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { buildSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/session";
+import { rateLimited, rule, LIMITS } from "@/lib/abuse";
+import { clientIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,12 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
+  const limited = await rateLimited(
+    [rule(`register:ip:${tenant.tenantId}:${clientIp(req)}`, LIMITS.registerPerIp)],
+    "Se crearon muchas cuentas seguidas desde acá. Esperá un rato y volvé a probar.",
+  );
+  if (limited) return limited;
+
   if (!body.email || !body.password || body.password.length < 6) {
     return NextResponse.json({ error: "email y password (min 6) requeridos" }, { status: 400 });
   }

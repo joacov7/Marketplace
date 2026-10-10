@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { applyMercadoPagoPayment } from "@commerce/modules/payments";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
-import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { clientIp } from "@/lib/rate-limit";
+import { rateLimited } from "@/lib/abuse";
 import { mainMerchantId, mercadoPagoCredentials, mercadoPagoProvider } from "@/lib/mercadopago";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +21,11 @@ export async function POST(req: Request) {
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
-  const rl = rateLimit(`mp-sync:${tenant.tenantId}:${clientIp(req)}`, 20, 60_000);
-  if (!rl.ok) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  const limited = await rateLimited(
+    [{ key: `mp-sync:ip:${tenant.tenantId}:${clientIp(req)}`, limit: 20, windowMs: 60_000 }],
+    "Demasiadas verificaciones seguidas. Esperá un momento.",
+  );
+  if (limited) return limited;
 
   let body: { orderId?: string; paymentId?: string };
   try {
