@@ -13,7 +13,7 @@ export async function enqueueEvent(
 ): Promise<void> {
   await tx.query(
     `insert into outbox_events (tenant_id, type, version, payload)
-     values ($1, $2, $3, $4)`,
+     values ($1, $2, $3, $4::text::jsonb)`, // texto JSON → jsonb (ver config/repository.ts)
     [evt.tenantId, evt.type, evt.version ?? 1, JSON.stringify(evt.payload)],
   );
 }

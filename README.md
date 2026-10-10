@@ -76,7 +76,7 @@ API principal (route handlers en `apps/web/app/api/`):
   `withTenant`/RLS. Nunca de un parámetro del body.
 - **Migraciones automáticas**: corren en el `postbuild` del deploy (`scripts/migrate-prod.mjs`)
   con tracking (`schema_migrations`) y lock de Postgres. El orden vive en
-  `scripts/migrations-list.mjs` (0000–0021).
+  `scripts/migrations-list.mjs` (0000–0022).
 
 ## Estructura
 
@@ -111,8 +111,10 @@ npm run dev -w @commerce/web
 # probar con un tenant: curl -H "x-tenant: gualeguay" localhost:3000/api/catalog
 ```
 
-**Tests contra Neon:** seteá `TEST_DATABASE_URL` y corré `npm test`; `db/isolation.test.ts`
-valida `withTenant` (postgres.js) en el entorno real. Sin esa variable se saltan (los 2 gated).
+**Tests contra Postgres real:** seteá `TEST_DATABASE_URL` (una base de PRUEBA) y corré `npm test`.
+Corren con postgres.js, el driver de producción: `db/isolation.test.ts` (aislamiento por RLS) y
+`orders/jsonb.pg.test.ts` (que las columnas jsonb se guarden como objeto/valor y no como string
+JSON — un bug que PGlite no reproduce). Sin esa variable se saltan.
 
 ### Variables de entorno
 

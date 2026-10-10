@@ -39,8 +39,11 @@ export async function setConfigValue(
   const version = (prev?.max ?? 0) + 1;
 
   await db.query(
+    // `$4::text::jsonb`: el valor viaja como TEXTO JSON y lo parsea Postgres. Sin el cast,
+    // postgres.js (producción) ve que el destino es jsonb y le vuelve a aplicar JSON.stringify
+    // → se guardaba un string JSON ("false", "175000") en vez del valor.
     `insert into config_values (key, scope_type, scope_id, value, version, effective_from, actor, reason)
-     values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+     values ($1,$2,$3,$4::text::jsonb,$5,$6,$7,$8)`,
     [
       input.key,
       input.scopeType,
@@ -56,20 +59,58 @@ export async function setConfigValue(
 }
 
 /**
- * Normaliza el valor leído de config_values. Según el driver, una columna jsonb puede
- * volver ya parseada (objeto/valor JS) o como TEXTO JSON crudo (p. ej. `"#2E7D32"` con
- * comillas, o `[{...}]` como string). Si vino como texto de un string/array/objeto JSON, lo
- * des-envuelve una vez; los strings comunes (colores, textos) quedan intactos. Idempotente.
+ * Normaliza el valor leído de config_values SEGÚN EL TIPO DECLARADO de la clave.
+ *
+ * Hasta la migración 0022, el driver de producción (postgres.js) guardaba todo valor como un
+ * string JSON: `false` quedaba como "false", `175000` como "175000" y objetos/listas como su
+ * texto. Esas filas siguen en la base (son historial versionado, no se reescriben), así que
+ * al leer se convierten al tipo que la clave espera:
+ *  - boolean: "true"/"false" → true/false   (sin esto, apagar una función no tenía efecto)
+ *  - number/integer: "175000" → 175000
+ *  - object/array: texto JSON → valor
+ *  - string: solo se des-envuelve una vez si viene entre comillas ("\"Pet Shop\"") — un PIN
+ *    "482915" sigue siendo texto.
+ * Sin tipo declarado: heurística anterior (des-envuelve comillas, listas y objetos).
+ * Idempotente: un valor ya bien tipado pasa sin cambios.
  */
-function coerceValue(v: unknown): unknown {
+export function coerceConfigValue(v: unknown, schema?: { type?: unknown }): unknown {
   if (typeof v !== "string") return v;
   const s = v.trim();
-  if ((s.startsWith('"') && s.endsWith('"')) || s.startsWith("[") || s.startsWith("{")) {
+  const tryParse = (): unknown => {
     try {
       return JSON.parse(s);
     } catch {
-      return v;
+      return undefined;
     }
+  };
+  const type = typeof schema?.type === "string" ? schema.type : undefined;
+
+  if (type === "boolean") {
+    if (s === "true") return true;
+    if (s === "false") return false;
+    const p = tryParse();
+    return typeof p === "boolean" ? p : v;
+  }
+  if (type === "number" || type === "integer") {
+    const p = tryParse();
+    if (typeof p === "number") return p;
+    if (typeof p === "string" && p.trim() !== "" && Number.isFinite(Number(p))) return Number(p);
+    return v;
+  }
+  if (type === "object" || type === "array") {
+    const p = tryParse();
+    return p !== undefined && typeof p === "object" ? p : v;
+  }
+  if (type === "string") {
+    if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+      const p = tryParse();
+      return typeof p === "string" ? p : v;
+    }
+    return v;
+  }
+  if ((s.startsWith('"') && s.endsWith('"')) || s.startsWith("[") || s.startsWith("{")) {
+    const p = tryParse();
+    return p === undefined ? v : p;
   }
   return v;
 }
@@ -116,7 +157,7 @@ export async function resolveConfigValue<V>(
     key: r.key,
     scopeType: r.scope_type,
     scopeId: r.scope_id,
-    value: coerceValue(r.value),
+    value: coerceConfigValue(r.value, def?.jsonSchema as { type?: unknown } | undefined),
     version: r.version,
     effectiveFrom: new Date(r.effective_from).toISOString(),
     actor: r.actor,

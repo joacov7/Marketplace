@@ -315,7 +315,7 @@ export async function transitionDelivery(
         `update deliveries set status = $2, driver_id = coalesce($3, driver_id), updated_at = now() where id = $1`,
         [input.deliveryId, input.to, input.driverId ?? null],
       );
-      await tx.query(`insert into delivery_events (tenant_id, delivery_id, type, data) values ($1,$2,$3,$4)`, [
+      await tx.query(`insert into delivery_events (tenant_id, delivery_id, type, data) values ($1,$2,$3,$4::text::jsonb)`, [
         input.tenantId,
         input.deliveryId,
         input.to,

@@ -69,7 +69,9 @@ export async function createOrder(
         `insert into orders (tenant_id, customer_id, status, currency, total_minor, shipping_address,
                              delivery_window, delivery_charge_minor, pet_id, pet_name,
                              payment_method, payment_status, channel)
-         values ($1,$2,'pending_payment',$3,0,$4,$5,$6,$7,$8,$9,$10,$11) returning id`,
+         values ($1,$2,'pending_payment',$3,0,$4::text::jsonb,$5,$6,$7,$8,$9,$10,$11) returning id`,
+        // ↑ shipping_address como texto JSON parseado por Postgres. Sin el cast, postgres.js
+        //   (producción) lo doble-codificaba: quedaba un string y reparto veía "Sin dirección".
         [
           input.tenantId,
           input.customerId ?? null,
