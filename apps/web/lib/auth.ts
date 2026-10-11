@@ -9,7 +9,8 @@ import { checkDeliveryAccess } from "./delivery-access";
 import { clientIp } from "./rate-limit";
 
 /** Roles que abren el panel de administración. */
-const ADMIN_ROLES = new Set(["owner", "admin", "merchant_admin"]);
+export const PANEL_ROLES = ["owner", "admin", "merchant_admin"] as const;
+const ADMIN_ROLES = new Set<string>(PANEL_ROLES);
 
 /** ¿La sesión tiene un rol de administración del panel? */
 export function hasAdminRole(session: SessionPayload | null): boolean {

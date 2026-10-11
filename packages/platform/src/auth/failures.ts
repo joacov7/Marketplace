@@ -65,3 +65,9 @@ export async function consumeRateLimit(
   const count = Number(r!.count);
   return { ok: count <= limit, count, retryAfterMs: Math.max(0, Number(r!.retry_ms)) };
 }
+
+/** Borra contadores (p. ej. destrabar un email tras restablecer su contraseña). */
+export async function clearFailures(db: Db, keys: readonly string[]): Promise<void> {
+  if (keys.length === 0) return;
+  await db.query(`delete from auth_failures where key = any($1::text[])`, [keys as string[]]);
+}

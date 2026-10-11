@@ -243,11 +243,22 @@ le pasa, pero puede ocurrir si alguien prueba muchas veces seguidas:
   respondiendo, pero de forma básica (sin IA), hasta el día siguiente.
 Los límites se reinician solos; no hay que hacer nada.
 
-### No puedo entrar al panel
-- ¿Email y contraseña correctos? Probá de nuevo.
+### No puedo entrar al panel / me olvidé la contraseña
+- **Me olvidé la contraseña:** en la pantalla de ingreso tocá **"¿Olvidaste tu contraseña?"**,
+  escribí tu email, una contraseña nueva (8+ caracteres) y el **código de acceso**. El código
+  está en Vercel → tu proyecto → Settings → Environment Variables → `ADMIN_API_TOKEN` (tocá el
+  ojo para verlo). Entrás directo con la nueva, aunque el email estuviera bloqueado.
+- **"Demasiados intentos fallidos":** tras 5 contraseñas incorrectas el email se bloquea 15
+  minutos. Esperá, o usá "¿Olvidaste tu contraseña?" (lo destraba).
+- **Cambiar tu contraseña** (sabiendo la actual): Configuración → **Tu acceso al panel**.
+- **A un empleado se le olvidó:** Configuración → Tu acceso al panel → "Restablecer la
+  contraseña de un usuario del panel". Pasale la nueva por un canal privado.
 - Si a todos les pide entrar de repente, quizás se rotó `ADMIN_API_TOKEN` sin tener
   `SESSION_SECRET` (ver la nota en "Rotar una llave"). Volvé a entrar con email y contraseña;
   si no tenés usuario, usá **"Primera vez"** con el token.
+- Ojo: cambiar la contraseña no cierra las sesiones ya abiertas en otros dispositivos (duran
+  hasta 30 días). Si sospechás que alguien entró sin permiso, avisá: hay que rotar
+  `SESSION_SECRET` en Vercel (cierra todas las sesiones).
 
 ### Un deploy quedó en Error y en los logs veo `[migrate] ERROR`
 - Una migración falló, así que **ese cambio no salió** (el sitio sigue con la versión

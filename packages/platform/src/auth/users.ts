@@ -65,3 +65,41 @@ export async function getUser(db: Db, userId: string): Promise<AuthUser | null> 
   if (!row) return null;
   return { id: row.id, email: row.email, roles: await loadRoles(db, row.id) };
 }
+
+/** Contraseña mínima de las cuentas del panel. */
+export const PANEL_PASSWORD_MIN = 8;
+
+/**
+ * Cambia la contraseña de un usuario verificando la ACTUAL (lo hace la propia persona desde
+ * el panel). Corre con contexto de tenant (RLS). Guarda solo el hash.
+ */
+export async function changePassword(
+  db: Db,
+  input: { userId: string; currentPassword: string; newPassword: string },
+): Promise<Result<true, "wrong_password" | "too_short" | "not_found">> {
+  if (input.newPassword.length < PANEL_PASSWORD_MIN) return err("too_short");
+  const [row] = await db.query<{ password_hash: string }>(`select password_hash from users where id = $1`, [input.userId]);
+  if (!row) return err("not_found");
+  if (!verifyPassword(input.currentPassword, row.password_hash)) return err("wrong_password");
+  await db.query(`update users set password_hash = $2 where id = $1`, [input.userId, hashPassword(input.newPassword)]);
+  return ok(true);
+}
+
+/**
+ * Restablece la contraseña de un usuario del PANEL por email, sin pedir la anterior. Solo lo
+ * puede hacer quien tiene el código maestro o una sesión de admin del mismo comercio (el gate
+ * está en la ruta). No toca cuentas de clientes de la tienda: el usuario tiene que tener un rol
+ * de administración. Corre con contexto de tenant (RLS).
+ */
+export async function resetPanelPassword(
+  db: Db,
+  input: { email: string; newPassword: string; adminRoles: readonly string[] },
+): Promise<Result<{ userId: string }, "not_found" | "not_panel_user" | "too_short">> {
+  if (input.newPassword.length < PANEL_PASSWORD_MIN) return err("too_short");
+  const [u] = await db.query<{ id: string }>(`select id from users where email = lower($1)`, [input.email.trim()]);
+  if (!u) return err("not_found");
+  const roles = await loadRoles(db, u.id);
+  if (!roles.some((r) => input.adminRoles.includes(r.role))) return err("not_panel_user");
+  await db.query(`update users set password_hash = $2 where id = $1`, [u.id, hashPassword(input.newPassword)]);
+  return ok({ userId: u.id });
+}

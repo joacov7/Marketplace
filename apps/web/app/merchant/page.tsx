@@ -204,7 +204,7 @@ export default function MerchantPanel() {
   const [migrating, setMigrating] = useState(false);
   const [authed, setAuthed] = useState(false);          // sesión de admin activa (cookie)
   const [li, setLi] = useState({ email: "", pass: "" }); // formulario de login
-  const [loginMode, setLoginMode] = useState<"login" | "first" | "code">("login");
+  const [loginMode, setLoginMode] = useState<"login" | "first" | "code" | "reset">("login");
 
   useEffect(() => {
     setTenant(new URLSearchParams(window.location.search).get("tenant"));
@@ -347,6 +347,22 @@ export default function MerchantPanel() {
     await login();
   }
 
+  /** Olvidé mi contraseña: la restablece con el código maestro y entra con la nueva. */
+  async function resetAndLogin() {
+    setError(null);
+    if (!li.email.trim()) { setError("Escribí el email de tu usuario del panel."); return; }
+    if (li.pass.length < 8) { setError("La contraseña nueva debe tener al menos 8 caracteres."); return; }
+    if (!tokenInput.trim()) { setError("Pegá el código de acceso (código maestro)."); return; }
+    const res = await fetch(`/api/merchant/auth/reset${q()}`, {
+      method: "POST", headers: { authorization: `Bearer ${tokenInput.trim()}`, "content-type": "application/json" },
+      body: JSON.stringify({ email: li.email.trim(), newPassword: li.pass }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { setError(d.error ?? "No se pudo restablecer la contraseña."); return; }
+    setTokenInput("");
+    await login();
+  }
+
   /** Corre las migraciones pendientes y siembra categorías + catálogo demo del tenant
    *  actual (idempotente: no duplica; asigna categoría a productos demo sin ella). Útil tras
    *  un deploy con cambios de esquema. Gated por el mismo token del panel. */
@@ -383,6 +399,7 @@ export default function MerchantPanel() {
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
               <button onClick={() => { setError(null); setLoginMode("first"); }} style={linkStyle}>Primera vez: crear mi acceso</button>
               <button onClick={() => { setError(null); setLoginMode("code"); }} style={linkStyle}>Usar código</button>
+              <button onClick={() => { setError(null); setLoginMode("reset"); }} style={linkStyle}>¿Olvidaste tu contraseña?</button>
             </div>
           </>)}
 
@@ -392,6 +409,17 @@ export default function MerchantPanel() {
             <input value={li.pass} onChange={(e) => setLi({ ...li, pass: e.target.value })} placeholder="Contraseña nueva (mín. 8)" type="password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, marginBottom: 8 }} />
             <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} placeholder="Código de acceso actual" type="password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12 }} />
             <button onClick={bootstrapAndLogin} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>Crear y entrar</button>
+            <div style={{ textAlign: "center", marginTop: 14 }}><button onClick={() => { setError(null); setLoginMode("login"); }} style={linkStyle}>← Volver</button></div>
+          </>)}
+
+          {loginMode === "reset" && (<>
+            <p style={{ color: MUT, fontSize: 13, margin: "0 0 12px", textAlign: "center", lineHeight: 1.5 }}>
+              Elegí una contraseña nueva. Para confirmar que sos vos, pegá el <b>código de acceso</b> (está en Vercel → Settings → Environment Variables → <code>ADMIN_API_TOKEN</code>).
+            </p>
+            <input value={li.email} onChange={(e) => setLi({ ...li, email: e.target.value })} placeholder="Email de tu usuario" type="email" autoComplete="username" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, marginBottom: 8 }} />
+            <input value={li.pass} onChange={(e) => setLi({ ...li, pass: e.target.value })} placeholder="Contraseña nueva (mín. 8)" type="password" autoComplete="new-password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, marginBottom: 8 }} />
+            <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && resetAndLogin()} placeholder="Código de acceso" type="password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12 }} />
+            <button onClick={resetAndLogin} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>Cambiar contraseña y entrar</button>
             <div style={{ textAlign: "center", marginTop: 14 }}><button onClick={() => { setError(null); setLoginMode("login"); }} style={linkStyle}>← Volver</button></div>
           </>)}
 
@@ -468,7 +496,7 @@ export default function MerchantPanel() {
         : tab === "contenido" ? <ContentStudioTab tenant={tenant} token={token} onError={setError} />
         : tab === "reportes" ? <ReportsTab tenant={tenant} token={token} onError={setError} />
         : tab === "diseno" ? <DesignTab tenant={tenant} token={token} onError={setError} />
-        : tab === "config" ? <><MercadoPagoSettings tenant={tenant} token={token} onError={setError} /><div style={{ height: 14 }} /><SettingsTab tenant={tenant} token={token} onError={setError} /><div style={{ height: 14 }} /><DeliveryScheduleEditor tenant={tenant} token={token} onError={setError} /></>
+        : tab === "config" ? <><AccountAccessCard tenant={tenant} token={token} onError={setError} /><div style={{ height: 14 }} /><MercadoPagoSettings tenant={tenant} token={token} onError={setError} /><div style={{ height: 14 }} /><SettingsTab tenant={tenant} token={token} onError={setError} /><div style={{ height: 14 }} /><DeliveryScheduleEditor tenant={tenant} token={token} onError={setError} /></>
         : <AdoptionsTab tenant={tenant} token={token} onError={setError} />}
       </main>
     </div>
@@ -1438,6 +1466,72 @@ function SettingsTab({ tenant, token, onError }: { tenant: string | null; token:
   );
 }
 
+// ── Tu acceso: cambiar mi contraseña / restablecer la de otro usuario del panel ────────
+function AccountAccessCard({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const [me, setMe] = useState<string | null>(null);
+  const [cur, setCur] = useState("");
+  const [next, setNext] = useState("");
+  const [rEmail, setREmail] = useState("");
+  const [rPass, setRPass] = useState("");
+  const [busy, setBusy] = useState(false);
+  const qs = `?tenant=${encodeURIComponent(tenant ?? "")}`;
+
+  useEffect(() => {
+    fetch("/api/merchant/auth/me").then((r) => r.json()).then((d) => setMe(d?.authed ? d.email : null)).catch(() => {});
+  }, []);
+
+  async function post(url: string, body: Record<string, string>, okMsg: string, withToken: boolean) {
+    setBusy(true);
+    onError(null);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(withToken ? { authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+    });
+    setBusy(false);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { onError(d.error ?? "No se pudo guardar."); return false; }
+    onError(okMsg);
+    return true;
+  }
+
+  const field: React.CSSProperties = { ...input, width: "100%", boxSizing: "border-box" };
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: INK, marginBottom: 6 }}>Tu acceso al panel</div>
+      {me ? (
+        <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
+          <div style={{ fontSize: 12.5, color: MUT }}>Entraste como <b style={{ color: INK }}>{me}</b>. Cambiá tu contraseña:</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8 }} className="mform-grid">
+            <input type="password" autoComplete="current-password" placeholder="Contraseña actual" value={cur} onChange={(e) => setCur(e.target.value)} style={field} />
+            <input type="password" autoComplete="new-password" placeholder="Nueva (mín. 8)" value={next} onChange={(e) => setNext(e.target.value)} style={field} />
+            <button className="mbtn" style={{ ...btn, opacity: cur && next.length >= 8 && !busy ? 1 : 0.5 }} disabled={!cur || next.length < 8 || busy}
+              onClick={async () => { if (await post(`/api/merchant/auth/password${qs}`, { currentPassword: cur, newPassword: next }, "✓ Contraseña cambiada.", false)) { setCur(""); setNext(""); } }}>
+              Cambiar
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p style={{ fontSize: 12.5, color: MUT, margin: "0 0 14px" }}>
+          Entraste con el código maestro. Para tener usuario y contraseña, salí y usá <b>“Primera vez: crear mi acceso”</b>.
+        </p>
+      )}
+      <details style={{ fontSize: 12.5, color: MUT }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600, color: INK }}>Restablecer la contraseña de un usuario del panel</summary>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginTop: 8 }} className="mform-grid">
+          <input type="email" placeholder="Email del usuario" value={rEmail} onChange={(e) => setREmail(e.target.value)} style={field} />
+          <input type="password" autoComplete="new-password" placeholder="Contraseña nueva (mín. 8)" value={rPass} onChange={(e) => setRPass(e.target.value)} style={field} />
+          <button className="mbtn" style={{ ...btnGhost, opacity: rEmail && rPass.length >= 8 && !busy ? 1 : 0.5 }} disabled={!rEmail || rPass.length < 8 || busy}
+            onClick={async () => { if (await post(`/api/merchant/auth/reset${qs}`, { email: rEmail, newPassword: rPass }, `✓ Contraseña restablecida para ${rEmail}.`, true)) { setREmail(""); setRPass(""); } }}>
+            Restablecer
+          </button>
+        </div>
+        <div style={{ marginTop: 6 }}>Pasale la contraseña nueva a esa persona por un canal privado. No aplica a cuentas de clientes de la tienda.</div>
+      </details>
+    </div>
+  );
+}
+
 // ── Cobros online: conexión de Mercado Pago ──────────────────────────────────────
 type MpStatus = {
   configured: boolean; enabled: boolean; liveMode: boolean; tokenHint: string | null;
@@ -1534,14 +1628,14 @@ function MercadoPagoSettings({ tenant, token, onError }: { tenant: string | null
         <div style={{ display: "grid", gap: 10, marginBottom: 12 }}>
           <label style={{ fontSize: 13, fontWeight: 600, color: INK }}>
             Access Token de producción
-            <input type="password" autoComplete="off" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="APP_USR-…" style={{ ...input, width: "100%", marginTop: 4 }} />
+            <input type="password" autoComplete="off" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="APP_USR-…" style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 4 }} />
             <span style={{ display: "block", fontSize: 11.5, color: MUT, fontWeight: 400, marginTop: 3 }}>
               En Mercado Pago: Tus integraciones → tu aplicación → Credenciales de producción. Para probar sin plata real, usá el de prueba (TEST-…).
             </span>
           </label>
           <label style={{ fontSize: 13, fontWeight: 600, color: INK }}>
             Clave secreta de webhooks <span style={{ fontWeight: 400, color: MUT }}>(opcional, recomendada)</span>
-            <input type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={st.hasWebhookSecret ? "Dejalo vacío para conservar la actual" : ""} style={{ ...input, width: "100%", marginTop: 4 }} />
+            <input type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={st.hasWebhookSecret ? "Dejalo vacío para conservar la actual" : ""} style={{ ...input, width: "100%", boxSizing: "border-box", marginTop: 4 }} />
           </label>
           <div style={{ display: "flex", gap: 10 }}>
             <button className="mbtn" style={{ ...btn, opacity: accessToken.trim() && !busy && st.encryptionReady ? 1 : 0.5 }} disabled={!accessToken.trim() || busy || !st.encryptionReady}
