@@ -193,6 +193,8 @@ function consumption(weightKg: number, factor: number, kcalPerKg: number): { mer
 
 type View = "home" | "list" | "detail" | "checkout" | "done" | "adopciones" | "comparar";
 type CartLine = { name: string; sub: string; priceMinor: number; qty: number };
+/** Tope por producto (lo valida también el servidor en lib/cart.ts). */
+const MAX_LINE_QTY = 99;
 type Cart = Record<string, CartLine>; // key = variantId
 type PayMethod = "transferencia" | "efectivo" | "pos" | "mercadopago";
 type StorePetLite = { id: string; name: string; species: string };
@@ -339,7 +341,7 @@ export default function Storefront(props: {
     const v = p.variants.find((x) => x.variantId === variantId) ?? defaultVariant(p);
     setCart((c) => ({
       ...c,
-      [v.variantId]: { name: p.name, sub: `${v.size} · ${p.category || "Producto"}`, priceMinor: Number(v.priceMinor), qty: (c[v.variantId]?.qty ?? 0) + n },
+      [v.variantId]: { name: p.name, sub: `${v.size} · ${p.category || "Producto"}`, priceMinor: Number(v.priceMinor), qty: Math.min(MAX_LINE_QTY, (c[v.variantId]?.qty ?? 0) + n) },
     }));
     setDone(null);
     setCartOpen(true);
@@ -347,7 +349,7 @@ export default function Storefront(props: {
   function setLineQty(variantId: string, q: number) {
     setCart((c) => {
       if (q <= 0) { const { [variantId]: _d, ...rest } = c; return rest; }
-      return { ...c, [variantId]: { ...c[variantId]!, qty: q } };
+      return { ...c, [variantId]: { ...c[variantId]!, qty: Math.min(MAX_LINE_QTY, q) } };
     });
   }
   // Agrega TODOS los ítems de un combo/caja al carrito de una (saltea los sin stock).

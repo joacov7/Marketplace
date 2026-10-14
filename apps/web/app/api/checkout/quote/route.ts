@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { checkDeliveryRadius, applyMinOrder } from "@commerce/modules/delivery";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
-import { parseCart, loadPricingConfig, priceCart } from "@/lib/cart";
+import { parseCart, loadPricingConfig, priceCart, CART_ERROR_MESSAGE } from "@/lib/cart";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
   const cart = parseCart(body.items);
-  if (!cart.ok) return NextResponse.json({ error: cart.error }, { status: 400 });
+  if (!cart.ok) return NextResponse.json({ error: cart.error, message: CART_ERROR_MESSAGE[cart.error] }, { status: 400 });
 
   const pricing = await loadPricingConfig(tenant.tenantId);
   const delivery = body.delivery === "auxilio" ? "auxilio" : "estandar";

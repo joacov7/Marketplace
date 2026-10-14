@@ -8,7 +8,7 @@ import { resolveConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { readSession } from "@/lib/session";
-import { parseCart, loadPricingConfig, priceCart } from "@/lib/cart";
+import { parseCart, loadPricingConfig, priceCart, CART_ERROR_MESSAGE } from "@/lib/cart";
 import { rateLimited, rule, LIMITS } from "@/lib/abuse";
 import { clientIp } from "@/lib/rate-limit";
 import { normalizePhone } from "@commerce/modules/customer";
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
   const cart = parseCart(body.items);
-  if (!cart.ok) return NextResponse.json({ error: cart.error }, { status: 400 });
+  if (!cart.ok) return NextResponse.json({ error: cart.error, message: CART_ERROR_MESSAGE[cart.error] }, { status: 400 });
 
   // Anti-bots: cada pedido reserva stock (hasta 7 días si es pago al recibir). Sin límite, un
   // script deja el catálogo "sin stock". Por IP y por teléfono (contadores compartidos).

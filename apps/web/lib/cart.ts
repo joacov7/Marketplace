@@ -16,6 +16,13 @@ export interface CartLine {
   qty: number;
 }
 
+/** Texto para el cliente según el error de `parseCart`. */
+export const CART_ERROR_MESSAGE: Record<string, string> = {
+  empty_cart: "Tu carrito está vacío.",
+  too_many_items: `Podés comprar hasta ${MAX_CART_LINES} productos distintos por pedido.`,
+  invalid_item: `Revisá las cantidades: de 1 a ${MAX_QTY} unidades por producto.`,
+};
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Valida los ítems que manda el navegador: cantidades enteras 1..99, a lo sumo 50 líneas. */
