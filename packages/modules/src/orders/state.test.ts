@@ -21,6 +21,8 @@ describe("Máquina de estados del pedido", () => {
     expect(canTransitionSellerOrder("in_transit", "delivered")).toBe(true);
     expect(canTransitionSellerOrder("in_transit", "delivery_failed")).toBe(true);
     expect(canTransitionSellerOrder("delivery_failed", "in_transit")).toBe(true); // reintento
+    expect(canTransitionSellerOrder("ready", "cancelled")).toBe(true); // cancelar antes de salir
+    expect(canTransitionSellerOrder("in_transit", "cancelled")).toBe(false); // ya salió: primero "Falló"
     expect(canTransitionSellerOrder("delivered", "in_transit")).toBe(false); // terminal
   });
 

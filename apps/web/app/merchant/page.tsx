@@ -58,10 +58,10 @@ const FONT_STACKS: Record<string, string> = {
 const BUTTON_RADIUS: Record<string, string> = { rounded: "10px", pill: "999px", square: "4px" };
 
 const NEXT: Record<string, string[]> = {
-  pending: ["preparing", "rejected"], preparing: ["ready"], ready: ["in_transit"],
-  in_transit: ["delivered", "delivery_failed"], delivery_failed: ["in_transit"], delivered: [], rejected: [], cancelled: [],
+  pending: ["preparing", "rejected"], preparing: ["ready", "cancelled"], ready: ["in_transit", "cancelled"],
+  in_transit: ["delivered", "delivery_failed"], delivery_failed: ["in_transit", "cancelled"], delivered: [], rejected: [], cancelled: [],
 };
-const LABEL: Record<string, string> = { preparing: "Preparar", ready: "Listo", in_transit: "En camino", delivered: "Entregado", delivery_failed: "Falló", rejected: "Rechazar" };
+const LABEL: Record<string, string> = { preparing: "Preparar", ready: "Listo", in_transit: "En camino", delivered: "Entregado", delivery_failed: "Falló", rejected: "Cancelar", cancelled: "Cancelar" };
 const COLOR: Record<string, string> = { pending: "#b26a00", preparing: "#1a73e8", ready: "#8e24aa", in_transit: "#00796b", delivered: "#2e7d32", delivery_failed: "#c62828", rejected: "#c62828", cancelled: "#777" };
 const CHANNEL_LABEL: Record<string, string> = { web: "Web", whatsapp: "WhatsApp", telefono: "Teléfono", mostrador: "Mostrador" };
 const METHOD_LABEL: Record<string, string> = { online: "Online", efectivo: "Efectivo", pos: "Tarjeta (POS)", transferencia: "Transferencia" };
@@ -762,11 +762,22 @@ function OrdersTab({ tenant, token, merchantId, onError, refreshKey = 0 }: { ten
   // La cola cambió (pedido nuevo, pago acreditado, entrega desde reparto): recargar sola.
   useEffect(() => { if (refreshKey > 0) void load(); }, [refreshKey, load]);
 
-  async function transition(id: string, to: string) {
-    const res = await fetch(`/api/merchant/orders/${id}/transition?tenant=${encodeURIComponent(tenant ?? "")}`, {
-      method: "POST", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ to }),
+  async function transition(o: SellerOrder, to: string) {
+    // Cancelar un pedido aceptado devuelve el stock y lo saca de la cola: se confirma antes.
+    // Si ya está cobrado, el comercio tiene que confirmar que devuelve el dinero.
+    const cancelling = to === "rejected" || to === "cancelled";
+    const paid = o.paymentStatus === "pagado";
+    if (cancelling) {
+      const msg = paid
+        ? "Este pedido YA ESTÁ COBRADO. Si lo cancelás, tenés que devolverle el dinero al cliente (si pagó con Mercado Pago, desde tu cuenta de MP). El stock vuelve al inventario. ¿Cancelar igual?"
+        : "¿Cancelar este pedido? El stock vuelve al inventario y el cliente lo va a ver como cancelado.";
+      if (!window.confirm(msg)) return;
+    }
+    const res = await fetch(`/api/merchant/orders/${o.sellerOrderId}/transition?tenant=${encodeURIComponent(tenant ?? "")}`, {
+      method: "POST", headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ to, refundAcknowledged: cancelling && paid }),
     });
-    if (!res.ok) { const d = await res.json(); onError(d.error); }
+    if (!res.ok) { const d = await res.json(); onError(d.message ?? d.error); }
     await load();
   }
 
@@ -843,7 +854,7 @@ function OrdersTab({ tenant, token, merchantId, onError, refreshKey = 0 }: { ten
               <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {(NEXT[o.status] ?? []).length === 0 ? <span style={{ color: "#aaa", fontSize: 13 }}>— sin acciones —</span>
                   : (NEXT[o.status] ?? []).map((to) => (
-                    <button key={to} onClick={() => transition(o.sellerOrderId, to)} className="mbtn" style={to === "rejected" || to === "delivery_failed" ? { ...btn, background: "#c62828" } : btn}>{LABEL[to] ?? to}</button>
+                    <button key={to} onClick={() => transition(o, to)} className="mbtn" style={to === "rejected" || to === "cancelled" || to === "delivery_failed" ? { ...btn, background: "#c62828" } : btn}>{LABEL[to] ?? to}</button>
                   ))}
               </div>
             </li>

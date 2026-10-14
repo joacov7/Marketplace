@@ -123,6 +123,25 @@ export async function releaseReservation(db: Db, reservationId: string): Promise
 }
 
 /**
+ * Devuelve al stock una reserva ya 'confirmed' (pedido aceptado que después se cancela): la
+ * mercadería no salió, así que vuelve a `available`. `reserved` no se toca (se bajó al confirmar).
+ */
+export async function restockConfirmedReservation(db: Db, reservationId: string): Promise<Result<true, "not_confirmed">> {
+  const [res] = await db.query<{ variant_id: string; qty: number }>(
+    `update stock_reservations set status = 'released'
+      where id = $1 and status = 'confirmed'
+      returning variant_id, qty`,
+    [reservationId],
+  );
+  if (!res) return err("not_confirmed");
+  await db.query(`update inventory set available = available + $2, updated_at = now() where variant_id = $1`, [
+    res.variant_id,
+    res.qty,
+  ]);
+  return ok(true);
+}
+
+/**
  * Libera todas las reservas vencidas y repone el stock (tarea de plataforma para el cron).
  * Usa la función SQL SECURITY DEFINER, que corre cross-tenant. Devuelve cuántas liberó.
  */

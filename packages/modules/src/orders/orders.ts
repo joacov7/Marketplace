@@ -5,7 +5,7 @@ import {
   enqueueEvent,
 } from "@commerce/platform";
 import { type Result, ok, err, type CurrencyCode } from "@commerce/contracts";
-import { reserveStock, confirmReservation, releaseReservation } from "../inventory/inventory.js";
+import { reserveStock, confirmReservation, releaseReservation, restockConfirmedReservation } from "../inventory/inventory.js";
 import { canTransitionOrder, canTransitionSellerOrder, type SellerOrderStatus } from "./state.js";
 
 export type OrderChannel = "web" | "whatsapp" | "telefono" | "mostrador" | "suscripcion";
@@ -369,23 +369,60 @@ export async function orderAttentionSummary(db: Db): Promise<OrderAttentionSumma
 /**
  * Transiciona el estado de CUMPLIMIENTO de un seller_order (pending→preparing→ready→
  * in_transit→delivered, o rejected/failed) validando la máquina de estados. Emite evento.
+ *
+ * Rechazar/cancelar (rejected | cancelled) COMPENSA en la misma tx: devuelve el stock (reservas
+ * 'held' se liberan; 'confirmed' vuelven a available) y, si no queda ningún seller_order vivo,
+ * cancela el pedido (sale de la cola y de las ventas). Un pedido ya cobrado solo se cancela con
+ * `refundAcknowledged` (el comercio confirmó que devuelve el dinero): si no, `paid_refund_required`.
  */
 export async function transitionSellerOrder(
   db: TenantAwareDb,
   tenantId: string,
   sellerOrderId: string,
   to: SellerOrderStatus,
+  opts: { refundAcknowledged?: boolean } = {},
 ): Promise<Result<true, string>> {
   try {
     await db.withTenant(tenantId, async (tx) => {
-      const [row] = await tx.query<{ status: SellerOrderStatus }>(
-        `select status from seller_orders where id = $1`,
+      const [row] = await tx.query<{ status: SellerOrderStatus; order_id: string; order_status: string; payment_status: string }>(
+        `select so.status, so.order_id, o.status as order_status, o.payment_status
+           from seller_orders so join orders o on o.id = so.order_id
+          where so.id = $1
+          for update of so, o`,
         [sellerOrderId],
       );
       if (!row) throw new Error("seller_order_not_found");
       if (!canTransitionSellerOrder(row.status, to)) throw new Error(`invalid_transition:${row.status}->${to}`);
+      const compensating = to === "rejected" || to === "cancelled";
+      const paid = row.payment_status === "pagado";
+      if (compensating && paid && !opts.refundAcknowledged) throw new Error("paid_refund_required");
+
       await tx.query(`update seller_orders set status = $2 where id = $1`, [sellerOrderId, to]);
       await enqueueEvent(tx, { tenantId, type: `seller_order.${to}`, payload: { sellerOrderId } });
+      if (!compensating) return;
+
+      const items = await tx.query<{ reservation_id: string | null }>(
+        `select reservation_id from order_items where seller_order_id = $1`,
+        [sellerOrderId],
+      );
+      for (const it of items) {
+        if (!it.reservation_id) continue;
+        // Una reserva está 'held' (pedido sin aceptar) o 'confirmed' (aceptado); la otra es no-op.
+        const released = await releaseReservation(tx, it.reservation_id);
+        if (!released.ok) await restockConfirmedReservation(tx, it.reservation_id);
+      }
+      const [alive] = await tx.query<{ n: number }>(
+        `select count(*)::int as n from seller_orders where order_id = $1 and status not in ('rejected','cancelled')`,
+        [row.order_id],
+      );
+      if (alive && alive.n === 0 && canTransitionOrder(row.order_status as never, "cancelled")) {
+        await tx.query(`update orders set status = 'cancelled', updated_at = now() where id = $1`, [row.order_id]);
+        await enqueueEvent(tx, {
+          tenantId,
+          type: "order.cancelled",
+          payload: { orderId: row.order_id, refundPending: paid },
+        });
+      }
     });
     return ok(true);
   } catch (e) {

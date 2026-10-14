@@ -35,7 +35,7 @@ const ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
 const SELLER_ORDER_TRANSITIONS: Record<SellerOrderStatus, readonly SellerOrderStatus[]> = {
   pending: ["preparing", "rejected", "cancelled"],
   preparing: ["ready", "cancelled"],
-  ready: ["in_transit"],
+  ready: ["in_transit", "cancelled"],
   in_transit: ["delivered", "delivery_failed"],
   delivery_failed: ["in_transit", "cancelled"],
   delivered: [],

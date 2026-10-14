@@ -34,6 +34,19 @@ el navegador.
 > La sesión queda guardada un tiempo. Si te pide entrar de nuevo, volvé a poner email y
 > contraseña. Para salir, usá **"Cerrar sesión"** (arriba en el panel).
 
+### Cancelar un pedido ya aceptado
+
+En **Pedidos → En curso**, el botón rojo **Cancelar** aparece mientras el pedido no salió a
+reparto (pendiente, en preparación o listo, y también si falló la entrega). Al cancelar:
+
+- la mercadería **vuelve al stock**;
+- el pedido sale de la cola y **no cuenta en las ventas**;
+- el cliente lo ve como **Cancelado** en el seguimiento.
+
+Si el pedido **ya está cobrado** (por ejemplo, pagado con Mercado Pago), el panel te avisa y
+te pide confirmar que le vas a **devolver el dinero** al cliente. La devolución se hace desde
+tu cuenta de Mercado Pago (Actividad → el pago → Devolver dinero); el panel no mueve plata.
+
 ### Crear tu acceso la primera vez
 
 Si todavía no tenés usuario:
@@ -187,7 +200,7 @@ sigue funcionando igual. La plata la cobra **tu cuenta de Mercado Pago** directa
 - **El cliente tiene 30 minutos para pagar.** Si no paga, el stock se libera solo y el
   pedido no aparece en tu cola. A los 3 días se cancela automáticamente.
 - **Reembolsos:** se hacen desde tu cuenta de Mercado Pago (Actividad → el pago → Devolver
-  dinero).
+  dinero). Si además cancelás el pedido, ver "Cancelar un pedido ya aceptado".
 - **"Pagos para reembolsar"** (recuadro rojo en el panel): son pagos que Mercado Pago aprobó
   *después* de que el pedido se canceló por falta de pago (raro). Devolvé ese dinero desde
   Mercado Pago o contactá al cliente para entregarle igual.
