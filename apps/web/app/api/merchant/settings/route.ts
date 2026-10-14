@@ -27,9 +27,8 @@ const SECTIONS: Array<{ title: string; items: Array<{ key: string; label: string
     ],
   },
   {
-    title: "Pagos y descuentos",
+    title: "Descuentos",
     items: [
-      { key: "payments.transferDiscountPercent", label: "Descuento por transferencia (%)" },
       { key: "subscriptions.discountPercent", label: "Descuento en suscripciones (%)" },
     ],
   },

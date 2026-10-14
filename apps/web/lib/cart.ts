@@ -46,14 +46,13 @@ export type PricingConfig = Awaited<ReturnType<typeof loadPricingConfig>>;
 export async function loadPricingConfig(tenantId: string) {
   const chain = { tenantId };
   const big = (key: string) => resolveConfigValue<number>(db(), key, chain).then((r) => BigInt(r.value));
-  const [freeOverMinor, standardMinor, auxilioMinor, transferPercent, minOrder] = await Promise.all([
+  const [freeOverMinor, standardMinor, auxilioMinor, minOrder] = await Promise.all([
     big("delivery.freeOverOrderTotalMinor"),
     big("delivery.customerChargeMinor"),
     big("delivery.auxilioCostMinor"),
-    big("payments.transferDiscountPercent"),
     resolveMinOrderConfig(db(), tenantId),
   ]);
-  return { freeOverMinor, standardMinor, auxilioMinor, transferPercent, minOrder };
+  return { freeOverMinor, standardMinor, auxilioMinor, minOrder };
 }
 
 /**

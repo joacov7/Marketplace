@@ -68,10 +68,12 @@ export const CONFIG_KEYS = {
   "payments.transferDiscountPercent": {
     key: "payments.transferDiscountPercent",
     jsonSchema: { type: "integer", minimum: 0, maximum: 90 },
-    defaultValue: 10, // 10% off por pago con transferencia
+    defaultValue: 0,
     category: "money",
     sensitive: true,
-    description: "Descuento por pago con transferencia bancaria, en porcentaje entero (10 = 10%).",
+    // Sin uso: el comercio no ofrece descuento por transferencia y ni la tienda ni el checkout
+    // lo leen. Se conserva la clave para no invalidar valores ya guardados.
+    description: "Sin uso (no hay descuento por transferencia).",
   },
   "storefront.featuredCount": {
     key: "storefront.featuredCount",

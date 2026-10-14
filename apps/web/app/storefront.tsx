@@ -71,7 +71,6 @@ export interface StoreConfig {
   freeShippingThresholdMinor: string;
   standardCostMinor: string;
   auxilioCostMinor: string;
-  transferDiscountPercent: number;
   auxilioEnabled: boolean;
   featuredCount: number;
   listColumns: 2 | 3 | 4;
@@ -204,7 +203,6 @@ type Reorder = { orderId: string; petName: string | null; createdAt: string; ite
 interface Quote {
   gmvMinor: string;
   deliveryChargeMinor: string;
-  discountMinor: string;
   totalMinor: string;
   missingForFreeMinor: string;
   hasFood?: boolean;
@@ -329,7 +327,6 @@ export default function Storefront(props: {
   const threshold = Number(config.freeShippingThresholdMinor);
   const shippingFor = (d: "estandar" | "auxilio") =>
     d === "auxilio" ? Number(config.auxilioCostMinor) : subtotal === 0 || subtotal >= threshold ? 0 : Number(config.standardCostMinor);
-  const discountFor = (pm: string) => (pm === "transferencia" ? Math.round(subtotal * (config.transferDiscountPercent / 100)) : 0);
   const missingForFree = Math.max(0, threshold - subtotal);
   const freeShipMsg = subtotal === 0 ? "" : missingForFree > 0 ? `Te faltan ${money(missingForFree)} para el envío gratis` : "¡Envío gratis conseguido!";
 
@@ -547,8 +544,8 @@ export default function Storefront(props: {
         window.location.href = d.redirectUrl;
         return;
       }
-      // Mostramos el total cotizado (con descuento) que el cliente confirmó.
-      const shownTotal = quote?.totalMinor ?? d.totalMinor;
+      // Total que registró el servidor (lo que se cobra); la cotización queda de respaldo.
+      const shownTotal = d.totalMinor ?? quote?.totalMinor;
       setDone({ orderId: d.orderId, totalMinor: shownTotal, petName: d.petName ?? selectedPet?.name ?? newPet.name.trim() ?? null });
       setCart({});
       setPetSel(""); setNewPet({ name: "", species: "perro", weight: "" });
@@ -694,7 +691,7 @@ export default function Storefront(props: {
             G={G} items={items} config={config} quote={quote}
             delivery={delivery} setDelivery={setDelivery} payment={payment} setPayment={setPayment}
             form={form} setForm={setForm} busy={busy} error={error}
-            subtotal={subtotal} shippingFor={shippingFor} discountFor={discountFor}
+            subtotal={subtotal} shippingFor={shippingFor}
             knownPets={knownPets} greetName={greetName} petSel={petSel} setPetSel={setPetSel}
             newPet={newPet} setNewPet={setNewPet} customerName={customerName} setCustomerName={setCustomerName}
             factors={config.nutritionFactors}
@@ -1709,14 +1706,13 @@ function CheckoutView(props: {
   deliveryDates: Date[]; slots: Array<{ label: string; from: string; to: string }>; auxilioWindow: string;
   schedDateIdx: number; setSchedDateIdx: (n: number) => void; schedSlotIdx: number; setSchedSlotIdx: (n: number) => void;
   deliveryPref: string; setDeliveryPref: (s: string) => void;
-  busy: boolean; error: string | null; subtotal: number; shippingFor: (d: "estandar" | "auxilio") => number; discountFor: (p: string) => number; onConfirm: () => void;
+  busy: boolean; error: string | null; subtotal: number; shippingFor: (d: "estandar" | "auxilio") => number; onConfirm: () => void;
 }) {
   const { G, form, setForm } = props;
   // Números autoritativos: quote del server; fallback a cálculo local mientras carga.
   const sub = props.quote ? Number(props.quote.gmvMinor) : props.subtotal;
   const ship = props.quote ? Number(props.quote.deliveryChargeMinor) : props.shippingFor(props.delivery);
-  const disc = props.quote ? Number(props.quote.discountMinor) : props.discountFor(props.payment);
-  const total = props.quote ? Number(props.quote.totalMinor) : sub + ship - disc;
+  const total = props.quote ? Number(props.quote.totalMinor) : sub + ship;
   // Mínimo de envío por segmento: bloquea la confirmación si el carrito no llega al mínimo.
   const belowMin = props.quote?.meetsMinimum === false;
   const missingMin = Number(props.quote?.missingForMinimumMinor ?? 0);
@@ -1906,7 +1902,7 @@ function CheckoutView(props: {
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Método de pago</div>
             <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em", margin: "10px 0 8px" }}>Pagar al recibir</div>
             <RadioCard G={G} on={props.payment === "efectivo"} title="Efectivo" sub="Pagás en la puerta al recibir el pedido" onClick={() => props.setPayment("efectivo")} />
-            <RadioCard G={G} on={props.payment === "transferencia"} title="Transferencia bancaria" sub={`${props.config.transferDiscountPercent}% de descuento`} onClick={() => props.setPayment("transferencia")} />
+            <RadioCard G={G} on={props.payment === "transferencia"} title="Transferencia bancaria" sub="Transferís al recibir el pedido" onClick={() => props.setPayment("transferencia")} />
             <RadioCard G={G} on={props.payment === "pos"} title="Tarjeta (POS al recibir)" sub="Débito o crédito al momento de la entrega" onClick={() => props.setPayment("pos")} />
             <div style={{ fontSize: 12.5, color: C.mute, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em", margin: "14px 0 8px" }}>Pagar ahora</div>
             {props.config.mercadoPagoEnabled ? (
@@ -1935,7 +1931,6 @@ function CheckoutView(props: {
           <div style={{ height: 1, background: C.borderBeige, margin: "14px 0" }} />
           <Row label="Subtotal" value={money(sub)} />
           <Row label="Envío" value={ship === 0 ? "Gratis" : money(ship)} />
-          {disc > 0 && <Row label={`Descuento transferencia (${props.config.transferDiscountPercent}%)`} value={`−${money(disc)}`} valueColor={G} />}
           <div style={{ height: 1, background: C.borderBeige, margin: "14px 0" }} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
             <span style={{ fontSize: 15, fontWeight: 700 }}>Total</span><span style={{ fontSize: 26, fontWeight: 700, color: G }}>{money(total)}</span>

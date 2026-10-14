@@ -75,7 +75,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
     const cfg = <T,>(key: string) => Promise.resolve(config0.get<T>(key));
     const [
       primary, displayName, logoUrl, bannerImageUrl, whatsapp, whatsappMessage,
-      thresholdMinor, standardCostMinor, auxilioCostMinor, transferPct, auxilioEnabled,
+      thresholdMinor, standardCostMinor, auxilioCostMinor, auxilioEnabled,
       featuredCount, listColumns,
       promoText, heroTitle, heroHighlight, heroSubtitle, footerBlurb, perks, benefits,
       adoptionsEnabled, adoptionsTitle,
@@ -94,7 +94,6 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<number>("delivery.freeOverOrderTotalMinor"),
       cfg<number>("delivery.customerChargeMinor"),
       cfg<number>("delivery.auxilioCostMinor"),
-      cfg<number>("payments.transferDiscountPercent"),
       cfg<boolean>("features.auxilioDelivery"),
       cfg<number>("storefront.featuredCount"),
       cfg<number>("storefront.listColumns"),
@@ -201,7 +200,6 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       freeShippingThresholdMinor: String(num(thresholdMinor, 2500000)),
       standardCostMinor: String(num(standardCostMinor, 150000)),
       auxilioCostMinor: String(num(auxilioCostMinor, 200000)),
-      transferDiscountPercent: num(transferPct, 10),
       auxilioEnabled: auxilioEnabled !== false,
       featuredCount: num(featuredCount, 4),
       listColumns: [2, 3, 4].includes(num(listColumns, 3)) ? (num(listColumns, 3) as 2 | 3 | 4) : 3,

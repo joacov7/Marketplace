@@ -17,8 +17,8 @@ interface QuoteBody {
 
 /**
  * Cotiza el carrito con los valores de negocio del Configuration Engine (nunca hardcodeados):
- * subtotal (GMV) + envío (estándar gratis sobre umbral, o Envío de Auxilio) + descuento por
- * transferencia + total. Todo en centavos.
+ * subtotal (GMV) + envío (estándar gratis sobre umbral, o Envío de Auxilio) + total. Mismo
+ * cálculo que /api/checkout (lib/cart.ts), así lo cotizado es lo que se cobra. Todo en centavos.
  */
 export async function POST(req: Request) {
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
@@ -42,8 +42,7 @@ export async function POST(req: Request) {
   const minOrder = applyMinOrder({ hasFood: priced.hasFood, gmvMinor: gmv, config: pricing.minOrder });
 
   const shipping = priced.deliveryChargeMinor;
-  const discount = body.payment === "transferencia" ? (gmv * pricing.transferPercent) / 100n : 0n;
-  const total = gmv + shipping - discount;
+  const total = gmv + shipping;
 
   // Radio de reparto: evalúa la ubicación (si se compartió) contra la geocerca del comercio.
   const radius = await checkDeliveryRadius(db(), { tenantId: tenant.tenantId, lat: body.lat, lng: body.lng });
@@ -51,7 +50,6 @@ export async function POST(req: Request) {
   return NextResponse.json({
     gmvMinor: gmv.toString(),
     deliveryChargeMinor: shipping.toString(),
-    discountMinor: discount.toString(),
     totalMinor: total.toString(),
     freeShippingThresholdMinor: threshold.toString(),
     missingForFreeMinor: (gmv >= threshold ? 0n : threshold - gmv).toString(),
