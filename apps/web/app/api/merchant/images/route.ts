@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -12,9 +11,9 @@ const MAX_BYTES = 4 * 1024 * 1024; // 4 MB (post-compresión sobra)
 const OK_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 export async function POST(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   const contentType = (req.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
   if (!OK_TYPES.has(contentType)) return NextResponse.json({ error: "unsupported_type" }, { status: 415 });

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveConfigValue, setConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,9 +11,9 @@ type RadiusKey = (typeof RADIUS_KEYS)[number];
 
 /** Config efectiva del radio de reparto del tenant. */
 export async function GET(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   const entries = await Promise.all(
     RADIUS_KEYS.map(async (k) => [k, Number((await resolveConfigValue<number>(db(), k, { tenantId: tenant.tenantId })).value) || 0] as const),
@@ -24,9 +23,9 @@ export async function GET(req: Request) {
 
 /** Escribe la config del radio a nivel tenant. Valida por schema del registry. */
 export async function PATCH(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   let body: Partial<Record<RadiusKey, unknown>>;
   try {

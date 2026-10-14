@@ -4,8 +4,7 @@ import { generatePost, postToText, CONTENT_THEMES, THEME_LABEL } from "@commerce
 import type { ContentTheme, ContentTemplate, FeaturedProduct } from "@commerce/modules/content";
 import { searchProducts } from "@commerce/modules/agent";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -38,10 +37,10 @@ function placaUrl(base: string, params: Record<string, string>): string {
  * la placa ya armada. La publicación a redes es manual (por ahora): el comercio aprueba y sube.
  */
 export async function GET(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
   const url = new URL(req.url);
-  const tenant = await resolveTenant(url.searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
   const tenantId = tenant.tenantId;
 
   const enabled = (await resolveConfigValue<boolean>(db(), "features.contentStudio", { tenantId })).value;

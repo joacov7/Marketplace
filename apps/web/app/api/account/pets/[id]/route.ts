@@ -33,7 +33,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const session = readSession();
   if (!session?.userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   await db().withTenant(session.tenantId, (tx) => deletePet(tx, params.id, session.userId));

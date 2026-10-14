@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { loadMpCredentials, isMpEnabled, MercadoPagoProvider, type MpCredentials, type MercadoPagoOptions } from "@commerce/modules/payments";
+import { loadMpCredentials, MercadoPagoProvider, type MpCredentials, type MercadoPagoOptions } from "@commerce/modules/payments";
 import { db } from "./db";
 
 /**
@@ -32,12 +32,6 @@ export async function mainMerchantId(tenantId: string): Promise<string | null> {
     tx.query<{ id: string }>("select id from merchants order by created_at limit 1"),
   );
   return rows[0]?.id ?? null;
-}
-
-/** ¿Se puede ofrecer "Pagar ahora" en la tienda? (credenciales activas + clave de cifrado). */
-export async function mercadoPagoAvailable(tenantId: string, merchantId: string): Promise<boolean> {
-  if (!paymentsEncryptionKey()) return false;
-  return db().withTenant(tenantId, (tx) => isMpEnabled(tx, merchantId));
 }
 
 /**

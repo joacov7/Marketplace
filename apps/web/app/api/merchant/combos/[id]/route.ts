@@ -1,17 +1,16 @@
 import { NextResponse } from "next/server";
 import { updateCombo, setComboItems, deleteCombo } from "@commerce/modules/catalog";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 import { safeUrl } from "@/lib/sanitize";
 
 export const dynamic = "force-dynamic";
 
 /** Actualiza un combo: nombre/descripción/foto/activo/posición y/o su lista de ítems. */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   let body: { name?: string; description?: string; imageUrl?: string; active?: boolean; position?: number; items?: Array<{ variantId?: string; qty?: number }> };
   try {
@@ -41,9 +40,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
 /** Borra un combo (y sus ítems). Los productos del catálogo no se tocan. */
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   await db().withTenant(tenant.tenantId, (tx) => deleteCombo(tx, params.id));
   return NextResponse.json({ ok: true });

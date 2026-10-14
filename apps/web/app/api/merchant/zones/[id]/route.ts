@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
 import { updateZone, deleteZone } from "@commerce/modules/delivery";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 /** Edita una zona (nombre / costo / ETA). */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   let body: { name?: string; customerChargeMinor?: string | number; etaMinutes?: number | null };
   try {
@@ -31,9 +30,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
 /** Elimina una zona (y su tarifa). */
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
   await db().withTenant(tenant.tenantId, (tx) => deleteZone(tx, params.id));
   return NextResponse.json({ ok: true });
 }

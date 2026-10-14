@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveConfigValue, setConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -40,9 +39,9 @@ type ThemeKey = (typeof THEME_KEYS)[number];
 
 /** Devuelve el tema efectivo del tenant (resolución platform→tenant). */
 export async function GET(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   const entries = await Promise.all(
     THEME_KEYS.map(async (k) => [k, (await resolveConfigValue<unknown>(db(), k, { tenantId: tenant.tenantId })).value] as const),
@@ -52,9 +51,9 @@ export async function GET(req: Request) {
 
 /** Escribe overrides de tema a nivel tenant. Solo las claves conocidas; valida por schema. */
 export async function PATCH(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   let body: Partial<Record<ThemeKey, unknown>>;
   try {

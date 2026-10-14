@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { listSellerOrders } from "@commerce/modules/orders";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +10,9 @@ export const dynamic = "force-dynamic";
  * (demo; el login de staff del comercio con RBAC + MFA es el paso siguiente).
  */
 export async function GET(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   const rows = await db().withTenant(tenant.tenantId, (tx) => listSellerOrders(tx));
   return NextResponse.json({

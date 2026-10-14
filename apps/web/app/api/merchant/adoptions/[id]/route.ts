@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { updateAdoption, deleteAdoption, type Species } from "@commerce/modules/adoptions";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 import { safeUrl } from "@/lib/sanitize";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +10,9 @@ const SPECIES: Species[] = ["perro", "gato", "otro"];
 
 /** Actualiza una publicación (datos o estado available/adopted). */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   let body: { name?: string; species?: string; age?: string; description?: string; imageUrl?: string; contactWhatsapp?: string; status?: string };
   try {
@@ -39,9 +38,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
 /** Elimina una publicación. */
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   await db().withTenant(tenant.tenantId, (tx) => deleteAdoption(tx, params.id));
   return NextResponse.json({ ok: true });

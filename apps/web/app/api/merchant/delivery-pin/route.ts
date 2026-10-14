@@ -1,17 +1,16 @@
 import { NextResponse } from "next/server";
 import { resolveConfigValue, setConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 import { DELIVERY_PIN_MIN_LENGTH } from "@/lib/delivery-access";
 
 export const dynamic = "force-dynamic";
 
 /** Lee el PIN de reparto actual del tenant (para mostrarlo/editarlo en el panel). */
 export async function GET(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
   const pin = (await resolveConfigValue<string>(db(), "ops.deliveryPin", { tenantId: tenant.tenantId })).value;
   // `tooShort`: PIN cargado antes de exigir el mínimo; ya no abre reparto hasta cambiarlo.
   const value = typeof pin === "string" ? pin : "";
@@ -20,9 +19,9 @@ export async function GET(req: Request) {
 
 /** Define (o borra con "") el PIN de reparto del tenant. */
 export async function PATCH(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   let body: { pin?: string };
   try {

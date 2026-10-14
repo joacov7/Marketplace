@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { updateSubscription, type SubscriptionStatus } from "@commerce/modules/subscriptions";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +9,9 @@ const STATUS = new Set(["active", "paused", "cancelled"]);
 
 /** El comercio pausa / reanuda / cancela o ajusta una suscripción desde el panel. */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   let body: { status?: string; intervalDays?: number; qty?: number };
   try {

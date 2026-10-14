@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdoption, listAdoptionsAdmin, type Species } from "@commerce/modules/adoptions";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 import { safeUrl } from "@/lib/sanitize";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +10,9 @@ const SPECIES: Species[] = ["perro", "gato", "otro"];
 
 /** Todas las publicaciones de adopción (panel). */
 export async function GET(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   const rows = await db().withTenant(tenant.tenantId, (tx) => listAdoptionsAdmin(tx));
   return NextResponse.json({ adoptions: rows });
@@ -21,9 +20,9 @@ export async function GET(req: Request) {
 
 /** Publica una mascota en adopción. */
 export async function POST(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   let body: { name?: string; species?: string; age?: string; description?: string; imageUrl?: string; contactWhatsapp?: string };
   try {

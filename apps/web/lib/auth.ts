@@ -5,6 +5,7 @@ import { resolveConfigValue, failureStatus, recordFailures } from "@commerce/pla
 import type { SessionPayload } from "@commerce/platform";
 import { db } from "./db";
 import { readSession } from "./session";
+import { resolveTenant, type ResolvedTenant } from "./tenant";
 import { checkDeliveryAccess } from "./delivery-access";
 import { clientIp } from "./rate-limit";
 
@@ -31,38 +32,35 @@ function safeEqual(a: string | null | undefined, b: string | null | undefined): 
 }
 
 /**
- * Auth mínima para F1. Las rutas de plataforma (provisioning, crons) se protegen con un
- * token de servicio (`ADMIN_API_TOKEN` / `CRON_SECRET`). La auth de usuarios finales y
- * staff (sesión + MFA para admins) se integra en un paso siguiente con un proveedor
- * (Clerk/Auth0/NextAuth); acá queda el punto de enganche y el gate de servicio.
- *
- * NOTA: esto NO es todavía RBAC completo por usuario; es el gate de operaciones de
- * plataforma. Ver docs/fase-0/08-seguridad-testing.md.
+ * Gate de PLATAFORMA por código de servicio: `ADMIN_API_TOKEN` (código maestro: provisioning de
+ * comercios, migraciones) o `CRON_SECRET` (crons). Una sesión de usuario NO alcanza: estas rutas
+ * no son de un comercio. Las rutas del panel de un comercio usan `panelTenant`.
  */
 export function requireServiceToken(envVar: "ADMIN_API_TOKEN" | "CRON_SECRET"): boolean {
   const expected = process.env[envVar];
-  const h = headers();
-  const auth = h.get("authorization") ?? "";
-  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-  const provided = bearer ?? h.get("x-service-token");
-  if (expected && safeEqual(provided, expected)) return true;
-  // El panel (ADMIN_API_TOKEN) también se puede abrir con una SESIÓN de admin (login por
-  // usuario + rol). Así se deja de depender de una única llave en el navegador, sin tener que
-  // tocar las ~40 rutas: todas pasan por acá. El token sigue sirviendo como respaldo.
-  if (envVar === "ADMIN_API_TOKEN" && hasAdminRole(readSession())) return true;
-  return false;
+  return !!expected && safeEqual(providedToken(), expected);
 }
 
 /**
- * Gate del panel para operaciones sensibles de UN tenant (p. ej. credenciales de cobro): el
- * código maestro, o una sesión de admin DE ESE MISMO tenant. A diferencia de
- * `requireServiceToken`, una sesión de admin de otro tenant no alcanza.
+ * Acceso a UN comercio desde el panel: el código maestro, o una sesión de admin DE ESE MISMO
+ * comercio. Una sesión de admin de otro comercio no alcanza (antes sí: se podía operar otro
+ * comercio cambiando `?tenant=`).
  */
 export function requireAdminForTenant(tenantId: string): boolean {
-  const expected = process.env.ADMIN_API_TOKEN;
-  if (expected && safeEqual(providedToken(), expected)) return true;
+  if (requireServiceToken("ADMIN_API_TOKEN")) return true;
   const session = readSession();
   return hasAdminRole(session) && session!.tenantId === tenantId;
+}
+
+/**
+ * Entrada de las rutas del panel: resuelve el comercio del request (`?tenant=` / subdominio) y
+ * exige acceso a ESE comercio. Devuelve el comercio, o la respuesta de error lista para devolver.
+ */
+export async function panelTenant(req: Request): Promise<{ tenant: ResolvedTenant } | { error: NextResponse }> {
+  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
+  if (!tenant) return { error: NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 }) };
+  if (!requireAdminForTenant(tenant.tenantId)) return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+  return { tenant };
 }
 
 /** Lee el código provisto (Bearer o x-service-token) sin compararlo. */

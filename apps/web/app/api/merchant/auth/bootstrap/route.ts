@@ -1,20 +1,20 @@
 import { NextResponse } from "next/server";
 import { createUser } from "@commerce/platform";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Crea un usuario administrador del panel. Protegido por `requireServiceToken("ADMIN_API_TOKEN")`:
+ * Crea un usuario administrador del panel. Protegido por `panelTenant` (código maestro o
+ * sesión de admin de ESTE comercio):
  * el PRIMER admin se crea con el código de acceso maestro (todavía no hay sesión); después, un
  * admin logueado puede sumar más usuarios. Rol "owner" a nivel tenant.
  */
 export async function POST(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
 
   let body: { email?: string; password?: string };
   try {

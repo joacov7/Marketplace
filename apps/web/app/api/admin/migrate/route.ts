@@ -57,8 +57,9 @@ const DEMO_PRODUCTS = [
  *     "https://<deploy>/api/admin/migrate?seed=gualeguay"
  */
 export async function POST(req: Request) {
+  // Operación de PLATAFORMA (toca toda la base): solo con el código maestro, no con una sesión.
   if (!requireServiceToken("ADMIN_API_TOKEN")) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Migrar la base requiere el código maestro (entrá con \"Usar código\")." }, { status: 401 });
   }
 
   const applied: string[] = [];

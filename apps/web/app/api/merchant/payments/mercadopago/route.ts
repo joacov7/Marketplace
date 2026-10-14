@@ -10,8 +10,7 @@ import {
   setMpWebhookSecret,
 } from "@commerce/modules/payments";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireAdminForTenant } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 import { mainMerchantId, mpApiBase, paymentsEncryptionKey, publicOrigin, webhookUrl } from "@/lib/mercadopago";
 
 export const dynamic = "force-dynamic";
@@ -25,12 +24,11 @@ export const dynamic = "force-dynamic";
  * Gate: código maestro o sesión de admin DE ESTE tenant (son las llaves de la plata).
  */
 async function context(req: Request) {
-  const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
-  if (!tenant) return { error: NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 }) };
-  if (!requireAdminForTenant(tenant.tenantId)) return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
-  const merchantId = await mainMerchantId(tenant.tenantId);
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel;
+  const merchantId = await mainMerchantId(panel.tenant.tenantId);
   if (!merchantId) return { error: NextResponse.json({ error: "no_merchant" }, { status: 400 }) };
-  return { tenant, merchantId };
+  return { tenant: panel.tenant, merchantId };
 }
 
 export async function GET(req: Request) {

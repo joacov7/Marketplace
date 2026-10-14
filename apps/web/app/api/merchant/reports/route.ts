@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { salesSummary, topProducts, stockAlerts, salesByDay, subscriptionMetrics, salesByWeekday, salesBySlot } from "@commerce/modules/reports";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
-import { requireServiceToken } from "@/lib/auth";
+import { panelTenant } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +11,10 @@ export const dynamic = "force-dynamic";
  * Gated por token de servicio (demo; RBAC de staff es el paso siguiente).
  */
 export async function GET(req: Request) {
-  if (!requireServiceToken("ADMIN_API_TOKEN")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const panel = await panelTenant(req);
+  if ("error" in panel) return panel.error;
+  const { tenant } = panel;
   const url = new URL(req.url);
-  const tenant = await resolveTenant(url.searchParams.get("tenant"));
-  if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
   const days = Math.min(90, Math.max(1, Number(url.searchParams.get("days") ?? "14")));
   const threshold = Math.max(0, Number(url.searchParams.get("stockThreshold") ?? "5"));
