@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ShoppingCart, Check as LuCheck, Search, Menu, User, MapPin, Plus, RotateCcw,
   Truck, Package, Scale, Tag, PawPrint, HeartHandshake, BarChart3, Dog, Cat,
@@ -250,6 +250,9 @@ export default function Storefront(props: {
   const [form, setForm] = useState({ street: "", zone: "", phone: "", notes: "" });
   const [quote, setQuote] = useState<Quote | null>(null);
   const [busy, setBusy] = useState(false);
+  // Clave de idempotencia del intento de compra: se REUSA en los reintentos (doble clic, red que
+  // corta) para que el server no cree dos pedidos; se renueva tras un pedido o un error definitivo.
+  const checkoutKey = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ orderId: string; totalMinor: string; petName: string | null } | null>(null);
   // Suscripción de auto-envío: variante elegida para suscribirse (abre el modal).
@@ -507,9 +510,10 @@ export default function Storefront(props: {
         : newPet.name.trim()
           ? { petName: newPet.name.trim(), petSpecies: newPet.species, ...(Number(newPet.weight) > 0 ? { petWeightKg: Number(newPet.weight) } : {}) }
           : {};
+      checkoutKey.current ??= crypto.randomUUID();
       const res = await fetch(`/api/checkout?tenant=${encodeURIComponent(tenant)}`, {
         method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+        headers: { "content-type": "application/json", "idempotency-key": checkoutKey.current },
         body: JSON.stringify({
           items: items.map(([variantId, l]) => ({ variantId, qty: l.qty })),
           address: { street: form.street, zone: form.zone, phone: form.phone, notes: form.notes, ...(geo ? { lat: geo.lat, lng: geo.lng } : {}) },
@@ -522,8 +526,12 @@ export default function Storefront(props: {
         }),
       });
       const d = await res.json();
+      // Respuesta definitiva (pedido creado o error que no es "en curso"): el próximo intento es otro.
+      if (d.error !== "checkout_in_progress") checkoutKey.current = null;
       if (!res.ok) {
-        if (d.error === "outside_delivery_radius") {
+        if (d.error === "idempotency_key_reused") {
+          setError("Cambiaste algo del pedido mientras se enviaba. Tocá Confirmar de nuevo.");
+        } else if (d.error === "outside_delivery_radius") {
           setError(`Tu ubicación está fuera de nuestra zona de envío (a ${d.distanceKm} km; llegamos hasta ${d.radiusKm} km).`);
         } else if (d.error === "mercadopago_unavailable") {
           setError("El pago con Mercado Pago no está disponible en este momento. Elegí pagar al recibir.");

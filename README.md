@@ -20,7 +20,7 @@ propio (Pet Shop Gualeguay) y evoluciona a marketplace / White Label / multi-ver
 Fases F1–F5 completas y la app operando el ciclo completo de un pet shop: tienda PWA,
 checkout, panel del comercio, reparto, seguimiento, suscripciones y Vendedor IA.
 
-**190 tests en verde** (+2 gated a Neon) · lint con límites de módulos · typecheck · `next build`
+**250 tests en verde** (+6 gated a Postgres real) · lint con límites de módulos · typecheck · `next build`
 — todo corre en CI (`.github/workflows/ci.yml`).
 
 ### Core de plataforma (`@commerce/platform`)
@@ -76,7 +76,7 @@ API principal (route handlers en `apps/web/app/api/`):
   `withTenant`/RLS. Nunca de un parámetro del body.
 - **Migraciones automáticas**: corren en el `postbuild` del deploy (`scripts/migrate-prod.mjs`)
   con tracking (`schema_migrations`) y lock de Postgres. El orden vive en
-  `scripts/migrations-list.mjs` (0000–0022).
+  `scripts/migrations-list.mjs` (0000–0023).
 
 ## Estructura
 
@@ -141,8 +141,7 @@ desde el panel y se guardan cifradas en la base, nunca en el `.env`.
 - **Flywheel**: recordatorio proactivo de reposición (WhatsApp/push), referidos, "alimento
   habitual" + recomendaciones en compra rápida.
 - **Menores**: ordenar la cola de reparto por zona, que el cliente edite cadencia/cantidad de
-  su suscripción, búsqueda semántica con `pgvector`, imputar descuento por transferencia al
-  ledger.
+  su suscripción, búsqueda semántica con `pgvector`.
 
 Detalle y contexto en [`docs/operatoria-roadmap.md`](docs/operatoria-roadmap.md).
 

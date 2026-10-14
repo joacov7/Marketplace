@@ -1,12 +1,21 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
-import { createOrder, cancelOrder, type PaymentMethod } from "@commerce/modules/orders";
+import {
+  createOrder,
+  cancelOrder,
+  claimCheckout,
+  completeCheckout,
+  recordCheckoutOrder,
+  releaseCheckout,
+  type PaymentMethod,
+} from "@commerce/modules/orders";
 import { createPaymentIntent } from "@commerce/modules/payments";
 import { addAddress, ensureCustomerForUser, findOrCreateCustomerByPhone } from "@commerce/modules/customer";
 import { checkDeliveryRadius, applyMinOrder } from "@commerce/modules/delivery";
 import { createPet, listPets, type Species } from "@commerce/modules/pets";
 import { resolveConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
-import { resolveTenant } from "@/lib/tenant";
+import { resolveTenant, type ResolvedTenant } from "@/lib/tenant";
 import { readSession } from "@/lib/session";
 import { parseCart, loadPricingConfig, priceCart, CART_ERROR_MESSAGE } from "@/lib/cart";
 import { rateLimited, rule, LIMITS } from "@/lib/abuse";
@@ -47,12 +56,20 @@ function methodFor(p: string | undefined): PaymentMethod {
 }
 const SPECIES = new Set(["perro", "gato", "otro"]);
 
+const IDEMPOTENCY_KEY = /^[A-Za-z0-9_-]{8,128}$/;
+
+/**
+ * Checkout idempotente: la tienda manda la misma `Idempotency-Key` en cada reintento del mismo
+ * pedido (doble clic, red que corta). La primera request crea el pedido; las siguientes reciben
+ * la MISMA respuesta (sin crear otro). Si el intento falla, la clave se libera para reintentar.
+ */
 export async function POST(req: Request) {
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
   const idempotencyKey = req.headers.get("idempotency-key");
   if (!idempotencyKey) return NextResponse.json({ error: "missing_idempotency_key" }, { status: 400 });
+  if (!IDEMPOTENCY_KEY.test(idempotencyKey)) return NextResponse.json({ error: "invalid_idempotency_key" }, { status: 400 });
 
   let body: CheckoutBody;
   try {
@@ -60,6 +77,48 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
+
+  const requestHash = createHash("sha256").update(JSON.stringify(body)).digest("hex");
+  const claim = await db().withTenant(tenant.tenantId, (tx) =>
+    claimCheckout(tx, { tenantId: tenant.tenantId, key: idempotencyKey, requestHash }),
+  );
+  if (claim.kind === "replay") {
+    return NextResponse.json(claim.body, { status: claim.status, headers: { "idempotent-replayed": "true" } });
+  }
+  if (claim.kind === "in_progress") {
+    return NextResponse.json(
+      { error: "checkout_in_progress", message: "Tu pedido ya se está procesando. Esperá unos segundos." },
+      { status: 409 },
+    );
+  }
+  if (claim.kind === "mismatch") return NextResponse.json({ error: "idempotency_key_reused" }, { status: 422 });
+
+  let res: NextResponse;
+  try {
+    res = await placeOrder(req, tenant, body, idempotencyKey);
+  } catch (e) {
+    await releaseOnError(tenant.tenantId, idempotencyKey);
+    throw e;
+  }
+  if (res.status === 201) {
+    const saved = (await res.clone().json()) as unknown;
+    await db().withTenant(tenant.tenantId, (tx) => completeCheckout(tx, idempotencyKey, 201, saved));
+  } else {
+    await releaseOnError(tenant.tenantId, idempotencyKey);
+  }
+  return res;
+}
+
+/** Libera la clave tras un intento fallido. Si no se puede, queda como abandonada y vence sola. */
+async function releaseOnError(tenantId: string, key: string): Promise<void> {
+  try {
+    await db().withTenant(tenantId, (tx) => releaseCheckout(tx, key));
+  } catch (e) {
+    console.error("[checkout] no se pudo liberar la clave de idempotencia:", e instanceof Error ? e.message : e);
+  }
+}
+
+async function placeOrder(req: Request, tenant: ResolvedTenant, body: CheckoutBody, idempotencyKey: string): Promise<NextResponse> {
   const cart = parseCart(body.items);
   if (!cart.ok) return NextResponse.json({ error: cart.error, message: CART_ERROR_MESSAGE[cart.error] }, { status: 400 });
 
@@ -195,6 +254,7 @@ export async function POST(req: Request) {
     sellers: [{ merchantId: priced.merchantId, items: priced.lines }],
   });
   if (!order.ok) return NextResponse.json({ error: order.error }, { status: 409 });
+  await db().withTenant(tenant.tenantId, (tx) => recordCheckoutOrder(tx, idempotencyKey, order.value.orderId));
 
   // Guardar la dirección en la libreta del cliente (best-effort), sea logueado o por teléfono.
   if (who.customerId && body.address?.street) {
