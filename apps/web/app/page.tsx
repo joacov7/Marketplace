@@ -1,4 +1,4 @@
-import { resolveConfigValue } from "@commerce/platform";
+import { resolveConfigSnapshot } from "@commerce/platform";
 import { listCatalog, listCategories, listCombosStore } from "@commerce/modules/catalog";
 import { listAdoptions, type Adoption } from "@commerce/modules/adoptions";
 import { isMpEnabled } from "@commerce/modules/payments";
@@ -68,9 +68,11 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
   }
 
   const chain = { tenantId: tenant.tenantId };
-  const cfg = <T,>(key: string) => resolveConfigValue<T>(db(), key, chain).then((r) => r.value);
 
   try {
+    // Toda la config del comercio en UNA consulta (antes: una por clave, ~37 por visita).
+    const config0 = await resolveConfigSnapshot(db(), chain);
+    const cfg = <T,>(key: string) => Promise.resolve(config0.get<T>(key));
     const [
       primary, displayName, logoUrl, bannerImageUrl, whatsapp, whatsappMessage,
       thresholdMinor, standardCostMinor, auxilioCostMinor, transferPct, auxilioEnabled,
