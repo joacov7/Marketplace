@@ -94,6 +94,33 @@ describe("Inventario — reserva atómica (anti-oversell [G1])", () => {
     expect(await db.withTenant(tenantId, (tx) => getStock(tx, variantId))).toEqual({ available: 5, reserved: 0 });
   });
 
+  it("reservar libera en el momento las reservas VENCIDAS de esa variante (sin esperar al cron)", async () => {
+    const variantId = await newVariant(db, tenantId, merchantId, "VENCE-1");
+    await db.withTenant(tenantId, (tx) => setStock(tx, { tenantId, variantId, available: 1 }));
+    // Alguien reservó la última unidad y abandonó: su reserva ya venció.
+    const first = await db.withTenant(tenantId, (tx) => reserveStock(tx, { tenantId, variantId, qty: 1, ttlSeconds: 60 }));
+    expect(first.ok).toBe(true);
+    await db.withTenant(tenantId, (tx) => tx.query("update stock_reservations set expires_at = now() - interval '1 second' where variant_id = $1", [variantId]));
+
+    // Antes: "insufficient_stock" hasta el cron diario. Ahora la reserva vencida se libera.
+    const second = await db.withTenant(tenantId, (tx) => reserveStock(tx, { tenantId, variantId, qty: 1 }));
+    expect(second.ok).toBe(true);
+    expect(await db.withTenant(tenantId, (tx) => getStock(tx, variantId))).toEqual({ available: 0, reserved: 1 });
+    const st = await db.withTenant(tenantId, (tx) =>
+      tx.query<{ status: string }>("select status from stock_reservations where variant_id = $1 order by created_at", [variantId]),
+    );
+    expect(st.map((r) => r.status)).toEqual(["released", "held"]);
+  });
+
+  it("no libera reservas vigentes (no hay oversell)", async () => {
+    const variantId = await newVariant(db, tenantId, merchantId, "VIGENTE-1");
+    await db.withTenant(tenantId, (tx) => setStock(tx, { tenantId, variantId, available: 1 }));
+    expect((await db.withTenant(tenantId, (tx) => reserveStock(tx, { tenantId, variantId, qty: 1 }))).ok).toBe(true);
+    const again = await db.withTenant(tenantId, (tx) => reserveStock(tx, { tenantId, variantId, qty: 1 }));
+    expect(again).toEqual({ ok: false, error: "insufficient_stock" });
+    expect(await db.withTenant(tenantId, (tx) => getStock(tx, variantId))).toEqual({ available: 0, reserved: 1 });
+  });
+
   it("no se puede reservar stock de una variante de otro tenant (RLS → no_inventory)", async () => {
     const variantId = await newVariant(db, tenantId, merchantId, "XT-9");
     await db.withTenant(tenantId, (tx) => setStock(tx, { tenantId, variantId, available: 9 }));

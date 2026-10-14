@@ -46,6 +46,10 @@ export async function reserveStock(
   input: { tenantId: string; variantId: string; qty: number; orderId?: string; ttlSeconds?: number },
 ): Promise<Result<{ reservationId: string }, ReserveError>> {
   const ttl = input.ttlSeconds ?? 900; // 15 min por defecto
+  // Antes de reservar, devolver al stock las reservas VENCIDAS de esta variante (checkouts
+  // abandonados). Sin esto quedaban retenidas hasta el cron diario: hasta ~24 h de "sin stock"
+  // aunque nadie las fuera a pagar. Bajo RLS: solo toca reservas de este comercio.
+  await releaseExpiredForVariant(db, input.variantId);
   const updated = await db.query<{ variant_id: string }>(
     `update inventory
         set available = available - $2, reserved = reserved + $2, updated_at = now()
@@ -64,6 +68,26 @@ export async function reserveStock(
     [input.tenantId, input.orderId ?? null, input.variantId, input.qty, String(ttl)],
   );
   return ok({ reservationId: r!.id });
+}
+
+/**
+ * Libera las reservas vencidas de UNA variante y repone su stock (misma lógica que el barrido
+ * del cron, acotada). Concurrencia: el update de las reservas bloquea esas filas; una segunda
+ * transacción simultánea ya las ve 'released' y no repone dos veces.
+ */
+async function releaseExpiredForVariant(db: Db, variantId: string): Promise<void> {
+  await db.query(
+    `with expired as (
+       update stock_reservations set status = 'released'
+        where variant_id = $1 and status = 'held' and expires_at < now()
+        returning qty
+     )
+     update inventory
+        set available = available + q.total, reserved = reserved - q.total, updated_at = now()
+       from (select sum(qty)::int as total from expired) q
+      where variant_id = $1 and q.total > 0`,
+    [variantId],
+  );
 }
 
 /** Confirma una reserva 'held' (la mercadería se vendió): baja `reserved`, no repone. */

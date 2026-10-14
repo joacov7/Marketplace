@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { getVariantWithPrice } from "@commerce/modules/catalog";
-import { zoneChargeByName, checkDeliveryRadius, cartHasFood, resolveMinOrderConfig, applyMinOrder } from "@commerce/modules/delivery";
-import { resolveConfigValue } from "@commerce/platform";
+import { checkDeliveryRadius, applyMinOrder } from "@commerce/modules/delivery";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
+import { parseCart, loadPricingConfig, priceCart } from "@/lib/cart";
 
 export const dynamic = "force-dynamic";
 
@@ -31,39 +30,19 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
-  if (!Array.isArray(body.items) || body.items.length === 0) {
-    return NextResponse.json({ error: "empty_cart" }, { status: 400 });
-  }
+  const cart = parseCart(body.items);
+  if (!cart.ok) return NextResponse.json({ error: cart.error }, { status: 400 });
 
-  const chain = { tenantId: tenant.tenantId };
-  const [threshold, standardCost, auxilioCost, transferPct, minOrderCfg] = await Promise.all([
-    resolveConfigValue<number>(db(), "delivery.freeOverOrderTotalMinor", chain).then((r) => BigInt(r.value)),
-    resolveConfigValue<number>(db(), "delivery.customerChargeMinor", chain).then((r) => BigInt(r.value)),
-    resolveConfigValue<number>(db(), "delivery.auxilioCostMinor", chain).then((r) => BigInt(r.value)),
-    resolveConfigValue<number>(db(), "payments.transferDiscountPercent", chain).then((r) => BigInt(r.value)),
-    resolveMinOrderConfig(db(), tenant.tenantId),
-  ]);
-
-  const priced = await db().withTenant(tenant.tenantId, async (tx) => {
-    let sum = 0n;
-    for (const it of body.items!) {
-      const v = await getVariantWithPrice(tx, it.variantId);
-      if (!v || !v.price) return null;
-      sum += v.price.amountMinor * BigInt(Math.max(1, Math.floor(it.qty)));
-    }
-    const hasFood = await cartHasFood(tx, body.items!.map((i) => i.variantId));
-    // Tarifa por zona (si el barrio matchea una zona configurada); si no, envío plano.
-    const zone = body.zone ? await zoneChargeByName(tx, body.zone) : null;
-    return { gmv: sum, hasFood, zoneCharge: zone?.customerChargeMinor ?? null, zoneEta: zone?.etaMinutes ?? null };
-  });
+  const pricing = await loadPricingConfig(tenant.tenantId);
+  const delivery = body.delivery === "auxilio" ? "auxilio" : "estandar";
+  const priced = await db().withTenant(tenant.tenantId, (tx) => priceCart(tx, pricing, { items: cart.items, delivery, zone: body.zone }));
   if (!priced) return NextResponse.json({ error: "invalid_items" }, { status: 400 });
   const gmv = priced.gmv;
-  const minOrder = applyMinOrder({ hasFood: priced.hasFood, gmvMinor: gmv, config: minOrderCfg });
+  const threshold = pricing.freeOverMinor;
+  const minOrder = applyMinOrder({ hasFood: priced.hasFood, gmvMinor: gmv, config: pricing.minOrder });
 
-  const delivery = body.delivery === "auxilio" ? "auxilio" : "estandar";
-  const baseCharge = priced.zoneCharge ?? standardCost;
-  const shipping = delivery === "auxilio" ? auxilioCost : gmv >= threshold ? 0n : baseCharge;
-  const discount = body.payment === "transferencia" ? (gmv * transferPct) / 100n : 0n;
+  const shipping = priced.deliveryChargeMinor;
+  const discount = body.payment === "transferencia" ? (gmv * pricing.transferPercent) / 100n : 0n;
   const total = gmv + shipping - discount;
 
   // Radio de reparto: evalúa la ubicación (si se compartió) contra la geocerca del comercio.
@@ -81,7 +60,7 @@ export async function POST(req: Request) {
     minOrderMinor: minOrder.minMinor.toString(),
     meetsMinimum: minOrder.meets,
     missingForMinimumMinor: minOrder.missingMinor.toString(),
-    zoneEtaMinutes: priced.zoneEta,
+    zoneEtaMinutes: priced.zoneEtaMinutes,
     radius: {
       enabled: radius.enabled,
       radiusKm: radius.radiusKm,

@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
-import { getVariantWithPrice } from "@commerce/modules/catalog";
 import { createOrder, cancelOrder, type PaymentMethod } from "@commerce/modules/orders";
 import { createPaymentIntent } from "@commerce/modules/payments";
 import { addAddress, ensureCustomerForUser, findOrCreateCustomerByPhone } from "@commerce/modules/customer";
-import { zoneChargeByName, checkDeliveryRadius, cartHasFood, resolveMinOrderConfig, applyMinOrder } from "@commerce/modules/delivery";
+import { checkDeliveryRadius, applyMinOrder } from "@commerce/modules/delivery";
 import { createPet, listPets, type Species } from "@commerce/modules/pets";
 import { resolveConfigValue } from "@commerce/platform";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 import { readSession } from "@/lib/session";
+import { parseCart, loadPricingConfig, priceCart } from "@/lib/cart";
 import { rateLimited, rule, LIMITS } from "@/lib/abuse";
 import { clientIp } from "@/lib/rate-limit";
 import { normalizePhone } from "@commerce/modules/customer";
@@ -60,9 +60,8 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
-  if (!Array.isArray(body.items) || body.items.length === 0) {
-    return NextResponse.json({ error: "empty_cart" }, { status: 400 });
-  }
+  const cart = parseCart(body.items);
+  if (!cart.ok) return NextResponse.json({ error: cart.error }, { status: 400 });
 
   // Anti-bots: cada pedido reserva stock (hasta 7 días si es pago al recibir). Sin límite, un
   // script deja el catálogo "sin stock". Por IP y por teléfono (contadores compartidos).
@@ -77,39 +76,21 @@ export async function POST(req: Request) {
   if (limited) return limited;
 
   const chain = { tenantId: tenant.tenantId };
-  const [threshold, standardCost, auxilioCost, minOrderCfg] = await Promise.all([
-    resolveConfigValue<number>(db(), "delivery.freeOverOrderTotalMinor", chain).then((r) => BigInt(r.value)),
-    resolveConfigValue<number>(db(), "delivery.customerChargeMinor", chain).then((r) => BigInt(r.value)),
-    resolveConfigValue<number>(db(), "delivery.auxilioCostMinor", chain).then((r) => BigInt(r.value)),
-    resolveMinOrderConfig(db(), tenant.tenantId),
-  ]);
+  const pricing = await loadPricingConfig(tenant.tenantId);
   const deliveryMethod = body.delivery === "auxilio" ? "auxilio" : "estandar";
 
-  // Precios actuales + merchant + envío desde config/zona (una lectura con contexto de tenant).
+  // Precios actuales + envío (lib/cart: la MISMA cuenta que la cotización) + comercio.
   const priced = await db().withTenant(tenant.tenantId, async (tx) => {
     const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
     if (!merchants[0]) return null;
-    const items = [];
-    let gmv = 0n;
-    for (const it of body.items) {
-      const v = await getVariantWithPrice(tx, it.variantId);
-      if (!v || !v.price) return null;
-      items.push({ variantId: it.variantId, qty: it.qty, unitPriceMinor: v.price.amountMinor });
-      gmv += v.price.amountMinor * BigInt(it.qty);
-    }
-    // ¿El carrito lleva alimento (ancla)? Define qué mínimo de envío rige.
-    const hasFood = await cartHasFood(tx, body.items.map((i) => i.variantId));
-    // Tarifa por zona (barrio) si matchea una zona configurada; si no, envío plano.
-    const zone = body.address?.zone ? await zoneChargeByName(tx, body.address.zone) : null;
-    const baseCharge = zone?.customerChargeMinor ?? standardCost;
-    const deliveryChargeMinor = deliveryMethod === "auxilio" ? auxilioCost : gmv >= threshold ? 0n : baseCharge;
-    return { merchantId: merchants[0].id, items, gmv, deliveryChargeMinor, hasFood };
+    const p = await priceCart(tx, pricing, { items: cart.items, delivery: deliveryMethod, zone: body.address?.zone });
+    return p ? { merchantId: merchants[0].id, ...p } : null;
   });
   if (!priced) return NextResponse.json({ error: "invalid_items_or_no_merchant" }, { status: 400 });
 
   // Mínimo de envío por segmento: con alimento rige el mínimo base; sin alimento (almacén puro),
   // el más alto. Se valida en el server (autoritativo) aunque la tienda ya lo muestre.
-  const minOrder = applyMinOrder({ hasFood: priced.hasFood, gmvMinor: priced.gmv, config: minOrderCfg });
+  const minOrder = applyMinOrder({ hasFood: priced.hasFood, gmvMinor: priced.gmv, config: pricing.minOrder });
   if (!minOrder.meets) {
     return NextResponse.json(
       {
@@ -211,7 +192,7 @@ export async function POST(req: Request) {
     // perderlo mientras el comercio decide. Online: el mismo plazo que tiene para pagar en MP
     // (la preferencia vence a la par; si no paga, la reserva vence sola).
     reservationTtlSeconds: isOnline ? MP_PAY_WINDOW_SECONDS : 7 * 24 * 3600,
-    sellers: [{ merchantId: priced.merchantId, items: priced.items }],
+    sellers: [{ merchantId: priced.merchantId, items: priced.lines }],
   });
   if (!order.ok) return NextResponse.json({ error: order.error }, { status: 409 });
 
