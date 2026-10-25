@@ -36,6 +36,7 @@ export const LIMITS = {
   /** Llamadas a Claude por comercio y por día; pasado el tope, el Vendedor responde sin IA. */
   vendorLlmPerTenantDay: { limit: 500, windowMs: DAY },
   registerPerIp: { limit: 10, windowMs: HOUR },
+  withdrawalPerIp: { limit: 5, windowMs: HOUR },
   loginFailsPerIp: { limit: 20, windowMs: 15 * MIN },
   loginFailsPerEmail: { limit: 5, windowMs: 15 * MIN },
 } as const;

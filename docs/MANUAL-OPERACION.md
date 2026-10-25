@@ -34,6 +34,18 @@ el navegador.
 > La sesión queda guardada un tiempo. Si te pide entrar de nuevo, volvé a poner email y
 > contraseña. Para salir, usá **"Cerrar sesión"** (arriba en el panel).
 
+### Datos legales y botón de arrepentimiento
+
+En **Configuración → Datos legales del comercio** cargá razón social, CUIT, domicilio y email.
+Aparecen en el pie de la tienda y en la página de **Términos, condiciones y privacidad**
+(`/terminos`). Ese texto es un **modelo base**: hacelo revisar por un abogado o contador.
+
+El pie de la tienda tiene el **Botón de arrepentimiento** (obligatorio para vender online en
+Argentina). El cliente completa nombre, contacto y, si lo tiene, el número de pedido, sin
+registrarse, y recibe en el momento un **código** (ej. `ARR-7KQ2MX`). Las solicitudes te
+aparecen arriba de todo en **Pedidos**: contactá al cliente, coordiná el retiro y la devolución
+del dinero (si pagó con Mercado Pago, desde tu cuenta de MP) y tocá **Marcar resuelta**.
+
 ### Club de puntos
 
 Se activa en **Configuración → Club de puntos**; ahí también elegís la regla (por defecto,

@@ -40,6 +40,15 @@ const SECTIONS: Array<{ title: string; items: Array<{ key: string; label: string
     ],
   },
   {
+    title: "Datos legales del comercio",
+    items: [
+      { key: "legal.businessName", label: "Razón social o titular" },
+      { key: "legal.taxId", label: "CUIT" },
+      { key: "legal.address", label: "Domicilio" },
+      { key: "legal.email", label: "Email de contacto" },
+    ],
+  },
+  {
     title: "Tienda",
     items: [
       { key: "storefront.featuredCount", label: "Productos destacados en la home" },

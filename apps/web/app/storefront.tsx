@@ -90,6 +90,8 @@ export interface StoreConfig {
   /** Club de puntos: activo y cuánto hay que gastar (centavos) por punto. */
   loyaltyEnabled: boolean;
   loyaltySpendPerPointMinor: string;
+  /** Datos legales del comercio (pie de la tienda); vacíos = no se muestran. */
+  legal: { businessName: string; taxId: string; address: string; email: string };
 }
 
 // ── Design tokens (handoff) ────────────────────────────────────────────────────
@@ -570,7 +572,10 @@ export default function Storefront(props: {
   return (
     <div style={{ fontFamily: FONT, color: C.text, background: C.white, minHeight: "100vh" }}>
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" />
-      <style>{`
+      {/* CSS fijo (sin datos de usuario). Va por __html: como texto hijo, React escapa el ">" de
+          los selectores a "&gt;" en el HTML del servidor → no coincide con el cliente (error de
+          hidratación) y esas reglas no se aplican en la primera carga. */}
+      <style dangerouslySetInnerHTML={{ __html: `
         .sf-card{transition:box-shadow .18s ease;}
         .sf-card:hover{box-shadow:0 10px 30px rgba(0,0,0,.07);}
         .sf-btn{transition:background .18s ease, filter .15s ease;}
@@ -615,10 +620,20 @@ export default function Storefront(props: {
           .sf-footer{grid-template-columns:1fr !important;}
           .sf-hero h1{font-size:31px !important;}
         }
+        /* Botones flotantes en el teléfono: círculos compactos apilados a la derecha (antes
+           "Asistente" a la izquierda + WhatsApp con cartel a la derecha tapaban la portada). */
+        @media (max-width:640px){
+          .sf-foot{padding-bottom:130px !important;}
+          .sf-fab-wa{right:14px !important;bottom:14px !important;}
+          .sf-fab-wa-btn{width:52px !important;height:52px !important;}
+          .sf-fab-label,.sf-fab-text{display:none !important;}
+          .sf-fab-asis{left:auto !important;right:14px !important;bottom:76px !important;width:52px;height:52px;padding:0 !important;justify-content:center;}
+          .sf-asis-panel{left:12px !important;right:12px !important;bottom:12px !important;width:auto !important;max-height:min(80vh,620px) !important;}
+        }
         @media (max-width:380px){
           .sf-featured,.sf-list{grid-template-columns:1fr !important;}
         }
-      `}</style>
+      ` }} />
 
       {/* Barra superior: envío gratis (config) + ayuda/WhatsApp */}
       <div style={{ background: G, color: C.white, fontSize: 12.5, fontWeight: 500 }}>
@@ -729,7 +744,7 @@ export default function Storefront(props: {
         )}
       </main>
 
-      <Footer G={G} displayName={props.displayName} blurb={props.content.footerBlurb} categories={categories} onCategory={(c) => { setCategory(c); setQuery(""); go("list"); }} onHome={() => go("home")} />
+      <Footer G={G} tenant={tenant} legal={config.legal} displayName={props.displayName} blurb={props.content.footerBlurb} categories={categories} onCategory={(c) => { setCategory(c); setQuery(""); go("list"); }} onHome={() => go("home")} />
 
       {/* Drawer de carrito */}
       {cartOpen && (
@@ -758,12 +773,12 @@ export default function Storefront(props: {
 
       {/* Botón flotante de WhatsApp */}
       {waLink() && (
-        <div style={{ position: "fixed", right: 26, bottom: 26, zIndex: 50, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-          <a href={waLink()!} target="_blank" rel="noopener noreferrer" aria-label="Escribinos por WhatsApp"
+        <div className="sf-fab-wa" style={{ position: "fixed", right: 26, bottom: 26, zIndex: 50, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+          <a href={waLink()!} target="_blank" rel="noopener noreferrer" aria-label="Escribinos por WhatsApp" className="sf-fab-wa-btn"
             style={{ width: 58, height: 58, borderRadius: "50%", background: C.wa, boxShadow: "0 8px 24px rgba(37,211,102,.4)", display: "grid", placeItems: "center", color: C.white }}>
             <WaIcon size={30} />
           </a>
-          <span style={{ fontSize: 10.5, fontWeight: 600, color: C.text2, background: C.white, borderRadius: 7, padding: "4px 7px", boxShadow: "0 2px 10px rgba(0,0,0,.08)" }}>Escribinos por WhatsApp</span>
+          <span className="sf-fab-label" style={{ fontSize: 10.5, fontWeight: 600, color: C.text2, background: C.white, borderRadius: 7, padding: "4px 7px", boxShadow: "0 2px 10px rgba(0,0,0,.08)" }}>Escribinos por WhatsApp</span>
         </div>
       )}
     </div>
@@ -849,14 +864,14 @@ function VendorWidget({
         <button
           onClick={() => setOpen(true)}
           aria-label="Abrir el asistente de compras"
-          className="sf-btn"
+          className="sf-btn sf-fab-asis"
           style={{
             position: "fixed", left: 20, bottom: 24, zIndex: 55, display: "inline-flex", alignItems: "center", gap: 9,
             background: G, color: C.white, border: "none", borderRadius: 999, padding: "13px 18px 13px 15px",
             fontFamily: FONT, fontSize: 14.5, fontWeight: 600, cursor: "pointer", boxShadow: "0 10px 28px rgba(8,122,80,.34)",
           }}
         >
-          <Sparkles size={20} strokeWidth={2} /> Asistente
+          <Sparkles size={20} strokeWidth={2} /> <span className="sf-fab-text">Asistente</span>
         </button>
       )}
 
@@ -864,6 +879,7 @@ function VendorWidget({
         <div
           role="dialog"
           aria-label="Asistente de compras"
+          className="sf-asis-panel"
           style={{
             position: "fixed", left: 20, bottom: 24, zIndex: 56, width: panelW, maxHeight: "min(76vh, 620px)",
             display: "flex", flexDirection: "column", background: C.white, borderRadius: 18, overflow: "hidden",
@@ -2585,11 +2601,11 @@ function MyPetsModal({ G, factors, onClose }: { G: string; factors: Record<strin
 }
 
 // ── Footer ───────────────────────────────────────────────────────────────────────
-function Footer({ G, displayName, blurb, categories, onCategory, onHome }: { G: string; displayName: string; blurb: string; categories: { name: string; count: number }[]; onCategory: (c: string) => void; onHome: () => void }) {
+function Footer({ G, tenant, legal, displayName, blurb, categories, onCategory, onHome }: { G: string; tenant: string; legal: StoreConfig["legal"]; displayName: string; blurb: string; categories: { name: string; count: number }[]; onCategory: (c: string) => void; onHome: () => void }) {
   const colTitle: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, color: "#5A594F", letterSpacing: ".07em", marginBottom: 12 };
   const link: React.CSSProperties = { fontSize: 13, color: C.mute, cursor: "pointer", marginBottom: 7 };
   return (
-    <footer style={{ background: C.beige, borderTop: `1px solid ${C.border}`, padding: "44px 24px" }}>
+    <footer className="sf-foot" style={{ background: C.beige, borderTop: `1px solid ${C.border}`, padding: "44px 24px" }}>
       <div className="sf-footer" style={{ maxWidth: 1180, margin: "0 auto", display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", gap: 32 }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 700, color: G }}>{displayName.toUpperCase()}</div>
@@ -2612,6 +2628,16 @@ function Footer({ G, displayName, blurb, categories, onCategory, onHome }: { G: 
           <div style={link}>Gualeguay, Entre Ríos</div>
           <div style={link}>Lun a Sáb 9 a 21 hs</div>
         </div>
+      </div>
+      {/* Legales: botón de arrepentimiento bien visible (Res. SCI 424/2020), términos, Defensa
+          del Consumidor y datos del comercio. */}
+      <div style={{ maxWidth: 1180, margin: "28px auto 0", paddingTop: 18, borderTop: `1px solid ${C.border}`, display: "flex", flexWrap: "wrap", gap: "10px 18px", alignItems: "center", fontSize: 12.5, color: C.mute }}>
+        <a href={`/arrepentimiento?tenant=${encodeURIComponent(tenant)}`} style={{ background: G, color: C.white, borderRadius: 8, padding: "7px 12px", fontWeight: 700, textDecoration: "none" }}>Botón de arrepentimiento</a>
+        <a href={`/terminos?tenant=${encodeURIComponent(tenant)}`} style={{ color: C.text2, textDecoration: "underline" }}>Términos, condiciones y privacidad</a>
+        <a href="https://www.argentina.gob.ar/produccion/defensadelconsumidor/formulario" target="_blank" rel="noopener noreferrer" style={{ color: C.text2, textDecoration: "underline" }}>Defensa de las y los Consumidores. Para reclamos ingrese aquí</a>
+        {(legal.businessName || legal.taxId || legal.address) && (
+          <span style={{ flexBasis: "100%" }}>{[legal.businessName, legal.taxId && `CUIT ${legal.taxId}`, legal.address, legal.email].filter(Boolean).join(" · ")}</span>
+        )}
       </div>
     </footer>
   );

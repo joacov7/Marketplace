@@ -10,15 +10,7 @@ import Storefront, { type StoreProduct, type StoreConfig, type StoreCategory, ty
 
 export const dynamic = "force-dynamic"; // depende del tenant resuelto por request
 
-/** Normaliza un color de config a un hex CSS válido (con fallback). Defensivo. */
-function cssColor(v: string | undefined, fallback = "#2E7D32"): string {
-  const s = (v ?? "").replace(/^"+|"+$/g, "").trim();
-  return /^#[0-9a-fA-F]{6}$/.test(s) ? s : fallback;
-}
-function cleanText(v: string | undefined, fallback: string): string {
-  const s = (v ?? "").replace(/^"+|"+$/g, "").trim();
-  return s.length > 0 ? s : fallback;
-}
+import { cssColor, cleanText } from "@/lib/config-text";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return <main style={{ maxWidth: 760, margin: "0 auto", padding: 16 }}>{children}</main>;
@@ -84,6 +76,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       radiusKm, centerLat, centerLng,
       deliverySlots, deliveryDays, cutoffHour, auxilioWindow,
       loyaltyEnabled, loyaltySpend,
+      legalBusinessName, legalTaxId, legalAddress, legalEmail,
       catalog0,
     ] = await Promise.all([
       cfg<string>("branding.primaryColor"),
@@ -124,6 +117,10 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<string>("delivery.auxilioWindow"),
       cfg<boolean>("features.loyalty"),
       cfg<number>("loyalty.spendPerPointMinor"),
+      cfg<string>("legal.businessName"),
+      cfg<string>("legal.taxId"),
+      cfg<string>("legal.address"),
+      cfg<string>("legal.email"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
         const adoptions = await listAdoptions(tx);
@@ -225,6 +222,12 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       mercadoPagoEnabled: mercadoPago,
       loyaltyEnabled: loyaltyEnabled === true,
       loyaltySpendPerPointMinor: String(Math.max(1, num(loyaltySpend, 100000))),
+      legal: {
+        businessName: cleanText(legalBusinessName, ""),
+        taxId: cleanText(legalTaxId, ""),
+        address: cleanText(legalAddress, ""),
+        email: cleanText(legalEmail, ""),
+      },
     };
 
     return (

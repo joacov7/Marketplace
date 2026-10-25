@@ -797,6 +797,7 @@ function OrdersTab({ tenant, token, merchantId, onError, refreshKey = 0 }: { ten
 
   return (
     <div>
+      <WithdrawalRequestsCard tenant={tenant} token={token} onError={onError} />
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         <button onClick={() => setShowNew(true)} className="mbtn" style={{ ...btn, display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={15} strokeWidth={2} />Nuevo pedido</button>
         <button onClick={load} className="mbtn" style={btnGhost}>{loading ? "…" : "Actualizar"}</button>
@@ -2914,6 +2915,66 @@ function LoyaltyTab({ tenant, token, onError }: { tenant: string | null; token: 
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Botón de arrepentimiento: solicitudes de los clientes ───────────────────────────
+interface WithdrawalReq { id: string; code: string; name: string; contact: string; orderRef: string | null; message: string | null; status: "pendiente" | "resuelta"; createdAt: string }
+
+/** Solicitudes del botón de arrepentimiento. Solo se muestra si hay alguna (pendientes primero). */
+function WithdrawalRequestsCard({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const [rows, setRows] = useState<WithdrawalReq[]>([]);
+  const [showResolved, setShowResolved] = useState(false);
+  const auth = { authorization: `Bearer ${token}` };
+  const q = `tenant=${encodeURIComponent(tenant ?? "")}`;
+  const load = useCallback(async () => {
+    if (!tenant) return;
+    try {
+      const res = await fetch(`/api/merchant/arrepentimientos?${q}`, { headers: auth });
+      const d = await res.json();
+      if (res.ok) setRows(d.requests ?? []);
+    } catch { /* la cola de pedidos sigue funcionando aunque esto falle */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function resolve(r: WithdrawalReq) {
+    if (!window.confirm(`¿Marcar como resuelta la solicitud ${r.code} de ${r.name}?`)) return;
+    const res = await fetch(`/api/merchant/arrepentimientos/${r.id}?${q}`, { method: "POST", headers: auth });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); onError(d.error ?? "error"); return; }
+    await load();
+  }
+
+  const pending = rows.filter((r) => r.status === "pendiente");
+  const visible = showResolved ? rows : pending;
+  if (rows.length === 0) return null;
+  const waOf = (contact: string) => { const d = contact.replace(/\D+/g, ""); return d.length >= 8 && !contact.includes("@") ? `https://wa.me/${d}` : null; };
+  return (
+    <div style={{ ...card, marginBottom: 14, borderColor: pending.length ? "#f0c9c4" : LINE }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ fontWeight: 700 }}>Botón de arrepentimiento {pending.length > 0 && <span style={{ color: "#c62828" }}>· {pending.length} pendiente(s)</span>}</div>
+        <button onClick={() => setShowResolved((v) => !v)} className="mbtn" style={{ ...btnGhost, padding: "5px 10px", fontSize: 12.5 }}>{showResolved ? "Ver solo pendientes" : "Ver también resueltas"}</button>
+      </div>
+      <p style={{ fontSize: 12.5, color: MUT, margin: "4px 0 10px" }}>El cliente ya recibió su código. Contactalo para coordinar el retiro y la devolución del dinero, y marcala como resuelta.</p>
+      {visible.length === 0 ? <p style={{ fontSize: 13, color: MUT, margin: 0 }}>No hay solicitudes pendientes.</p> : (
+        <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+          {visible.map((r) => (
+            <li key={r.id} style={{ border: `1px solid ${LINE}`, borderRadius: 10, padding: 10, opacity: r.status === "resuelta" ? 0.6 : 1 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                <b>{r.code} · {r.name}</b>
+                <span style={{ fontSize: 12.5, color: MUT }}>{new Date(r.createdAt).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })}{r.status === "resuelta" ? " · resuelta" : ""}</span>
+              </div>
+              <div style={{ fontSize: 13, marginTop: 4 }}>
+                Contacto: {waOf(r.contact) ? <a href={waOf(r.contact)!} target="_blank" rel="noopener noreferrer" style={{ color: A }}>{r.contact}</a> : r.contact}
+                {r.orderRef && <> · Pedido: {r.orderRef}</>}
+              </div>
+              {r.message && <div style={{ fontSize: 13, color: "#444", marginTop: 4 }}>&ldquo;{r.message}&rdquo;</div>}
+              {r.status === "pendiente" && <button onClick={() => resolve(r)} className="mbtn" style={{ ...btnGhost, marginTop: 8, padding: "5px 10px", fontSize: 12.5 }}>Marcar resuelta</button>}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
