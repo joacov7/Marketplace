@@ -83,6 +83,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       heroImageUrl, adoptionsBannerImageUrl, aiAssistant, subscriptions,
       radiusKm, centerLat, centerLng,
       deliverySlots, deliveryDays, cutoffHour, auxilioWindow,
+      loyaltyEnabled, loyaltySpend,
       catalog0,
     ] = await Promise.all([
       cfg<string>("branding.primaryColor"),
@@ -121,6 +122,8 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<number[]>("delivery.days"),
       cfg<number>("delivery.cutoffHour"),
       cfg<string>("delivery.auxilioWindow"),
+      cfg<boolean>("features.loyalty"),
+      cfg<number>("loyalty.spendPerPointMinor"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
         const adoptions = await listAdoptions(tx);
@@ -220,6 +223,8 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       deliveryCutoffHour: num(cutoffHour, 18),
       auxilioWindow: cleanText(auxilioWindow, "20:00 a 23:00"),
       mercadoPagoEnabled: mercadoPago,
+      loyaltyEnabled: loyaltyEnabled === true,
+      loyaltySpendPerPointMinor: String(Math.max(1, num(loyaltySpend, 100000))),
     };
 
     return (

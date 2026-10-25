@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { transitionSellerOrder } from "@commerce/modules/orders";
+import { completeOrder, transitionSellerOrder } from "@commerce/modules/orders";
 import { db } from "@/lib/db";
 import { panelTenant } from "@/lib/auth";
 
@@ -31,5 +31,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     refundAcknowledged: body.refundAcknowledged === true,
   });
   if (!res.ok) return NextResponse.json({ error: res.error, message: ERROR_MESSAGE[res.error] }, { status: 409 });
+
+  // Entregado desde el panel cierra el pedido igual que la pantalla de reparto (antes quedaba
+  // "confirmed" para siempre y no sumaba los puntos del club).
+  if (body.to === "delivered") {
+    const [so] = await db().withTenant(tenant.tenantId, (tx) =>
+      tx.query<{ order_id: string }>(`select order_id from seller_orders where id = $1`, [params.id]),
+    );
+    const done = so ? await completeOrder(db(), tenant.tenantId, so.order_id) : null;
+    if (done && !done.ok) console.error(`[transition] no se pudo completar el pedido ${so!.order_id}: ${done.error}`);
+  }
   return NextResponse.json({ ok: true, status: body.to });
 }

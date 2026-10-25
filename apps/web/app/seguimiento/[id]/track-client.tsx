@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ClipboardList, PackageCheck, Bike, PartyPopper, PawPrint } from "lucide-react";
+import { ClipboardList, PackageCheck, Bike, PartyPopper, PawPrint, Gift } from "lucide-react";
 
 interface Track {
   stage: "recibido" | "preparando" | "en_camino" | "entregado" | "cancelado";
@@ -15,6 +15,8 @@ interface Track {
   createdAt: string;
   paymentMethod: string | null;
   paymentStatus: string;
+  /** Puntos del club que sumó este pedido (0 si no sumó o el club está apagado). */
+  pointsEarned?: number;
 }
 
 const C = { green: "#2e7d32", soft: "#e9f4ea", ink: "#1f2a2e", mut: "#6b7280", line: "#e7e9ec", bg: "#f4f6f5", white: "#fff", red: "#c0392b" };
@@ -81,6 +83,9 @@ export default function TrackClient({ id, tenant, pago, mpPaymentId }: { id: str
           <div style={{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 14, padding: 22, textAlign: "center", color: C.mut }}>{error}</div>
         ) : t ? (
           <>
+            {(t.pointsEarned ?? 0) > 0 && (
+              <Banner color={C.green} bg={C.soft}><Gift size={15} strokeWidth={1.9} style={{ verticalAlign: "-3px", marginRight: 6 }} />Con este pedido sumaste {t.pointsEarned} puntos en nuestro club.</Banner>
+            )}
             {t.paymentMethod === "online" && t.paymentStatus === "pagado" && (
               <Banner color={C.green} bg={C.soft}>✓ Pago con Mercado Pago aprobado. ¡Gracias!</Banner>
             )}

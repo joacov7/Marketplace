@@ -33,6 +33,13 @@ const SECTIONS: Array<{ title: string; items: Array<{ key: string; label: string
     ],
   },
   {
+    title: "Club de puntos",
+    items: [
+      { key: "features.loyalty", label: "Club de puntos activo" },
+      { key: "loyalty.spendPerPointMinor", label: "Gasto en productos para sumar 1 punto" },
+    ],
+  },
+  {
     title: "Tienda",
     items: [
       { key: "storefront.featuredCount", label: "Productos destacados en la home" },

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   PawPrint, Bike, MapPin, Pencil, X, Plus, Package, Tags, BarChart3, Palette, Dog, Cat, RotateCcw, SlidersHorizontal, Clock,
-  Megaphone, Sparkles, Copy, Download, ImagePlus, ChevronUp, ChevronDown, Eye, EyeOff, Bell, BellOff,
+  Megaphone, Sparkles, Copy, Download, ImagePlus, ChevronUp, ChevronDown, Eye, EyeOff, Bell, BellOff, Gift,
 } from "lucide-react";
 import { WEEKDAYS } from "@/lib/delivery-schedule";
 import { ALERT_POLL_MS, createChime, newIds, systemNotify, titleWithCount } from "@/lib/order-alerts";
@@ -199,7 +199,7 @@ export default function MerchantPanel() {
   const [tokenInput, setTokenInput] = useState("");
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [merchantId, setMerchantId] = useState<string>("");
-  const [tab, setTab] = useState<"catalogo" | "pedidos" | "suscripciones" | "contenido" | "reportes" | "diseno" | "adopciones" | "config">("catalogo");
+  const [tab, setTab] = useState<"catalogo" | "pedidos" | "suscripciones" | "club" | "contenido" | "reportes" | "diseno" | "adopciones" | "config">("catalogo");
   const [error, setError] = useState<string | null>(null);
   const [migrating, setMigrating] = useState(false);
   const [authed, setAuthed] = useState(false);          // sesión de admin activa (cookie)
@@ -435,7 +435,7 @@ export default function MerchantPanel() {
   }
 
   const TABS: Array<[typeof tab, typeof Tags, string]> = [
-    ["catalogo", Tags, "Catálogo"], ["pedidos", Package, "Pedidos"], ["suscripciones", RotateCcw, "Suscripciones"],
+    ["catalogo", Tags, "Catálogo"], ["pedidos", Package, "Pedidos"], ["suscripciones", RotateCcw, "Suscripciones"], ["club", Gift, "Club"],
     ["contenido", Megaphone, "Contenido"], ["reportes", BarChart3, "Reportes"], ["diseno", Palette, "Diseño"], ["adopciones", PawPrint, "Adopciones"],
     ["config", SlidersHorizontal, "Configuración"],
   ];
@@ -493,6 +493,7 @@ export default function MerchantPanel() {
       {tab === "catalogo" ? <CatalogTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} />
         : tab === "pedidos" ? <OrdersTab tenant={tenant} token={token} merchantId={merchantId} onError={setError} refreshKey={ordersRefresh} />
         : tab === "suscripciones" ? <SubscriptionsTab tenant={tenant} token={token} onError={setError} />
+        : tab === "club" ? <LoyaltyTab tenant={tenant} token={token} onError={setError} />
         : tab === "contenido" ? <ContentStudioTab tenant={tenant} token={token} onError={setError} />
         : tab === "reportes" ? <ReportsTab tenant={tenant} token={token} onError={setError} />
         : tab === "diseno" ? <DesignTab tenant={tenant} token={token} onError={setError} />
@@ -2691,6 +2692,228 @@ function AdoptionsTab({ tenant, token, onError }: { tenant: string | null; token
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// ── Club de puntos ─────────────────────────────────────────────────────────────────
+interface LoyaltyReward { id: string; name: string; pointsCost: number; active: boolean }
+interface LoyaltyMove { id: string; points: number; kind: "earn" | "store" | "redeem" | "adjust"; orderId: string | null; rewardName: string | null; note: string | null; createdAt: string }
+interface LoyaltyCustomer { id: string; name: string | null; phone: string | null }
+const MOVE_LABEL: Record<LoyaltyMove["kind"], string> = { earn: "Pedido entregado", store: "Compra en el local", redeem: "Canje", adjust: "Ajuste" };
+
+function LoyaltyTab({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
+  const auth = { authorization: `Bearer ${token}` };
+  const q = `tenant=${encodeURIComponent(tenant ?? "")}`;
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [spend, setSpend] = useState("100000");
+  const [rewards, setRewards] = useState<LoyaltyReward[]>([]);
+  const [top, setTop] = useState<Array<{ customerId: string; name: string | null; phone: string | null; balance: number }>>([]);
+  const [newReward, setNewReward] = useState({ name: "", points: "" });
+  const [phone, setPhone] = useState("");
+  const [cust, setCust] = useState<{ customer: LoyaltyCustomer; balance: number; history: LoyaltyMove[] } | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [storeAmount, setStoreAmount] = useState("");
+  const [adjust, setAdjust] = useState({ points: "", note: "" });
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!tenant) return;
+    try {
+      const res = await fetch(`/api/merchant/loyalty?${q}`, { headers: auth });
+      const d = await res.json();
+      if (!res.ok) { onError(d.error); return; }
+      setEnabled(d.enabled); setSpend(d.spendPerPointMinor); setRewards(d.rewards ?? []); setTop(d.top ?? []);
+    } catch (e) { onError(String(e)); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant, token]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function lookup(p = phone) {
+    if (!tenant || p.replace(/\D+/g, "").length < 6) { onError("Ingresá el teléfono del cliente."); return; }
+    onError(null); setNotFound(false);
+    const res = await fetch(`/api/merchant/loyalty/customer?${q}&phone=${encodeURIComponent(p)}`, { headers: auth });
+    const d = await res.json();
+    if (!res.ok) { onError(d.error); return; }
+    if (!d.found) { setCust(null); setNotFound(true); return; }
+    setCust({ customer: d.customer, balance: d.balance, history: d.history ?? [] });
+  }
+
+  async function act(body: Record<string, unknown>, okMsg: (d: Record<string, unknown>) => string) {
+    if (!tenant) return false;
+    setBusy(true); onError(null);
+    try {
+      const res = await fetch(`/api/merchant/loyalty?${q}`, { method: "POST", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(body) });
+      const d = await res.json();
+      if (!res.ok) { onError(d.message ?? d.error); return false; }
+      onError(`✓ ${okMsg(d)}`);
+      return true;
+    } catch (e) { onError(String(e)); return false; } finally { setBusy(false); }
+  }
+
+  async function addReward() {
+    const pts = Number(newReward.points);
+    if (await act({ action: "reward", name: newReward.name, pointsCost: pts }, () => `Premio "${newReward.name.trim()}" agregado`)) {
+      setNewReward({ name: "", points: "" }); await load();
+    }
+  }
+  async function toggleReward(r: LoyaltyReward) {
+    if (await act({ action: "reward", id: r.id, name: r.name, pointsCost: r.pointsCost, active: !r.active }, () => (r.active ? "Premio desactivado" : "Premio activado"))) await load();
+  }
+  async function storePurchase() {
+    if (!cust) return;
+    const pesos = Number(storeAmount.replace(/\./g, "").replace(",", "."));
+    if (!Number.isFinite(pesos) || pesos <= 0) { onError("Ingresá el monto de la compra."); return; }
+    if (await act({ action: "points", customerId: cust.customer.id, kind: "store", amountMinor: String(Math.round(pesos * 100)) }, (d) => `Sumó ${d.points} puntos (saldo: ${d.balance})`)) {
+      setStoreAmount(""); await lookup(cust.customer.phone ?? phone); await load();
+    }
+  }
+  async function manualAdjust() {
+    if (!cust) return;
+    if (await act({ action: "points", customerId: cust.customer.id, kind: "adjust", points: Number(adjust.points), note: adjust.note }, (d) => `Ajuste de ${d.points} puntos (saldo: ${d.balance})`)) {
+      setAdjust({ points: "", note: "" }); await lookup(cust.customer.phone ?? phone); await load();
+    }
+  }
+  async function redeem(r: LoyaltyReward) {
+    if (!cust) return;
+    if (!window.confirm(`¿Canjear "${r.name}" por ${r.pointsCost} puntos para ${cust.customer.name ?? "este cliente"}? Entregale el premio.`)) return;
+    if (await act({ action: "redeem", customerId: cust.customer.id, rewardId: r.id }, (d) => `Canjeado: ${d.reward} (saldo: ${d.balance})`)) {
+      await lookup(cust.customer.phone ?? phone); await load();
+    }
+  }
+  const waBalance = (c: LoyaltyCustomer, balance: number) => {
+    const digits = (c.phone ?? "").replace(/\D+/g, "");
+    if (!digits) return null;
+    const next = rewards.filter((r) => r.active).find((r) => r.pointsCost > balance);
+    const msg = `¡Hola${c.name ? " " + c.name : ""}! Tenés ${balance} puntos en nuestro club.` +
+      (next ? ` Te faltan ${next.pointsCost - balance} para "${next.name}".` : "") + " ¡Gracias por elegirnos!";
+    return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
+  };
+
+  const activeRewards = rewards.filter((r) => r.active);
+  const fmtDate = (iso: string) => { try { return new Date(iso).toLocaleDateString("es-AR", { day: "numeric", month: "short" }); } catch { return ""; } };
+
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <div style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>Club de puntos</div>
+          <div style={{ fontSize: 13, color: MUT, marginTop: 2 }}>
+            {enabled === null ? "…" : enabled
+              ? <>Activo · 1 punto cada {money(spend)} gastados en productos (el envío no suma). Los puntos se suman solos cuando el pedido se entrega.</>
+              : <>Apagado. Activalo en <b>Configuración → Club de puntos</b> (ahí también cambiás la regla).</>}
+          </div>
+        </div>
+        <span style={{ fontSize: 12, fontWeight: 700, borderRadius: 999, padding: "4px 10px", background: enabled ? A_SOFT : "#eceeef", color: enabled ? A_DARK : MUT }}>{enabled ? "Activo" : "Apagado"}</span>
+      </div>
+
+      {/* Cliente */}
+      <div style={card}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Buscar cliente</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void lookup(); }} placeholder="Teléfono (ej. 3444 15 123456)" inputMode="tel" style={{ ...input, flex: "1 1 220px" }} />
+          <button onClick={() => lookup()} className="mbtn" style={btn}>Buscar</button>
+        </div>
+        {notFound && <p style={{ color: MUT, fontSize: 13, margin: "10px 0 0" }}>No hay un cliente con ese teléfono. Se crea solo con su primer pedido en la tienda.</p>}
+        {cust && (
+          <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>{cust.customer.name ?? "Cliente sin nombre"}</div>
+                <div style={{ fontSize: 13, color: MUT }}>{cust.customer.phone}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: A_DARK, lineHeight: 1 }}>{cust.balance}</div>
+                <div style={{ fontSize: 12, color: MUT }}>puntos</div>
+              </div>
+            </div>
+            {waBalance(cust.customer, cust.balance) && (
+              <a href={waBalance(cust.customer, cust.balance)!} target="_blank" rel="noopener noreferrer" className="mbtn" style={{ ...btnGhost, textDecoration: "none", width: "fit-content", color: A, borderColor: A_SOFT }}>Enviar saldo por WhatsApp</a>
+            )}
+            {enabled && (
+              <>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>Compra en el local: $</span>
+                  <input value={storeAmount} onChange={(e) => setStoreAmount(e.target.value)} placeholder="Monto" inputMode="decimal" style={{ ...input, width: 130 }} />
+                  <button onClick={storePurchase} disabled={busy} className="mbtn" style={btn}>Sumar puntos</button>
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Canjear</div>
+                  {activeRewards.length === 0 ? <span style={{ fontSize: 13, color: MUT }}>Todavía no cargaste premios (abajo).</span> : (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {activeRewards.map((r) => (
+                        <button key={r.id} onClick={() => redeem(r)} disabled={busy || cust.balance < r.pointsCost} className="mbtn"
+                          style={{ ...btnGhost, opacity: cust.balance < r.pointsCost ? 0.5 : 1 }} title={cust.balance < r.pointsCost ? `Le faltan ${r.pointsCost - cust.balance} puntos` : "Canjear"}>
+                          {r.name} · {r.pointsCost} pts
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <details>
+                  <summary style={{ fontSize: 13, color: MUT, cursor: "pointer" }}>Ajuste manual</summary>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                    <input value={adjust.points} onChange={(e) => setAdjust({ ...adjust, points: e.target.value })} placeholder="+10 o -5" inputMode="numeric" style={{ ...input, width: 100 }} />
+                    <input value={adjust.note} onChange={(e) => setAdjust({ ...adjust, note: e.target.value })} placeholder="Motivo (obligatorio)" style={{ ...input, flex: "1 1 200px" }} />
+                    <button onClick={manualAdjust} disabled={busy} className="mbtn" style={btnGhost}>Aplicar</button>
+                  </div>
+                </details>
+              </>
+            )}
+            {cust.history.length > 0 && (
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Movimientos</div>
+                <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 4 }}>
+                  {cust.history.map((m) => (
+                    <li key={m.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, borderBottom: `1px solid ${LINE}`, padding: "5px 0" }}>
+                      <span>{fmtDate(m.createdAt)} · {MOVE_LABEL[m.kind]}{m.rewardName ? `: ${m.rewardName}` : ""}{m.note ? ` (${m.note})` : ""}</span>
+                      <b style={{ color: m.points > 0 ? A_DARK : "#c62828" }}>{m.points > 0 ? `+${m.points}` : m.points}</b>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Premios */}
+      <div style={card}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>Premios</div>
+        <p style={{ fontSize: 13, color: MUT, margin: "0 0 10px" }}>Lo que el cliente puede canjear con sus puntos (ej. &quot;Bolsa de piedras sanitarias&quot; o &quot;10% en la próxima compra&quot;). El premio lo entregás vos al canjear.</p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <input value={newReward.name} onChange={(e) => setNewReward({ ...newReward, name: e.target.value })} placeholder="Nombre del premio" style={{ ...input, flex: "1 1 220px" }} />
+          <input value={newReward.points} onChange={(e) => setNewReward({ ...newReward, points: e.target.value })} placeholder="Puntos" inputMode="numeric" style={{ ...input, width: 100 }} />
+          <button onClick={addReward} disabled={busy} className="mbtn" style={btn}>Agregar</button>
+        </div>
+        {rewards.length === 0 ? <p style={{ fontSize: 13, color: MUT, margin: 0 }}>Sin premios todavía.</p> : (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 6 }}>
+            {rewards.map((r) => (
+              <li key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, opacity: r.active ? 1 : 0.55 }}>
+                <span><b>{r.name}</b> · {r.pointsCost} puntos{r.active ? "" : " (desactivado)"}</span>
+                <button onClick={() => toggleReward(r)} disabled={busy} className="mbtn" style={{ ...btnGhost, padding: "5px 10px", fontSize: 12.5 }}>{r.active ? "Desactivar" : "Activar"}</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Ranking */}
+      <div style={card}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Clientes con más puntos</div>
+        {top.length === 0 ? <p style={{ fontSize: 13, color: MUT, margin: 0 }}>Todavía nadie sumó puntos.</p> : (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 4 }}>
+            {top.map((t) => (
+              <li key={t.customerId} style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, padding: "4px 0", borderBottom: `1px solid ${LINE}` }}>
+                <button onClick={() => { setPhone(t.phone ?? ""); void lookup(t.phone ?? ""); }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: INK, textAlign: "left", fontSize: 13.5 }}>
+                  {t.name ?? "Sin nombre"} <span style={{ color: MUT }}>{t.phone}</span>
+                </button>
+                <b>{t.balance} pts</b>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

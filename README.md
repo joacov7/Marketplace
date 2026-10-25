@@ -20,7 +20,7 @@ propio (Pet Shop Gualeguay) y evoluciona a marketplace / White Label / multi-ver
 Fases F1–F5 completas y la app operando el ciclo completo de un pet shop: tienda PWA,
 checkout, panel del comercio, reparto, seguimiento, suscripciones y Vendedor IA.
 
-**250 tests en verde** (+6 gated a Postgres real) · lint con límites de módulos · typecheck · `next build`
+**259 tests en verde** (+6 gated a Postgres real) · lint con límites de módulos · typecheck · `next build`
 — todo corre en CI (`.github/workflows/ci.yml`).
 
 ### Core de plataforma (`@commerce/platform`)
@@ -45,6 +45,7 @@ checkout, panel del comercio, reparto, seguimiento, suscripciones y Vendedor IA.
 | **payments** | `PaymentProvider` abstracto con **Mercado Pago (Checkout Pro)** real: credenciales por comercio cifradas, webhook verificado contra la API de MP, control de monto. Allocations exactas, **ledger de doble partida**, captura idempotente, refund parcial, **cobro al entregar** (`settleCashOnDelivery`). |
 | **delivery** | Costeo por zona (costo + ETA por barrio) o plano por config, gratis sobre umbral, mínimo de envío por segmento, agenda de entrega (turnos, días, corte, franjas), radio y pin del local. |
 | **customer** / **pets** | Ficha de cliente **por teléfono** (sin obligar registro) y perfil de mascota — la mascota es protagonista del pedido ("Pedido de Bruno"). |
+| **loyalty** | Club de puntos: suma al entregar el pedido (regla por config), compras en el local, premios y canje desde el panel, saldo para el cliente logueado. |
 | **subscriptions** | Auto-envío cada X días: genera el pedido solo, cobro al recibir, descuento opcional por config. |
 | **agent** | Customer Shopping Agent **propose-only** (garantía estructural: no puede cobrar ni crear pedidos), presupuesto de IA por tenant. |
 | **content** | Estudio de Contenido: post del día (texto + placa) para redes. |
@@ -57,7 +58,7 @@ checkout, panel del comercio, reparto, seguimiento, suscripciones y Vendedor IA.
 | Pantalla | Qué es |
 |----------|--------|
 | `/` | Tienda PWA: tenant por subdominio, branding por config, catálogo, checkout (dirección + referencias + GPS opcional, zona, horario sugerido, pago al recibir o **Mercado Pago**), cuenta del cliente (mascotas, pedidos, "repetir última compra", reposición, suscripciones), **Vendedor IA** flotante. |
-| `/merchant` | Panel del comercio (login por usuario + rol admin): pedidos (aceptar/rechazar, preparar, pedido manual), catálogo, categorías, combos, zonas y agenda de reparto, suscripciones, adopciones, diseño, contenido, reportes y **Configuración** (cobros online con Mercado Pago, parámetros y funciones activables). |
+| `/merchant` | Panel del comercio (login por usuario + rol admin): pedidos (aceptar/rechazar, preparar, cancelar, pedido manual), **club de puntos**, catálogo, categorías, combos, zonas y agenda de reparto, suscripciones, adopciones, diseño, contenido, reportes y **Configuración** (cobros online con Mercado Pago, parámetros y funciones activables). |
 | `/reparto` | Pantalla del repartidor (PWA instalable): entregas del día, "Cómo llegar" (al pin exacto si hay), WhatsApp, En camino → Entregado + registro del cobro. |
 | `/seguimiento/[id]` | Seguimiento público del pedido (sin login): Recibido → En preparación → En camino → Entregado. |
 
@@ -76,7 +77,7 @@ API principal (route handlers en `apps/web/app/api/`):
   `withTenant`/RLS. Nunca de un parámetro del body.
 - **Migraciones automáticas**: corren en el `postbuild` del deploy (`scripts/migrate-prod.mjs`)
   con tracking (`schema_migrations`) y lock de Postgres. El orden vive en
-  `scripts/migrations-list.mjs` (0000–0023).
+  `scripts/migrations-list.mjs` (0000–0024).
 
 ## Estructura
 

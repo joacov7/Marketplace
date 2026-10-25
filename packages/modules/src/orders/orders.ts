@@ -6,6 +6,7 @@ import {
 } from "@commerce/platform";
 import { type Result, ok, err, type CurrencyCode } from "@commerce/contracts";
 import { reserveStock, confirmReservation, releaseReservation, restockConfirmedReservation } from "../inventory/inventory.js";
+import { awardOrderPoints } from "../loyalty/loyalty.js";
 import { canTransitionOrder, canTransitionSellerOrder, type SellerOrderStatus } from "./state.js";
 
 export type OrderChannel = "web" | "whatsapp" | "telefono" | "mostrador" | "suscripcion";
@@ -433,6 +434,7 @@ export async function transitionSellerOrder(
 /**
  * Cierra el pedido al entregarse: pasa 'confirmed' → 'completed'. No toca reservas (ya se
  * consumieron al aceptar/confirmar). El cobro real (ledger) lo hace el módulo Payments.
+ * En la misma tx suma los puntos del club (si está activo y el pedido tiene cliente).
  */
 export async function completeOrder(db: TenantAwareDb, tenantId: string, orderId: string): Promise<Result<true, string>> {
   try {
@@ -443,6 +445,7 @@ export async function completeOrder(db: TenantAwareDb, tenantId: string, orderId
       if (!canTransitionOrder(status as never, "completed")) throw new Error(`invalid_transition:${status}->completed`);
       await tx.query(`update orders set status = 'completed', updated_at = now() where id = $1`, [orderId]);
       await enqueueEvent(tx, { tenantId, type: "order.completed", payload: { orderId } });
+      await awardOrderPoints(tx, tenantId, orderId);
     });
     return ok(true);
   } catch (e) {

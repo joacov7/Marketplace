@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrderTracking } from "@commerce/modules/orders";
+import { orderPointsEarned } from "@commerce/modules/loyalty";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
 
@@ -14,8 +15,13 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
 
-  const t = await db().withTenant(tenant.tenantId, (tx) => getOrderTracking(tx, params.id));
-  if (!t) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const found = await db().withTenant(tenant.tenantId, async (tx) => {
+    const tracking = await getOrderTracking(tx, params.id);
+    // Solo los puntos que sumó ESTE pedido; el saldo total no se muestra sin login.
+    return tracking ? { tracking, pointsEarned: await orderPointsEarned(tx, params.id) } : null;
+  });
+  const t = found?.tracking;
+  if (!found || !t) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   return NextResponse.json({
     stage: t.stage,
@@ -29,5 +35,6 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     createdAt: t.createdAt,
     paymentMethod: t.paymentMethod,
     paymentStatus: t.paymentStatus,
+    pointsEarned: found.pointsEarned,
   });
 }

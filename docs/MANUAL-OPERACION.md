@@ -34,6 +34,24 @@ el navegador.
 > La sesión queda guardada un tiempo. Si te pide entrar de nuevo, volvé a poner email y
 > contraseña. Para salir, usá **"Cerrar sesión"** (arriba en el panel).
 
+### Club de puntos
+
+Se activa en **Configuración → Club de puntos**; ahí también elegís la regla (por defecto,
+1 punto cada $1.000 gastados en productos; el envío no suma). Después, en la pestaña **Club**:
+
+1. **Cargá los premios** (ej. "Bolsa de piedras sanitarias — 150 puntos").
+2. Los puntos **se suman solos** cuando un pedido de la tienda se marca **Entregado** (si el
+   cliente dejó su teléfono o tiene cuenta).
+3. **Compras en el local:** buscá al cliente por teléfono, poné el monto y tocá **Sumar puntos**.
+4. **Canjear:** buscá al cliente, tocá el premio y confirmá. Se descuentan los puntos y le
+   entregás el premio vos. El canje es solo desde el panel, a propósito: así verificás que es
+   la persona.
+5. **Enviar saldo por WhatsApp** le arma el mensaje con sus puntos y cuánto le falta para el
+   próximo premio.
+
+El cliente ve "Con este pedido sumaste N puntos" en el seguimiento y, si tiene cuenta, su
+saldo en **Mis puntos**. Para no perder el historial, los premios se **desactivan**, no se borran.
+
 ### Cancelar un pedido ya aceptado
 
 En **Pedidos → En curso**, el botón rojo **Cancelar** aparece mientras el pedido no salió a

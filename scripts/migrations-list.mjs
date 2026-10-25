@@ -27,4 +27,5 @@ export const MIGRATION_FILES = [
   ["0021_auth_failures", "packages/platform/src/db/migrations/0021_auth_failures.sql"],
   ["0022_fix_jsonb_strings", "packages/modules/src/orders/migrations/0022_fix_jsonb_strings.sql"],
   ["0023_checkout_idempotency", "packages/modules/src/orders/migrations/0023_checkout_idempotency.sql"],
+  ["0024_loyalty", "packages/modules/src/loyalty/migrations/0024_loyalty.sql"],
 ];

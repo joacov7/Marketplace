@@ -363,7 +363,15 @@ export const CONFIG_KEYS = {
     defaultValue: false,
     category: "features",
     sensitive: false,
-    description: "Habilita el módulo de fidelización.",
+    description: "Habilita el club de puntos: el cliente suma puntos con cada pedido entregado y los canjea por premios.",
+  },
+  "loyalty.spendPerPointMinor": {
+    key: "loyalty.spendPerPointMinor",
+    jsonSchema: { type: "integer", minimum: 100, maximum: 100000000 },
+    defaultValue: 100000, // 1 punto cada $1.000 gastados en productos (el envío no suma)
+    category: "money",
+    sensitive: true,
+    description: "Club de puntos: cuánto hay que gastar en productos (en centavos) para sumar 1 punto.",
   },
   "branding.primaryColor": {
     key: "branding.primaryColor",

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ShoppingCart, Check as LuCheck, Search, Menu, User, MapPin, Plus, RotateCcw,
   Truck, Package, Scale, Tag, PawPrint, HeartHandshake, BarChart3, Dog, Cat,
-  Sparkles, Send, X, Loader2, Bone, Cookie, Droplets, Bug,
+  Sparkles, Send, X, Loader2, Bone, Cookie, Droplets, Bug, Gift,
 } from "lucide-react";
 import { nextDeliveryDates, dayLabel } from "@/lib/delivery-schedule";
 
@@ -87,6 +87,9 @@ export interface StoreConfig {
   auxilioWindow: string;
   /** El comercio conectó Mercado Pago → se ofrece "Pagar ahora". */
   mercadoPagoEnabled: boolean;
+  /** Club de puntos: activo y cuánto hay que gastar (centavos) por punto. */
+  loyaltyEnabled: boolean;
+  loyaltySpendPerPointMinor: string;
 }
 
 // ── Design tokens (handoff) ────────────────────────────────────────────────────
@@ -641,7 +644,7 @@ export default function Storefront(props: {
         G={G} tenant={tenant} logoUrl={props.logoUrl} displayName={props.displayName}
         categories={categories} activeCat={view === "list" ? category : ""} query={query}
         cartCount={items.reduce((a, [, l]) => a + l.qty, 0)} subtotal={subtotal}
-        showPets={config.foodCalculator} factors={config.nutritionFactors} subscriptions={!!props.subscriptions}
+        showPets={config.foodCalculator} factors={config.nutritionFactors} subscriptions={!!props.subscriptions} loyalty={config.loyaltyEnabled}
         adoptionsLabel={props.adoptions.length > 0 ? props.adoptionsTitle : ""} adoptionsActive={view === "adopciones"}
         comparatorLabel={config.foodComparator && foodProducts.length >= 2 ? "Comparar alimentos" : ""} comparatorActive={view === "comparar"}
         onHome={() => { setQuery(""); setCategory(""); go("home"); }}
@@ -994,7 +997,7 @@ function Header(props: {
   G: string; tenant: string; logoUrl: string; displayName: string;
   categories: { name: string; count: number }[]; activeCat: string; query: string;
   cartCount: number; subtotal: number;
-  showPets: boolean; factors: Record<string, number>; subscriptions: boolean;
+  showPets: boolean; factors: Record<string, number>; subscriptions: boolean; loyalty: boolean;
   adoptionsLabel: string; adoptionsActive: boolean;
   comparatorLabel: string; comparatorActive: boolean;
   onHome: () => void; onCategory: (c: string) => void; onSearch: (q: string) => void; onAdoptions: () => void; onComparar: () => void; onCart: () => void; waLink: string | null;
@@ -1041,7 +1044,7 @@ function Header(props: {
           <Search size={16} strokeWidth={2} color={C.mute} aria-hidden />
           <input value={props.query} onChange={(e) => props.onSearch(e.target.value)} placeholder="Buscar productos" style={{ border: "none", outline: "none", background: "transparent", fontSize: 13, width: 150, fontFamily: FONT, color: C.text }} />
         </div>
-        <AccountMenu G={G} tenant={props.tenant} showPets={props.showPets} factors={props.factors} subscriptions={props.subscriptions} />
+        <AccountMenu G={G} tenant={props.tenant} showPets={props.showPets} factors={props.factors} subscriptions={props.subscriptions} loyalty={props.loyalty} />
         <button className="sf-btn" onClick={props.onCart} style={{ background: G, color: C.white, border: "none", borderRadius: 999, padding: "8px 16px", display: "inline-flex", alignItems: "center", gap: 9, cursor: "pointer", fontFamily: FONT }}>
           <CartIcon size={18} /><span style={{ fontSize: 14, fontWeight: 600 }}>{money(props.subtotal)}</span>
         </button>
@@ -1943,6 +1946,12 @@ function CheckoutView(props: {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
             <span style={{ fontSize: 15, fontWeight: 700 }}>Total</span><span style={{ fontSize: 26, fontWeight: 700, color: G }}>{money(total)}</span>
           </div>
+          {props.config.loyaltyEnabled && Math.floor(sub / Number(props.config.loyaltySpendPerPointMinor)) > 0 && (
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: G, marginTop: 8 }}>
+              <Gift size={14} strokeWidth={1.9} style={{ verticalAlign: "-2px", marginRight: 5 }} />
+              Sumás {Math.floor(sub / Number(props.config.loyaltySpendPerPointMinor))} puntos en el club cuando recibas tu pedido (con tu teléfono).
+            </div>
+          )}
           {props.error && <p style={{ color: "#c62828", fontSize: 12.5, margin: "10px 0 0" }}>{props.error}</p>}
           {props.outsideRadius && !props.error && (
             <p style={{ color: "#c0392b", fontSize: 12.5, margin: "10px 0 0" }}>Tu ubicación está fuera de la zona de envío (a {props.radiusDistance} km; llegamos hasta {props.radiusKm} km).</p>
@@ -2226,13 +2235,13 @@ function AdoptionsView({ title, adoptions, storeWhatsapp }: { G: string; title: 
 }
 
 // ── Cuenta: login/registro + Mis pedidos + Mis mascotas ──────────────────────────
-function AccountMenu({ G, tenant, showPets, factors, subscriptions }: { G: string; tenant: string; showPets: boolean; factors: Record<string, number>; subscriptions?: boolean }) {
+function AccountMenu({ G, tenant, showPets, factors, subscriptions, loyalty }: { G: string; tenant: string; showPets: boolean; factors: Record<string, number>; subscriptions?: boolean; loyalty?: boolean }) {
   const [email, setEmail] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [form, setForm] = useState({ email: "", password: "" });
   const [err, setErr] = useState<string | null>(null);
-  const [modal, setModal] = useState<"" | "orders" | "pets" | "subs">("");
+  const [modal, setModal] = useState<"" | "orders" | "pets" | "subs" | "points">("");
 
   useEffect(() => { fetch("/api/auth/me").then((r) => r.json()).then((d) => setEmail(d.user?.email ?? null)).catch(() => {}); }, []);
 
@@ -2258,6 +2267,7 @@ function AccountMenu({ G, tenant, showPets, factors, subscriptions }: { G: strin
               <button onClick={() => { setModal("orders"); setOpen(false); }} style={{ ...primaryBtn(G), width: "100%", padding: 10, marginBottom: 6 }}>Mis pedidos</button>
               {showPets && <button onClick={() => { setModal("pets"); setOpen(false); }} style={{ ...outlineBtn(G), width: "100%", padding: 10, marginBottom: 6 }}><PawPrint size={15} strokeWidth={1.8} style={{verticalAlign:"-3px",marginRight:6}} />Mis mascotas</button>}
               {subscriptions && <button onClick={() => { setModal("subs"); setOpen(false); }} style={{ ...outlineBtn(G), width: "100%", padding: 10, marginBottom: 6 }}><RotateCcw size={15} strokeWidth={1.9} style={{verticalAlign:"-3px",marginRight:6}} />Mis suscripciones</button>}
+              {loyalty && <button onClick={() => { setModal("points"); setOpen(false); }} style={{ ...outlineBtn(G), width: "100%", padding: 10, marginBottom: 6 }}><Gift size={15} strokeWidth={1.9} style={{verticalAlign:"-3px",marginRight:6}} />Mis puntos</button>}
               <button onClick={logout} style={{ border: "none", background: "transparent", color: C.mute, cursor: "pointer", fontSize: 13, width: "100%", padding: 6 }}>Cerrar sesión</button>
             </>
           ) : (
@@ -2283,6 +2293,7 @@ function AccountMenu({ G, tenant, showPets, factors, subscriptions }: { G: strin
       {modal === "orders" && <MyOrdersModal onClose={() => setModal("")} />}
       {modal === "pets" && <MyPetsModal G={G} factors={factors} onClose={() => setModal("")} />}
       {modal === "subs" && <MySubscriptionsModal G={G} tenant={tenant} onClose={() => setModal("")} />}
+      {modal === "points" && <MyPointsModal G={G} onClose={() => setModal("")} />}
     </span>
   );
 }
@@ -2440,6 +2451,61 @@ function MyOrdersModal({ onClose }: { onClose: () => void }) {
             </li>
           ); })}
         </ul>
+      )}
+    </Modal>
+  );
+}
+
+interface MyPoints {
+  enabled: boolean; balance: number; spendPerPointMinor: string;
+  history: Array<{ id: string; points: number; kind: string; rewardName: string | null; createdAt: string }>;
+  rewards: Array<{ name: string; pointsCost: number }>;
+}
+const POINTS_LABEL: Record<string, string> = { earn: "Pedido", store: "Compra en el local", redeem: "Canje", adjust: "Ajuste" };
+/** "Mis puntos": saldo y premios del club (solo logueado: el saldo no se muestra por teléfono). */
+function MyPointsModal({ G, onClose }: { G: string; onClose: () => void }) {
+  const [data, setData] = useState<MyPoints | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { fetch("/api/account/loyalty").then((r) => r.json()).then((d) => { if (d.error) setError(d.error); else setData(d); }).catch((e) => setError(String(e))); }, []);
+  return (
+    <Modal title="Mis puntos" onClose={onClose}>
+      {error && <p style={{ color: "#c00" }}>Error: {error}</p>}
+      {!data && !error && <p style={{ color: C.mute }}>Cargando…</p>}
+      {data && !data.enabled && <p style={{ color: C.mute }}>El club de puntos no está activo.</p>}
+      {data && data.enabled && (
+        <>
+          <div style={{ textAlign: "center", padding: "6px 0 14px" }}>
+            <div style={{ fontSize: 40, fontWeight: 800, color: G, lineHeight: 1 }}>{data.balance}</div>
+            <div style={{ fontSize: 13, color: C.mute, marginTop: 4 }}>puntos · sumás 1 cada {money(Number(data.spendPerPointMinor))} en productos</div>
+          </div>
+          {data.rewards.length > 0 && (
+            <>
+              <div style={{ fontWeight: 700, fontSize: 14, margin: "4px 0 8px" }}>Premios</div>
+              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 }}>
+                {data.rewards.map((r, i) => (
+                  <li key={`${i}-${r.name}`} style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 12px" }}>
+                    <span>{r.name}</span>
+                    <b style={{ color: data.balance >= r.pointsCost ? G : C.mute }}>{data.balance >= r.pointsCost ? "¡Ya podés canjearlo!" : `${r.pointsCost} pts`}</b>
+                  </li>
+                ))}
+              </ul>
+              <p style={{ fontSize: 12.5, color: C.mute, margin: "8px 0 0" }}>Para canjear, pedíselo al comercio: te lo descuentan de tus puntos.</p>
+            </>
+          )}
+          {data.history.length > 0 && (
+            <>
+              <div style={{ fontWeight: 700, fontSize: 14, margin: "14px 0 8px" }}>Últimos movimientos</div>
+              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                {data.history.map((m) => (
+                  <li key={m.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: `1px solid ${C.border}` }}>
+                    <span>{new Date(m.createdAt).toLocaleDateString("es-AR", { day: "2-digit", month: "short" })} · {POINTS_LABEL[m.kind] ?? m.kind}{m.rewardName ? `: ${m.rewardName}` : ""}</span>
+                    <b style={{ color: m.points > 0 ? G : "#c62828" }}>{m.points > 0 ? `+${m.points}` : m.points}</b>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </>
       )}
     </Modal>
   );
