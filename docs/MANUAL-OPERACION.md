@@ -206,6 +206,21 @@ La pantalla de **Reparto** también se actualiza sola cada 30 segundos y suena (
 celular) cuando aparece una entrega nueva lista para salir. El sonido se habilita con el
 primer toque en la pantalla.
 
+### Recorrido sugerido
+
+En **Reparto**, las entregas se agrupan por franja horaria. Dentro de cada franja van
+**numeradas en el orden del recorrido**: desde el local, siempre a la parada más cercana. El
+botón **Abrir recorrido en Google Maps** abre la navegación con todas las paradas en ese orden.
+Si hay más de 9, aparecen varios botones ("paradas 1 a 9", "10 a 15"…), uno por tramo.
+
+- Para que salga desde el local, cargá la **ubicación del local** en el panel (la misma que
+  usa el radio de envío). Sin eso, Google Maps arranca desde donde está el teléfono.
+- Los pedidos donde el cliente **compartió su ubicación** se ordenan por distancia. Los que no,
+  van con la dirección escrita, al lado de los de su mismo barrio (o al final, si nadie de su
+  barrio compartió ubicación).
+- Las distancias son en línea recta: es una guía. Google Maps calcula el camino real por calles.
+- Al marcar una entrega, el recorrido se recalcula con las que quedan.
+
 ---
 
 ## Cobrar online con Mercado Pago ("Pagar ahora")

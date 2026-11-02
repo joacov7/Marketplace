@@ -3,12 +3,15 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   Bike, RefreshCw, CheckCircle2, Check, MapPin, StickyNote, Clock,
-  Navigation, MessageCircle, Banknote, CreditCard, Landmark,
+  Navigation, MessageCircle, Banknote, CreditCard, Landmark, Route,
 } from "lucide-react";
 import { ALERT_POLL_MS, createChime, newIds } from "@/lib/order-alerts";
 
 interface DeliveryItem { name: string; variant: string; qty: number }
 interface DeliveryOrder {
+  /** Número de parada dentro de su franja (recorrido sugerido). */
+  stopNumber: number;
+  routeWindow: string;
   sellerOrderId: string;
   orderId: string;
   status: "ready" | "in_transit";
@@ -27,6 +30,15 @@ interface DeliveryOrder {
   items: DeliveryItem[];
 }
 
+interface RouteInfo {
+  window: string;
+  stops: number;
+  withoutLocation: number;
+  estimatedKm: number;
+  fromShop: boolean;
+  links: Array<{ from: number; to: number; url: string }>;
+}
+
 const money = (m: string | number) => (Number(m) / 100).toLocaleString("es-AR", { style: "currency", currency: "ARS" });
 const METHOD: Record<string, string> = { online: "Online", efectivo: "Efectivo", pos: "Tarjeta (POS)", transferencia: "Transferencia" };
 
@@ -37,6 +49,7 @@ export default function RepartoClient() {
   const [token, setToken] = useState("");
   const [tokenInput, setTokenInput] = useState("");
   const [orders, setOrders] = useState<DeliveryOrder[]>([]);
+  const [routes, setRoutes] = useState<RouteInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [collectFor, setCollectFor] = useState<string | null>(null); // sellerOrderId en modo cobro
@@ -81,6 +94,7 @@ export default function RepartoClient() {
       }
       prevIds.current = ids;
       setOrders(list);
+      setRoutes((d.routes as RouteInfo[] | undefined) ?? []);
       setError(null);
       setUpdatedAt(new Date());
     } catch (e) { if (!silent) setError(String(e)); }
@@ -177,31 +191,52 @@ export default function RepartoClient() {
         ) : (
           <div style={{ display: "grid", gap: 14 }}>
             {(() => {
-              // Agenda: agrupamos por franja de entrega (mismo día+turno juntos) para planificar la salida.
-              // Agrupamos por día+turno (base), ignorando la preferencia libre del cliente
-              // ("· Prefiere: …") que sí se muestra completa en cada tarjeta.
-              const baseWindow = (o: DeliveryOrder) => (o.deliveryWindow ?? "Sin horario asignado").split(" · Prefiere:")[0]!;
-              const counts = orders.reduce<Record<string, number>>((a, o) => { const w = baseWindow(o); a[w] = (a[w] ?? 0) + 1; return a; }, {});
-              const sorted = [...orders].sort((a, b) => baseWindow(a).localeCompare(baseWindow(b), "es"));
+              // El servidor manda los pedidos agrupados por franja (día + turno) y, dentro de cada
+              // una, en el orden del recorrido sugerido (desde el local, la parada más cercana).
+              const routeOf = new Map(routes.map((r) => [r.window, r]));
               let prevWindow: string | null = null;
-              return sorted.map((o) => {
+              return orders.map((o) => {
               const paid = o.paymentStatus === "pagado";
               const collecting = collectFor === o.sellerOrderId;
               const wa = waLink(o);
-              const win = baseWindow(o);
+              const win = o.routeWindow;
               const header = win !== prevWindow ? win : null;
+              const route = header ? routeOf.get(win) : undefined;
               prevWindow = win;
               return (
                 <Fragment key={o.sellerOrderId}>
                 {header && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 700, color: C.ink, marginTop: 4, padding: "2px 2px" }}>
-                    <Clock size={14} strokeWidth={2} style={{ color: C.green }} />{header}<span style={{ color: C.mut, fontWeight: 500 }}>· {counts[win]} {counts[win] === 1 ? "pedido" : "pedidos"}</span>
+                  <div style={{ marginTop: 4, display: "grid", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 700, color: C.ink, padding: "2px 2px" }}>
+                      <Clock size={14} strokeWidth={2} style={{ color: C.green }} />{header}<span style={{ color: C.mut, fontWeight: 500 }}>· {route?.stops ?? 0} {route?.stops === 1 ? "pedido" : "pedidos"}</span>
+                    </div>
+                    {route && route.links.length > 0 && (
+                      <div style={{ background: C.white, borderRadius: 12, padding: 12, boxShadow: "0 1px 4px rgba(0,0,0,.06)" }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}><Route size={16} strokeWidth={2} style={{ color: C.blue }} />Recorrido sugerido</div>
+                        <div style={{ fontSize: 12.5, color: C.mut, marginTop: 3, lineHeight: 1.45 }}>
+                          {route.fromShop ? "Saliendo del local, " : ""}las paradas van numeradas en orden
+                          {route.estimatedKm > 0 ? ` · ≈ ${route.estimatedKm.toLocaleString("es-AR")} km en línea recta` : ""}.
+                          {route.withoutLocation > 0 && ` ${route.withoutLocation} sin ubicación exacta: van por dirección, junto a su barrio.`}
+                        </div>
+                        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                          {route.links.map((l) => (
+                            <a key={l.from} href={l.url} target="_blank" rel="noopener noreferrer" style={btn(C.blue)}>
+                              <Navigation size={16} style={{ verticalAlign: "-3px", marginRight: 6 }} />
+                              {route.links.length === 1 ? "Abrir recorrido en Google Maps" : `Recorrido: paradas ${l.from} a ${l.to}`}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 <div style={{ background: C.white, borderRadius: 14, boxShadow: "0 1px 4px rgba(0,0,0,.06)", overflow: "hidden" }}>
                   <div style={{ padding: 16 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                      <div style={{ fontSize: 17, fontWeight: 700 }}>{title(o)}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                        <span aria-label={`Parada ${o.stopNumber}`} style={{ width: 28, height: 28, borderRadius: "50%", background: C.blue, color: "white", fontWeight: 800, fontSize: 14, display: "grid", placeItems: "center", flexShrink: 0 }}>{o.stopNumber}</span>
+                        <div style={{ fontSize: 17, fontWeight: 700 }}>{title(o)}</div>
+                      </div>
                       <span style={{ fontSize: 11.5, fontWeight: 700, color: "white", background: o.status === "in_transit" ? C.blue : C.warn, borderRadius: 999, padding: "3px 10px", flexShrink: 0 }}>
                         {o.status === "in_transit" ? "En camino" : "Listo"}
                       </span>
