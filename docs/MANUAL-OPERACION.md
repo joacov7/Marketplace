@@ -34,6 +34,19 @@ el navegador.
 > La sesión queda guardada un tiempo. Si te pide entrar de nuevo, volvé a poner email y
 > contraseña. Para salir, usá **"Cerrar sesión"** (arriba en el panel).
 
+### Estilo de la tienda
+
+En **Diseño → Estilo de la tienda** elegís entre cinco estilos: **Clásico** (el aspecto
+original), **Barrio**, **Natural**, **Moderno** y **Divertido**. Cada uno cambia la letra, los
+colores, las formas, la portada y las fichas de producto de toda la tienda.
+
+- **Ver en mi tienda ↗** abre tu tienda real con ese estilo, sin guardarlo (es una vista
+  previa: tus clientes siguen viendo el actual).
+- Al elegir uno se aplica su **color sugerido**; lo podés cambiar en **Color primario**.
+- Tocá **Guardar diseño** para publicarlo.
+
+Los textos (título, subtítulo, beneficios) y las fotos son los mismos en todos los estilos.
+
 ### Datos legales y botón de arrepentimiento
 
 En **Configuración → Datos legales del comercio** cargá razón social, CUIT, domicilio y email.

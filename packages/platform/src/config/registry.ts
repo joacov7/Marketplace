@@ -429,6 +429,14 @@ export const CONFIG_KEYS = {
     sensitive: false,
     description: "Disposición del catálogo en la tienda: grilla o lista.",
   },
+  "branding.theme": {
+    key: "branding.theme",
+    jsonSchema: { type: "string", enum: ["clasico", "barrio", "natural", "moderno", "divertido"] },
+    defaultValue: "clasico",
+    category: "branding",
+    sensitive: false,
+    description: "Estilo de la tienda: tipografía, paleta, formas, portada y fichas (clasico = el aspecto original).",
+  },
   "branding.font": {
     key: "branding.font",
     jsonSchema: { type: "string", enum: ["system", "serif", "rounded", "mono"] },

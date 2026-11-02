@@ -7,6 +7,7 @@ import {
   Sparkles, Send, X, Loader2, Bone, Cookie, Droplets, Bug, Gift,
 } from "lucide-react";
 import { nextDeliveryDates, dayLabel } from "@/lib/delivery-schedule";
+import { storeTheme, type ThemeId, type HeroVariant } from "@/lib/store-themes";
 
 // ── Tipos que provee el server component (page.tsx) ────────────────────────────
 export interface StoreVariant {
@@ -95,26 +96,28 @@ export interface StoreConfig {
 }
 
 // ── Design tokens (handoff) ────────────────────────────────────────────────────
+// Los valores salen del estilo elegido (lib/store-themes.ts): variables CSS que define la raíz
+// de la tienda. Así un cambio de estilo recolorea todas las pantallas sin tocar cada una.
 const C = {
-  greenD: "#087A50",
-  lightGreen: "#66BB6A",
-  beige: "#F7F3EA",
-  surf: "#F7F6F2",
-  tint: "#EAF5EE",
-  iconBg: "#E4F2EA",
-  text: "#222222",
-  text2: "#5A594F",
-  nav: "#4A4A44",
-  mute: "#8A8878",
-  ph: "#A19E8E",
-  border: "#ECEAE3",
-  borderBeige: "#E4E1D8",
-  borderCart: "#F2F0E9",
-  radioOff: "#C9C7BC",
+  greenD: "var(--sf-accent)",
+  lightGreen: "var(--sf-icon)",
+  beige: "var(--sf-beige)",
+  surf: "var(--sf-surf)",
+  tint: "var(--sf-tint)",
+  iconBg: "var(--sf-icon-bg)",
+  text: "var(--sf-text)",
+  text2: "var(--sf-text2)",
+  nav: "var(--sf-nav)",
+  mute: "var(--sf-mute)",
+  ph: "var(--sf-ph)",
+  border: "var(--sf-border)",
+  borderBeige: "var(--sf-border-beige)",
+  borderCart: "var(--sf-border-cart)",
+  radioOff: "var(--sf-radio-off)",
   wa: "#25D366",
   white: "#FFFFFF",
 };
-const FONT = "'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+const FONT = "var(--sf-font)";
 
 // Placeholder rayado para imágenes ausentes (mientras no haya foto real).
 const PH_BG = "repeating-linear-gradient(45deg,#F0ECE0 0 9px,#F7F4EB 9px 18px)";
@@ -237,9 +240,14 @@ export default function Storefront(props: {
   adoptionsBannerImageUrl: string;
   aiAssistant?: boolean;
   subscriptions?: boolean;
+  /** Estilo de la tienda (branding.theme); sin valor = "clasico". */
+  theme?: ThemeId;
 }) {
   const { tenant, primary, products, config } = props;
-  const G = primary; // verde de marca (config)
+  const G = primary; // color de acento de la marca (config)
+  const theme = storeTheme(props.theme);
+  // Variables CSS del estilo + el acento de la marca, en la raíz de la tienda.
+  const themeVars = { ...theme.vars, "--sf-accent": G } as React.CSSProperties;
 
   const [view, setView] = useState<View>("home");
   const [cart, setCart] = useState<Cart>({});
@@ -570,8 +578,8 @@ export default function Storefront(props: {
   const sel = products.find((p) => p.productId === selId) ?? products[0] ?? null;
 
   return (
-    <div style={{ fontFamily: FONT, color: C.text, background: C.white, minHeight: "100vh" }}>
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" />
+    <div className="sf-root" data-theme={theme.id} style={{ ...themeVars, fontFamily: FONT, color: C.text, background: "var(--sf-ground)", minHeight: "100vh" }}>
+      <link rel="stylesheet" href={theme.fontsHref} />
       {/* CSS fijo (sin datos de usuario). Va por __html: como texto hijo, React escapa el ">" de
           los selectores a "&gt;" en el HTML del servidor → no coincide con el cliente (error de
           hidratación) y esas reglas no se aplican en la primera carga. */}
@@ -585,6 +593,7 @@ export default function Storefront(props: {
         *{box-sizing:border-box;}
         img{max-width:100%;}
         .sf-img{display:block;}
+        ${theme.headCss ? `.sf-root h1,.sf-root h2,.sf-root h3{${theme.headCss}}` : ""}
         /* ── Responsive: tablet / nav a hamburguesa ── */
         @media (max-width:960px){
           .sf-nav{display:none !important;}
@@ -594,6 +603,10 @@ export default function Storefront(props: {
           .sf-hero{grid-template-columns:1fr !important;}
           .sf-hero>div:first-child{padding:34px 26px !important;}
           .sf-hero-art{min-height:280px !important;order:-1;}
+          .sf-hero-ov{min-height:400px !important;}
+          .sf-arch{max-width:300px !important;}
+          .sf-hero-ov-text{padding:28px 22px !important;}
+          .sf-hero-ov h1,.sf-hero h1{font-size:38px !important;}
           .sf-adopt{grid-template-columns:1fr !important;}
           .sf-adopt-art{min-height:220px !important;order:-1;}
           .sf-listwrap{grid-template-columns:1fr !important;}
@@ -677,6 +690,7 @@ export default function Storefront(props: {
         )}
         {view === "home" && (
           <HomeView
+            hero={theme.hero}
             G={G} products={products} categories={categories} config={config} threshold={threshold} content={props.content}
             combos={props.combos ?? []} onAddCombo={addComboToCart}
             heroImageUrl={props.heroImageUrl} adoptionsBannerImageUrl={props.adoptionsBannerImageUrl}
@@ -1001,10 +1015,10 @@ function Img({ src, alt, ratio, radius, seed, hint, w = 512, h = 512, fit = "cov
 
 // ── Botones reutilizables ────────────────────────────────────────────────────────
 function primaryBtn(G: string): React.CSSProperties {
-  return { background: G, color: C.white, border: "none", borderRadius: 10, padding: "14px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 9, justifyContent: "center", fontFamily: FONT };
+  return { background: G, color: C.white, border: "var(--sf-btn-border)", borderRadius: "var(--sf-r-btn)", boxShadow: "var(--sf-btn-shadow)", textTransform: "var(--sf-btn-transform)" as React.CSSProperties["textTransform"], padding: "14px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 9, justifyContent: "center", fontFamily: FONT };
 }
 function outlineBtn(G: string): React.CSSProperties {
-  return { background: C.white, color: G, border: `1.5px solid ${G}`, borderRadius: 10, padding: "14px 26px", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 9, justifyContent: "center", fontFamily: FONT };
+  return { background: C.white, color: G, border: `1.5px solid ${G}`, borderRadius: "var(--sf-r-btn)", boxShadow: "var(--sf-btn-shadow)", textTransform: "var(--sf-btn-transform)" as React.CSSProperties["textTransform"], padding: "14px 26px", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 9, justifyContent: "center", fontFamily: FONT };
 }
 const input: React.CSSProperties = { padding: "12px 14px", border: `1.5px solid ${C.border}`, borderRadius: 9, fontSize: 14, outline: "none", width: "100%", fontFamily: FONT, background: C.white, color: C.text };
 
@@ -1034,7 +1048,7 @@ function Header(props: {
     </>
   );
   return (
-    <header className="sf-header" style={{ position: "sticky", top: 0, zIndex: 40, background: C.white, borderBottom: `1px solid ${C.border}`, padding: "12px 24px", display: "flex", gap: 28, alignItems: "center" }}>
+    <header className="sf-header" style={{ position: "sticky", top: 0, zIndex: 40, background: "var(--sf-ground)", borderBottom: `1px solid ${C.border}`, padding: "12px 24px", display: "flex", gap: 28, alignItems: "center" }}>
       {/* Hamburguesa (solo mobile) */}
       <button className="sf-burger" onClick={() => setMenu((v) => !v)} aria-label="Menú" style={{ display: "none", border: "none", background: "transparent", cursor: "pointer", color: C.text, padding: 4 }}>
         <Menu size={24} strokeWidth={2} />
@@ -1057,7 +1071,7 @@ function Header(props: {
       {/* Derecha */}
       <div className="sf-right" style={{ display: "flex", gap: 16, alignItems: "center" }}>
         <div className="sf-search" style={{ display: "flex", alignItems: "center", gap: 8, background: C.surf, border: `1px solid ${C.border}`, borderRadius: 999, padding: "7px 14px" }}>
-          <Search size={16} strokeWidth={2} color={C.mute} aria-hidden />
+          <span style={{ color: C.mute, display: "inline-flex" }}><Search size={16} strokeWidth={2} aria-hidden /></span>
           <input value={props.query} onChange={(e) => props.onSearch(e.target.value)} placeholder="Buscar productos" style={{ border: "none", outline: "none", background: "transparent", fontSize: 13, width: 150, fontFamily: FONT, color: C.text }} />
         </div>
         <AccountMenu G={G} tenant={props.tenant} showPets={props.showPets} factors={props.factors} subscriptions={props.subscriptions} loyalty={props.loyalty} />
@@ -1106,9 +1120,9 @@ function ProductCard({ G, p, listRow, onOpen, onAdd }: { G: string; p: StoreProd
   const discount = onSale ? Math.round((1 - price / listPrice!) * 100) : 0;
   const sub = v.size;
   return (
-    <div className="sf-card" style={{ border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, background: C.white, display: "flex", flexDirection: "column", gap: 11 }}>
+    <div className="sf-card" style={{ border: "var(--sf-card-border)", borderRadius: "var(--sf-r-card)", boxShadow: "var(--sf-card-shadow)", padding: 14, background: C.white, display: "flex", flexDirection: "column", gap: 11 }}>
       <div className="sf-a" onClick={onOpen} style={{ position: "relative" }}>
-        <Img src={p.imageUrl} alt={p.name} ratio="1" radius={12} seed={p.productId} hint={p.category || p.name} />
+        <Img src={p.imageUrl} alt={p.name} ratio="1" radius="var(--sf-r-img)" seed={p.productId} hint={p.category || p.name} />
         {onSale && (
           <span style={{ position: "absolute", top: 10, right: 10, background: G, color: C.white, fontSize: 12, fontWeight: 700, borderRadius: 8, padding: "3px 9px", boxShadow: "0 2px 8px rgba(0,0,0,.12)" }}>−{discount}%</span>
         )}
@@ -1118,15 +1132,15 @@ function ProductCard({ G, p, listRow, onOpen, onAdd }: { G: string; p: StoreProd
         <span style={{ fontSize: 12, color: C.mute }}>{sub}{p.category ? ` · ${p.category}` : ""}</span>
       </div>
       <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: listRow ? 20 : 21, fontWeight: 700, color: G }}>{money(price)}</span>
+        <span style={{ fontSize: listRow ? 20 : 21, fontWeight: 700, color: "var(--sf-price)" }}>{money(price)}</span>
         {onSale && <span style={{ fontSize: 13, color: C.mute, textDecoration: "line-through" }}>{money(listPrice!)}</span>}
       </div>
       {listRow ? (
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
-          <button className="sf-btn" onClick={onAdd} style={{ background: G, color: C.white, border: "none", borderRadius: 9, padding: "10px 15px", fontSize: 12, fontWeight: 600, letterSpacing: ".04em", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: FONT }}><CartIcon size={15} />AGREGAR</button>
+          <button className="sf-btn" onClick={onAdd} style={{ background: G, color: C.white, border: "var(--sf-btn-border)", borderRadius: "var(--sf-r-btn)", boxShadow: "var(--sf-btn-shadow)", padding: "10px 15px", fontSize: 12, fontWeight: 600, letterSpacing: ".04em", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: FONT }}><CartIcon size={15} />AGREGAR</button>
         </div>
       ) : (
-        <button className="sf-btn" onClick={onAdd} style={{ background: G, color: C.white, border: "none", borderRadius: 9, padding: 11, fontSize: 12.5, fontWeight: 600, letterSpacing: ".04em", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: FONT }}><CartIcon size={15} />AGREGAR</button>
+        <button className="sf-btn" onClick={onAdd} style={{ background: G, color: C.white, border: "var(--sf-btn-border)", borderRadius: "var(--sf-r-btn)", boxShadow: "var(--sf-btn-shadow)", padding: 11, fontSize: 12.5, fontWeight: 600, letterSpacing: ".04em", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: FONT }}><CartIcon size={15} />AGREGAR</button>
       )}
     </div>
   );
@@ -1136,7 +1150,7 @@ function ProductCard({ G, p, listRow, onOpen, onAdd }: { G: string; p: StoreProd
 function SectionHead({ G, title, action, onAction }: { G: string; title: string; action?: string; onAction?: () => void }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 56, marginBottom: 22 }}>
-      <h2 style={{ margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: "-.01em", borderBottom: `3px solid ${G}`, paddingBottom: 8 }}>{title}</h2>
+      <h2 style={{ margin: 0, fontSize: 28, fontWeight: 700, letterSpacing: "-.01em", borderBottom: "var(--sf-sechead-border)", paddingBottom: 8 }}>{title}</h2>
       {action && <span className="sf-a" onClick={onAction} style={{ fontSize: 13.5, fontWeight: 600, color: G }}>{action}</span>}
     </div>
   );
@@ -1197,8 +1211,113 @@ function ComboCard({ combo, G, onAdd }: { combo: StoreCombo; G: string; onAdd: (
   );
 }
 
+// ── Portada: una variante por estilo (lib/store-themes.ts) ─────────────────────────
+function Hero({ variant, G, content, heroImageUrl, threshold, waLink, onSeeList }: {
+  variant: HeroVariant; G: string; content: StoreContent; heroImageUrl: string; threshold: number;
+  waLink: string | null; onSeeList: () => void;
+}) {
+  // Etiqueta corta: el primer beneficio del comercio (config) o el envío gratis.
+  const tag = content.perks[0]?.t || `Envío gratis desde ${money(threshold)}`;
+  const waBtn = waLink && <a className="sf-btn" href={waLink} target="_blank" rel="noopener noreferrer" style={{ ...primaryBtn(G), textDecoration: "none" }}><WaIcon size={17} />Hacé tu pedido por WhatsApp</a>;
+  const sub = content.heroSubtitle && <p style={{ fontSize: 17, color: C.text2, lineHeight: 1.6, marginTop: 18, maxWidth: 480 }}>{content.heroSubtitle}</p>;
+
+  if (variant === "arch") {
+    return (
+      <section className="sf-hero" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 40, alignItems: "center" }}>
+        <div style={{ padding: "24px 0" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase", color: G }}>{tag}</div>
+          <h1 style={{ margin: "14px 0 0", fontSize: 54, lineHeight: 1.05, letterSpacing: "-.02em", maxWidth: 540 }}>
+            {content.heroTitle} {content.heroHighlight && <span style={{ color: G, fontStyle: "italic" }}>{content.heroHighlight}</span>}
+          </h1>
+          {sub}
+          <div style={{ display: "flex", gap: 12, marginTop: 28, flexWrap: "wrap" }}>
+            {waBtn}
+            <button className="sf-btn" onClick={onSeeList} style={outlineBtn(G)}>Ver productos</button>
+          </div>
+        </div>
+        <div className="sf-hero-art" style={{ display: "flex", justifyContent: "center" }}>
+          <div className="sf-arch" style={{ position: "relative", width: "100%", maxWidth: 440, aspectRatio: "4 / 5", borderRadius: "220px 220px 10px 10px", overflow: "hidden", background: C.beige }}>
+            <HeroImg src={heroImageUrl} G={G} />
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (variant === "overlay") {
+    return (
+      <section className="sf-hero-ov" style={{ position: "relative", minHeight: 470, display: "flex", alignItems: "flex-end", background: "var(--sf-hero-bg)", borderRadius: "var(--sf-r-block)", overflow: "hidden" }}>
+        <div aria-hidden style={{ position: "absolute", inset: 0, opacity: 0.6 }}><HeroImg src={heroImageUrl} G={G} /></div>
+        <div className="sf-hero-ov-text" style={{ position: "relative", padding: "44px 46px", maxWidth: 680, color: C.white }}>
+          <span style={{ display: "inline-block", background: G, color: C.white, fontSize: 12.5, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", padding: "6px 10px" }}>{tag}</span>
+          <h1 style={{ margin: "16px 0 0", fontSize: 62, lineHeight: 0.98, color: C.white }}>
+            {content.heroTitle} {content.heroHighlight && <span style={{ color: C.white, boxShadow: `inset 0 -0.18em 0 ${G}` }}>{content.heroHighlight}</span>}
+          </h1>
+          {content.heroSubtitle && <p style={{ fontSize: 17, lineHeight: 1.55, marginTop: 16, maxWidth: 500, color: "rgba(255,255,255,.92)" }}>{content.heroSubtitle}</p>}
+          <div style={{ display: "flex", gap: 12, marginTop: 24, flexWrap: "wrap" }}>
+            {waBtn}
+            <button className="sf-btn" onClick={onSeeList} style={{ ...outlineBtn(G), color: C.text, border: "none" }}>Ver productos</button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (variant === "bubble") {
+    return (
+      <section className="sf-hero" style={{ background: "var(--sf-hero-bg)", border: `3px solid ${C.text}`, borderRadius: "var(--sf-r-block)", boxShadow: `8px 8px 0 ${C.text}`, display: "grid", gridTemplateColumns: "1.1fr .9fr", alignItems: "center", overflow: "hidden" }}>
+        <div style={{ padding: "48px 44px" }}>
+          <span style={{ display: "inline-block", background: C.white, border: `2px solid ${C.text}`, borderRadius: 999, padding: "6px 14px", fontWeight: 800, fontSize: 14, transform: "rotate(-2deg)" }}>{tag}</span>
+          <h1 style={{ margin: "18px 0 0", fontSize: 54, lineHeight: 1.02, maxWidth: 540 }}>
+            {content.heroTitle} {content.heroHighlight && <span style={{ color: G }}>{content.heroHighlight}</span>}
+          </h1>
+          {content.heroSubtitle && <p style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.55, marginTop: 16, maxWidth: 480 }}>{content.heroSubtitle}</p>}
+          <div style={{ display: "flex", gap: 12, marginTop: 26, flexWrap: "wrap" }}>
+            {waBtn}
+            <button className="sf-btn" onClick={onSeeList} style={{ ...outlineBtn(G), color: C.text, border: `2px solid ${C.text}` }}>Ver productos</button>
+          </div>
+        </div>
+        <div className="sf-hero-art" style={{ position: "relative", padding: 32, display: "flex", justifyContent: "center" }}>
+          <div style={{ position: "relative", width: "100%", maxWidth: 380, aspectRatio: "1 / 1", borderRadius: "50%", overflow: "hidden", border: `4px solid ${C.text}`, background: C.white }}>
+            <HeroImg src={heroImageUrl} G={G} />
+          </div>
+          <div style={{ position: "absolute", top: 18, right: 18, width: 116, height: 116, borderRadius: "50%", background: "#FF8FB1", color: C.text, border: `2px solid ${C.text}`, display: "grid", placeItems: "center", textAlign: "center", fontWeight: 800, fontSize: 14, lineHeight: 1.15, transform: "rotate(10deg)", padding: 10 }}>
+            Envío gratis desde {money(threshold)}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="sf-hero" style={{ background: "var(--sf-hero-bg)", borderRadius: "var(--sf-r-block)", padding: 0, display: "grid", gridTemplateColumns: "1fr 1fr", alignItems: "stretch", overflow: "hidden" }}>
+      <div style={{ padding: "52px 46px" }}>
+        <h1 style={{ margin: 0, fontSize: 44, fontWeight: 800, lineHeight: 1.08, letterSpacing: "-.02em", maxWidth: 460 }}>
+          {content.heroTitle} {content.heroHighlight && <span style={{ color: G }}>{content.heroHighlight}</span>}
+        </h1>
+        {content.heroSubtitle && <p style={{ fontSize: 16, color: C.text2, lineHeight: 1.6, marginTop: 18, maxWidth: 440 }}>{content.heroSubtitle}</p>}
+        <div style={{ display: "flex", gap: 12, marginTop: 28, flexWrap: "wrap" }}>
+          {waLink && <a className="sf-btn" href={waLink} target="_blank" rel="noopener noreferrer" style={{ ...primaryBtn(G), textDecoration: "none" }}><WaIcon size={17} />Hacé tu pedido por WhatsApp</a>}
+          <button className="sf-btn" onClick={onSeeList} style={outlineBtn(G)}>Ver productos</button>
+        </div>
+      </div>
+      {/* Imagen REAL del hero (URL desde config) + badge de envío gratis */}
+      <div className="sf-hero-art" style={{ position: "relative", minHeight: 320 }}>
+        <HeroImg src={heroImageUrl} G={G} />
+        <div style={{ position: "absolute", right: 22, bottom: 22, width: 128, height: 128, borderRadius: "50%", background: G, color: C.white, boxShadow: "0 10px 28px rgba(0,0,0,.22)", display: "grid", placeItems: "center", textAlign: "center", padding: 12 }}>
+          <span>
+            <span style={{ display: "block" }}><Truck size={20} strokeWidth={1.9} /></span>
+            <span style={{ display: "block", fontSize: 15, fontWeight: 800, marginTop: 2, lineHeight: 1 }}>ENVÍOS<br />GRATIS</span>
+            <span style={{ display: "block", fontSize: 8.5, opacity: .92, marginTop: 3 }}>en compras superiores<br />a {money(threshold)}</span>
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function HomeView(props: {
-  G: string; products: StoreProduct[]; categories: { name: string; count: number; imageUrl?: string }[]; config: StoreConfig; threshold: number; content: StoreContent;
+  G: string; hero: HeroVariant; products: StoreProduct[]; categories: { name: string; count: number; imageUrl?: string }[]; config: StoreConfig; threshold: number; content: StoreContent;
   combos: StoreCombo[]; onAddCombo: (c: StoreCombo) => void;
   heroImageUrl: string; adoptionsBannerImageUrl: string;
   adoptionsLabel: string; onAdoptions: () => void; comparatorEnabled: boolean; onComparar: () => void;
@@ -1212,33 +1331,10 @@ function HomeView(props: {
   const cats = props.categories.slice(0, 8);
   return (
     <>
-      {/* Hero */}
-      <section className="sf-hero" style={{ background: C.beige, borderRadius: 20, padding: 0, display: "grid", gridTemplateColumns: "1fr 1fr", alignItems: "stretch", overflow: "hidden" }}>
-        <div style={{ padding: "52px 46px" }}>
-          <h1 style={{ margin: 0, fontSize: 44, fontWeight: 800, lineHeight: 1.08, letterSpacing: "-.02em", maxWidth: 460 }}>
-            {content.heroTitle} {content.heroHighlight && <span style={{ color: G }}>{content.heroHighlight}</span>}
-          </h1>
-          {content.heroSubtitle && <p style={{ fontSize: 16, color: C.text2, lineHeight: 1.6, marginTop: 18, maxWidth: 440 }}>{content.heroSubtitle}</p>}
-          <div style={{ display: "flex", gap: 12, marginTop: 28, flexWrap: "wrap" }}>
-            {props.waLink && <a className="sf-btn" href={props.waLink} target="_blank" rel="noopener noreferrer" style={{ ...primaryBtn(G), textDecoration: "none" }}><WaIcon size={17} />Hacé tu pedido por WhatsApp</a>}
-            <button className="sf-btn" onClick={props.onSeeList} style={outlineBtn(G)}>Ver productos</button>
-          </div>
-        </div>
-        {/* Imagen REAL del hero (URL desde config) + badge de envío gratis */}
-        <div className="sf-hero-art" style={{ position: "relative", minHeight: 320 }}>
-          <HeroImg src={props.heroImageUrl} G={G} />
-          <div style={{ position: "absolute", right: 22, bottom: 22, width: 128, height: 128, borderRadius: "50%", background: G, color: C.white, boxShadow: "0 10px 28px rgba(0,0,0,.22)", display: "grid", placeItems: "center", textAlign: "center", padding: 12 }}>
-            <span>
-              <span style={{ display: "block" }}><Truck size={20} strokeWidth={1.9} /></span>
-              <span style={{ display: "block", fontSize: 15, fontWeight: 800, marginTop: 2, lineHeight: 1 }}>ENVÍOS<br />GRATIS</span>
-              <span style={{ display: "block", fontSize: 8.5, opacity: .92, marginTop: 3 }}>en compras superiores<br />a {money(props.threshold)}</span>
-            </span>
-          </div>
-        </div>
-      </section>
+      <Hero variant={props.hero} G={G} content={content} heroImageUrl={props.heroImageUrl} threshold={props.threshold} waLink={props.waLink} onSeeList={props.onSeeList} />
 
       {/* Beneficios (íconos lucide, verde, lineal) */}
-      <div className="sf-benefits" style={{ marginTop: 18, background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: "18px 24px", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 18 }}>
+      <div className="sf-benefits" style={{ marginTop: 18, background: C.white, border: "var(--sf-card-border)", borderRadius: "var(--sf-r-card)", boxShadow: "var(--sf-card-shadow)", padding: "18px 24px", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 18 }}>
         {benefits.map((b, i) => {
           const Ico = BENEFIT_ICONS[i % BENEFIT_ICONS.length]!;
           return (
@@ -1273,8 +1369,8 @@ function HomeView(props: {
           <div className="sf-cats" style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(8, cats.length)},1fr)`, gap: 16 }}>
             {cats.map((c) => (
               <div key={c.name} className="sf-a" onClick={() => props.onCategory(c.name)} style={{ textAlign: "center" }}>
-                <div style={{ background: C.beige, borderRadius: 16, padding: 10 }}>
-                  <Img src={c.imageUrl} alt={c.name} ratio="1" radius={12} seed={c.name} />
+                <div style={{ background: C.beige, borderRadius: "var(--sf-r-card)", padding: 10 }}>
+                  <Img src={c.imageUrl} alt={c.name} ratio="1" radius="var(--sf-r-img)" seed={c.name} />
                 </div>
                 <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 10, lineHeight: 1.25 }}>{c.name}</div>
               </div>
@@ -1293,7 +1389,7 @@ function HomeView(props: {
 
       {/* Banner de adopciones (imagen REAL desde config) */}
       {props.adoptionsLabel && (
-        <section className="sf-adopt" style={{ marginTop: 56, background: C.beige, borderRadius: 20, display: "grid", gridTemplateColumns: "1fr 1fr", alignItems: "stretch", overflow: "hidden" }}>
+        <section className="sf-adopt" style={{ marginTop: 56, background: C.beige, borderRadius: "var(--sf-r-block)", border: "var(--sf-card-border)", boxShadow: "var(--sf-card-shadow)", display: "grid", gridTemplateColumns: "1fr 1fr", alignItems: "stretch", overflow: "hidden" }}>
           <div style={{ padding: "40px 46px", display: "flex", gap: 22, alignItems: "center" }}>
             <span style={{ color: G, flexShrink: 0 }}><HeartHandshake size={58} strokeWidth={1.6} /></span>
             <div>
@@ -1312,7 +1408,7 @@ function HomeView(props: {
 
       {/* Comparador de alimentos */}
       {props.comparatorEnabled && (
-        <section style={{ marginTop: 22, background: C.tint, borderRadius: 20, padding: "34px 40px", display: "flex", gap: 22, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+        <section style={{ marginTop: 22, background: C.tint, borderRadius: "var(--sf-r-block)", border: "var(--sf-card-border)", boxShadow: "var(--sf-card-shadow)", padding: "34px 40px", display: "flex", gap: 22, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
             <span style={{ color: G, flexShrink: 0 }}><BarChart3 size={38} strokeWidth={1.8} /></span>
             <div>
@@ -2273,7 +2369,7 @@ function AccountMenu({ G, tenant, showPets, factors, subscriptions, loyalty }: {
   return (
     <span style={{ position: "relative" }}>
       <button onClick={() => setOpen((v) => !v)} aria-label="Cuenta" style={{ border: "none", background: "transparent", cursor: "pointer", padding: 0, display: "grid", placeItems: "center" }}>
-        <User size={22} strokeWidth={1.8} color={C.nav} aria-hidden />
+        <span style={{ color: C.nav, display: "inline-flex" }}><User size={22} strokeWidth={1.8} aria-hidden /></span>
       </button>
       {open && (
         <div style={{ position: "absolute", right: 0, top: 34, background: "white", color: C.text, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12, width: 240, zIndex: 45, boxShadow: "0 10px 30px rgba(0,0,0,.14)" }}>
@@ -2605,7 +2701,7 @@ function Footer({ G, tenant, legal, displayName, blurb, categories, onCategory, 
   const colTitle: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, color: "#5A594F", letterSpacing: ".07em", marginBottom: 12 };
   const link: React.CSSProperties = { fontSize: 13, color: C.mute, cursor: "pointer", marginBottom: 7 };
   return (
-    <footer className="sf-foot" style={{ background: C.beige, borderTop: `1px solid ${C.border}`, padding: "44px 24px" }}>
+    <footer className="sf-foot" style={{ background: C.beige, borderTop: `1px solid ${C.border}`, padding: "44px 24px 110px" }}>
       <div className="sf-footer" style={{ maxWidth: 1180, margin: "0 auto", display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", gap: 32 }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 700, color: G }}>{displayName.toUpperCase()}</div>

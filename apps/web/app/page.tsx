@@ -11,6 +11,7 @@ import Storefront, { type StoreProduct, type StoreConfig, type StoreCategory, ty
 export const dynamic = "force-dynamic"; // depende del tenant resuelto por request
 
 import { cssColor, cleanText } from "@/lib/config-text";
+import { isThemeId, storeTheme, STORE_THEMES } from "@/lib/store-themes";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return <main style={{ maxWidth: 760, margin: "0 auto", padding: 16 }}>{children}</main>;
@@ -32,7 +33,7 @@ const num = (v: unknown, fallback: number): number => {
   return Number.isFinite(n) ? n : fallback;
 };
 
-export default async function Home({ searchParams }: { searchParams: { tenant?: string } }) {
+export default async function Home({ searchParams }: { searchParams: { tenant?: string; estilo?: string } }) {
   let tenant;
   try {
     tenant = await resolveTenant(searchParams?.tenant ?? null);
@@ -77,6 +78,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       deliverySlots, deliveryDays, cutoffHour, auxilioWindow,
       loyaltyEnabled, loyaltySpend,
       legalBusinessName, legalTaxId, legalAddress, legalEmail,
+      themeId,
       catalog0,
     ] = await Promise.all([
       cfg<string>("branding.primaryColor"),
@@ -121,6 +123,7 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       cfg<string>("legal.taxId"),
       cfg<string>("legal.address"),
       cfg<string>("legal.email"),
+      cfg<string>("branding.theme"),
       db().withTenant(tenant.tenantId, async (tx) => {
         const merchants = await tx.query<{ id: string }>("select id from merchants order by created_at limit 1");
         const adoptions = await listAdoptions(tx);
@@ -230,11 +233,15 @@ export default async function Home({ searchParams }: { searchParams: { tenant?: 
       },
     };
 
+    // Vista previa de un estilo sin guardarlo (?estilo=barrio): usa también su color sugerido.
+    const previewTheme = isThemeId(searchParams?.estilo) ? STORE_THEMES[searchParams.estilo] : null;
+
     return (
       <Storefront
         tenant={tenant.slug}
         displayName={cleanText(displayName, "Pet Shop")}
-        primary={cssColor(primary)}
+        primary={previewTheme ? previewTheme.accent : cssColor(primary)}
+        theme={previewTheme ? previewTheme.id : storeTheme(cleanText(themeId, "")).id}
         logoUrl={safeUrl(logoUrl)}
         bannerImageUrl={safeUrl(bannerImageUrl)}
         whatsapp={(whatsapp ?? "").replace(/[^0-9]/g, "")}

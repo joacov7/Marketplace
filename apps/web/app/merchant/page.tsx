@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { WEEKDAYS } from "@/lib/delivery-schedule";
 import { ALERT_POLL_MS, createChime, newIds, systemNotify, titleWithCount } from "@/lib/order-alerts";
+import { STORE_THEMES, THEME_IDS, storeTheme, type ThemeId } from "@/lib/store-themes";
 
 /** Icono de especie con lucide (Dog / Cat / PawPrint). Nunca emoji. */
 function PetSpeciesIcon({ species, size = 15 }: { species: string; size?: number }) {
@@ -39,6 +40,7 @@ interface Theme {
   "branding.layout": string;
   "branding.font": string;
   "branding.buttonShape": string;
+  "branding.theme": string;
   "contact.whatsapp": string;
   "contact.whatsappMessage": string;
   "storefront.promoText": string;
@@ -49,13 +51,6 @@ interface Theme {
   "storefront.heroSubtitle": string;
   "storefront.footerBlurb": string;
 }
-const FONT_STACKS: Record<string, string> = {
-  system: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
-  serif: "Georgia, 'Times New Roman', serif",
-  rounded: "'Nunito', 'Quicksand', 'Segoe UI', sans-serif",
-  mono: "'JetBrains Mono', Menlo, Consolas, monospace",
-};
-const BUTTON_RADIUS: Record<string, string> = { rounded: "10px", pill: "999px", square: "4px" };
 
 const NEXT: Record<string, string[]> = {
   pending: ["preparing", "rejected"], preparing: ["ready", "cancelled"], ready: ["in_transit", "cancelled"],
@@ -2371,6 +2366,7 @@ const DEFAULT_THEME: Theme = {
   "branding.layout": "grid",
   "branding.font": "system",
   "branding.buttonShape": "rounded",
+  "branding.theme": "clasico",
   "contact.whatsapp": "",
   "contact.whatsappMessage": "¡Hola! Quiero hacer un pedido.",
   "storefront.promoText": "",
@@ -2463,10 +2459,18 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
 
   const primary = theme["branding.primaryColor"] || "#2563eb";
   const secondary = theme["branding.secondaryColor"] || "#1e293b";
-  const banner = theme["branding.bannerImageUrl"];
+
+  function pickStyle(id: ThemeId) {
+    const t = STORE_THEMES[id];
+    set("branding.theme", id);
+    // Cada estilo trae su color; se aplica el sugerido (después se puede cambiar abajo).
+    set("branding.primaryColor", t.accent);
+  }
 
   return (
-    <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+    <>
+    <StylePicker tenant={tenant} current={theme["branding.theme"]} onPick={pickStyle} />
+    <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", marginTop: 16 }}>
       <div style={card}>
         <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>Diseño de la tienda</h3>
         {loading && <p style={{ color: "#888" }}>Cargando…</p>}
@@ -2499,29 +2503,6 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
           <ImageField tenant={tenant} token={token} value={theme["storefront.adoptionsBannerImageUrl"]} onChange={(url) => set("storefront.adoptionsBannerImageUrl", url)} onError={onError} />
           <UrlPreview url={theme["storefront.adoptionsBannerImageUrl"]} ratio="1080 / 540" />
         </Field>
-        <Field label="Disposición del catálogo">
-          <select value={theme["branding.layout"]} onChange={(e) => set("branding.layout", e.target.value)} style={{ ...input, width: "100%" }}>
-            <option value="grid">Grilla</option>
-            <option value="list">Lista</option>
-          </select>
-        </Field>
-        <div style={{ display: "flex", gap: 12 }}>
-          <Field label="Tipografía">
-            <select value={theme["branding.font"]} onChange={(e) => set("branding.font", e.target.value)} style={{ ...input, width: "100%" }}>
-              <option value="system">Sistema</option>
-              <option value="serif">Serif (elegante)</option>
-              <option value="rounded">Redondeada</option>
-              <option value="mono">Monoespaciada</option>
-            </select>
-          </Field>
-          <Field label="Forma de botones">
-            <select value={theme["branding.buttonShape"]} onChange={(e) => set("branding.buttonShape", e.target.value)} style={{ ...input, width: "100%" }}>
-              <option value="rounded">Redondeados</option>
-              <option value="pill">Píldora</option>
-              <option value="square">Rectos</option>
-            </select>
-          </Field>
-        </div>
         <div style={{ borderTop: "1px solid #eee", margin: "6px 0 12px" }} />
         <Field label="WhatsApp (solo números, con código de país)" hint="Ej: 5493444123456. Vacío = sin botón de WhatsApp.">
           <input value={theme["contact.whatsapp"]} onChange={(e) => set("contact.whatsapp", e.target.value.replace(/[^0-9]/g, ""))} placeholder="5493444123456" inputMode="numeric" style={{ ...input, width: "100%", boxSizing: "border-box" }} />
@@ -2564,48 +2545,9 @@ function DesignTab({ tenant, token, onError }: { tenant: string | null; token: s
         </div>
       </div>
 
-      <div style={{ ...card, fontFamily: FONT_STACKS[theme["branding.font"]] ?? FONT_STACKS.system }}>
-        {theme["branding.font"] === "rounded" && <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" />}
-        {theme["branding.font"] === "mono" && <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" />}
-        <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>Vista previa</h3>
-        <div
-          style={{
-            color: "white", padding: "20px 16px", borderRadius: 12,
-            background: banner
-              ? `linear-gradient(135deg, ${primary}dd, ${secondary}cc), url("${banner}") center/cover`
-              : `linear-gradient(135deg, ${primary}, ${secondary})`,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {theme["branding.logoUrl"] && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={theme["branding.logoUrl"]} alt="logo" style={{ height: 40, width: 40, objectFit: "contain", borderRadius: 8, background: "rgba(255,255,255,.9)", padding: 4 }} />
-            )}
-            <strong style={{ fontSize: 20 }}>{theme["branding.displayName"] || "Pet Shop"}</strong>
-          </div>
-          <p style={{ margin: "6px 0 0", opacity: 0.9 }}>{theme["branding.bannerText"] || "¿Qué necesitás para tu mascota?"}</p>
-        </div>
-        {theme["storefront.promoText"] && (
-          <div style={{ marginTop: 8, background: primary, color: "white", fontSize: 11.5, fontWeight: 600, textAlign: "center", padding: "6px 8px", borderRadius: 8 }}>{theme["storefront.promoText"]}</div>
-        )}
-        {(theme["storefront.heroTitle"] || theme["storefront.heroHighlight"] || theme["storefront.heroSubtitle"]) && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: INK, lineHeight: 1.15 }}>
-              {theme["storefront.heroTitle"]} {theme["storefront.heroHighlight"] && <span style={{ color: primary }}>{theme["storefront.heroHighlight"]}</span>}
-            </div>
-            {theme["storefront.heroSubtitle"] && <div style={{ fontSize: 13, color: MUT, marginTop: 4 }}>{theme["storefront.heroSubtitle"]}</div>}
-          </div>
-        )}
-        <div style={{ marginTop: 12, display: "grid", gap: 8, gridTemplateColumns: theme["branding.layout"] === "list" ? "1fr" : "1fr 1fr" }}>
-          {["Alimento premium", "Juguete"].map((n) => (
-            <div key={n} style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, display: "flex", flexDirection: theme["branding.layout"] === "list" ? "row" : "column", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 14 }}>{n}</span>
-              <button style={{ ...btn, background: primary, borderRadius: BUTTON_RADIUS[theme["branding.buttonShape"]] ?? "10px", alignSelf: theme["branding.layout"] === "list" ? "center" : "stretch" }}>Agregar</button>
-            </div>
-          ))}
-        </div>
-      </div>
+      <StylePreview theme={theme} />
     </div>
+    </>
   );
 }
 
@@ -2975,6 +2917,72 @@ function WithdrawalRequestsCard({ tenant, token, onError }: { tenant: string | n
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// ── Estilo de la tienda (branding.theme) ─────────────────────────────────────────
+/** Selector de estilos con mini vista previa de cada uno y link para verlo en la tienda real. */
+function StylePicker({ tenant, current, onPick }: { tenant: string | null; current: string; onPick: (id: ThemeId) => void }) {
+  return (
+    <div style={card}>
+      {THEME_IDS.map((id) => <link key={id} rel="stylesheet" href={STORE_THEMES[id].fontsHref} />)}
+      <h3 style={{ margin: "0 0 4px", fontSize: 15 }}>Estilo de la tienda</h3>
+      <p style={{ fontSize: 13, color: MUT, margin: "0 0 12px" }}>Cambia la letra, los colores, las formas y la portada de toda la tienda. Al elegir uno se aplica su color sugerido (lo podés cambiar abajo). Tocá <b>Guardar diseño</b> para publicarlo.</p>
+      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))" }}>
+        {THEME_IDS.map((id) => {
+          const t = STORE_THEMES[id];
+          const on = storeTheme(current).id === id;
+          const v = t.vars;
+          return (
+            <div key={id} style={{ border: `2px solid ${on ? A : LINE}`, borderRadius: 12, padding: 8, background: on ? A_SOFT : "white", display: "flex", flexDirection: "column", gap: 8 }}>
+              <button type="button" onClick={() => onPick(id)} aria-pressed={on} style={{ border: "none", padding: 0, background: "transparent", cursor: "pointer", textAlign: "left" }}>
+                <div style={{ background: v["--sf-ground"], borderRadius: 8, padding: 12, border: `1px solid ${LINE}`, fontFamily: v["--sf-font"], color: v["--sf-text"] }}>
+                  <div style={{ fontFamily: t.headCss.match(/font-family:([^!;]+)/)?.[1] ?? v["--sf-font"], fontWeight: 800, fontSize: 19, lineHeight: 1.1, textTransform: id === "moderno" ? "uppercase" : "none" }}>Pet Shop</div>
+                  <div style={{ fontSize: 11.5, color: v["--sf-mute"], margin: "4px 0 10px" }}>Alimento · Snacks</div>
+                  <div style={{ background: v["--sf-white"], border: v["--sf-card-border"], borderRadius: v["--sf-r-card"], boxShadow: v["--sf-card-shadow"], padding: 8, display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>$25.900</span>
+                    <span style={{ background: t.accent, color: "white", borderRadius: v["--sf-r-btn"], border: v["--sf-btn-border"], padding: "4px 10px", fontSize: 11, fontWeight: 700, textTransform: id === "moderno" ? "uppercase" : "none" }}>Agregar</span>
+                  </div>
+                </div>
+              </button>
+              <div style={{ fontWeight: 700, fontSize: 14, color: INK }}>{t.name}{on ? " ✓" : ""}</div>
+              <div style={{ fontSize: 12, color: MUT, lineHeight: 1.4 }}>{t.tagline}</div>
+              <a href={`/?tenant=${encodeURIComponent(tenant ?? "")}&estilo=${id}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5, fontWeight: 600, color: A }}>Ver en mi tienda ↗</a>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Vista previa del encabezado con el estilo, el color y los textos elegidos (antes de guardar). */
+function StylePreview({ theme }: { theme: Theme }) {
+  const t = storeTheme(theme["branding.theme"]);
+  const v = t.vars;
+  const primary = /^#[0-9a-fA-F]{6}$/.test(theme["branding.primaryColor"]) ? theme["branding.primaryColor"] : t.accent;
+  const head = t.headCss.match(/font-family:([^!;]+)/)?.[1] ?? v["--sf-font"];
+  return (
+    <div style={{ ...card, background: v["--sf-ground"], color: v["--sf-text"], fontFamily: v["--sf-font"], alignSelf: "start", position: "sticky", top: 80 }}>
+      <h3 style={{ margin: "0 0 12px", fontSize: 15, fontFamily: "system-ui, sans-serif", color: INK }}>Vista previa · {t.name}</h3>
+      {theme["storefront.promoText"] && (
+        <div style={{ background: primary, color: "white", fontSize: 11.5, fontWeight: 600, textAlign: "center", padding: "6px 8px", borderRadius: 6 }}>{theme["storefront.promoText"]}</div>
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "12px 0" }}>
+        {theme["branding.logoUrl"] && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={theme["branding.logoUrl"]} alt="logo" style={{ height: 36, width: 36, objectFit: "contain" }} />
+        )}
+        <strong style={{ fontFamily: head, fontSize: 20, color: primary }}>{theme["branding.displayName"] || "Pet Shop"}</strong>
+      </div>
+      <div style={{ background: v["--sf-hero-bg"] === "transparent" ? "transparent" : v["--sf-hero-bg"], borderRadius: v["--sf-r-block"], border: t.hero === "bubble" ? `3px solid ${v["--sf-text"]}` : "none", padding: 16, color: t.hero === "overlay" ? "white" : v["--sf-text"] }}>
+        <div style={{ fontFamily: head, fontSize: 22, fontWeight: 800, lineHeight: 1.1, textTransform: t.id === "moderno" ? "uppercase" : "none" }}>
+          {theme["storefront.heroTitle"] || "Todo lo que tu mascota necesita,"} <span style={{ color: t.hero === "overlay" ? "white" : primary }}>{theme["storefront.heroHighlight"]}</span>
+        </div>
+        {theme["storefront.heroSubtitle"] && <div style={{ fontSize: 13, marginTop: 6, opacity: 0.85 }}>{theme["storefront.heroSubtitle"]}</div>}
+        <span style={{ display: "inline-block", marginTop: 12, background: primary, color: "white", borderRadius: v["--sf-r-btn"], border: v["--sf-btn-border"], boxShadow: v["--sf-btn-shadow"], padding: "8px 14px", fontSize: 13, fontWeight: 700, textTransform: t.id === "moderno" ? "uppercase" : "none" }}>Ver productos</span>
+      </div>
     </div>
   );
 }

@@ -16,6 +16,7 @@ const THEME_KEYS = [
   "branding.layout",
   "branding.font",
   "branding.buttonShape",
+  "branding.theme",
   "contact.whatsapp",
   "contact.whatsappMessage",
   "storefront.promoText",

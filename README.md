@@ -20,7 +20,7 @@ propio (Pet Shop Gualeguay) y evoluciona a marketplace / White Label / multi-ver
 Fases F1–F5 completas y la app operando el ciclo completo de un pet shop: tienda PWA,
 checkout, panel del comercio, reparto, seguimiento, suscripciones y Vendedor IA.
 
-**259 tests en verde** (+6 gated a Postgres real) · lint con límites de módulos · typecheck · `next build`
+**270 tests en verde** (+6 gated a Postgres real) · lint con límites de módulos · typecheck · `next build`
 — todo corre en CI (`.github/workflows/ci.yml`).
 
 ### Core de plataforma (`@commerce/platform`)
