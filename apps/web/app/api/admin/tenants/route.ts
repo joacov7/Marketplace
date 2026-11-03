@@ -54,7 +54,8 @@ export async function POST(req: Request) {
       text: "Fuiste invitado como propietario de " + body.name + ". Creá tu contraseña: " + link.toString() + "\nEl enlace vence en 72 horas y solo puede usarse una vez.",
       html: "<p>Fuiste invitado como propietario de <b>" + body.name + "</b>.</p><p><a href=\"" + link.toString() + "\">Activar mi cuenta</a></p><p>El enlace vence en 72 horas y solo puede usarse una vez.</p>" });
   } catch (error) {
-    return NextResponse.json({ ...res.value, ownerInvitationSent: false, error: error instanceof Error ? error.message : "No se pudo enviar la invitación" }, { status: 502 });
+    console.error("[auth-email] initial owner invitation failed:", error instanceof Error ? error.message : "unknown");
+    return NextResponse.json({ ...res.value, ownerInvitationSent: false, error: "El comercio fue creado, pero no se pudo enviar la invitación. Reintentá desde la operación de invitación del propietario." }, { status: 502 });
   }
   return NextResponse.json({ ...res.value, ownerInvitationSent: true }, { status: 201 });
 }
