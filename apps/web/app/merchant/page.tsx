@@ -2928,27 +2928,57 @@ function StylePicker({ tenant, current, onPick }: { tenant: string | null; curre
     <div style={card}>
       {THEME_IDS.map((id) => <link key={id} rel="stylesheet" href={STORE_THEMES[id].fontsHref} />)}
       <h3 style={{ margin: "0 0 4px", fontSize: 15 }}>Estilo de la tienda</h3>
-      <p style={{ fontSize: 13, color: MUT, margin: "0 0 12px" }}>Cambia la letra, los colores, las formas y la portada de toda la tienda. Al elegir uno se aplica su color sugerido (lo podés cambiar abajo). Tocá <b>Guardar diseño</b> para publicarlo.</p>
-      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))" }}>
+      <p style={{ fontSize: 13, color: MUT, margin: "0 0 12px" }}>
+        Elegí una identidad visual para tu vidriera. Cada opción cambia tipografía, paleta, formas y portada; los textos, el logo y las fotos de tu comercio se mantienen. Después podés ajustar los colores y guardar el diseño.
+      </p>
+      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))" }}>
         {THEME_IDS.map((id) => {
           const t = STORE_THEMES[id];
           const on = storeTheme(current).id === id;
           const v = t.vars;
+          const headingFont = t.headCss.match(/font-family:([^!;]+)/)?.[1] ?? v["--sf-font"];
+          const heroRadius = t.hero === "arch" ? "70px 70px 12px 12px" : t.hero === "bubble" ? "24px" : v["--sf-r-block"];
+          const heroBackground = t.hero === "overlay" ? v["--sf-text"] : (v["--sf-hero-bg"] === "transparent" ? v["--sf-ground"] : v["--sf-hero-bg"]);
           return (
-            <div key={id} style={{ border: `2px solid ${on ? A : LINE}`, borderRadius: 12, padding: 8, background: on ? A_SOFT : "white", display: "flex", flexDirection: "column", gap: 8 }}>
-              <button type="button" onClick={() => onPick(id)} aria-pressed={on} style={{ border: "none", padding: 0, background: "transparent", cursor: "pointer", textAlign: "left" }}>
-                <div style={{ background: v["--sf-ground"], borderRadius: 8, padding: 12, border: `1px solid ${LINE}`, fontFamily: v["--sf-font"], color: v["--sf-text"] }}>
-                  <div style={{ fontFamily: t.headCss.match(/font-family:([^!;]+)/)?.[1] ?? v["--sf-font"], fontWeight: 800, fontSize: 19, lineHeight: 1.1, textTransform: id === "moderno" ? "uppercase" : "none" }}>Pet Shop</div>
-                  <div style={{ fontSize: 11.5, color: v["--sf-mute"], margin: "4px 0 10px" }}>Alimento · Snacks</div>
-                  <div style={{ background: v["--sf-white"], border: v["--sf-card-border"], borderRadius: v["--sf-r-card"], boxShadow: v["--sf-card-shadow"], padding: 8, display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontWeight: 700, fontSize: 13 }}>$25.900</span>
-                    <span style={{ background: t.accent, color: "white", borderRadius: v["--sf-r-btn"], border: v["--sf-btn-border"], padding: "4px 10px", fontSize: 11, fontWeight: 700, textTransform: id === "moderno" ? "uppercase" : "none" }}>Agregar</span>
+            <div key={id} style={{ border: `2px solid ${on ? A : LINE}`, borderRadius: 12, padding: 9, background: on ? A_SOFT : "white", display: "flex", flexDirection: "column", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => onPick(id)}
+                aria-pressed={on}
+                aria-label={`Elegir estilo ${t.name}${on ? ", seleccionado" : ""}`}
+                style={{ border: "none", padding: 0, background: "transparent", cursor: "pointer", textAlign: "left", color: "inherit", width: "100%" }}
+              >
+                <div style={{ background: v["--sf-ground"], borderRadius: 8, padding: 10, border: `1px solid ${v["--sf-border"]}`, fontFamily: v["--sf-font"], color: v["--sf-text"] }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 9 }}>
+                    <strong style={{ fontFamily: headingFont, fontSize: 14, lineHeight: 1.1 }}>Pet Shop</strong>
+                    <span style={{ width: 8, height: 8, borderRadius: 99, background: t.accent, flex: "0 0 auto" }} />
+                  </div>
+                  <div style={{ background: heroBackground, color: t.hero === "overlay" ? "white" : v["--sf-text"], borderRadius: heroRadius, border: t.hero === "bubble" ? `2px solid ${v["--sf-text"]}` : "none", padding: "10px 9px", minHeight: 58 }}>
+                    <div style={{ fontFamily: headingFont, fontSize: 14, fontWeight: 800, lineHeight: 1.05, textTransform: id === "moderno" ? "uppercase" : "none" }}>Todo para tu mascota</div>
+                    <div style={{ fontSize: 9.5, opacity: 0.8, marginTop: 4 }}>Comprá fácil y recibí en casa</div>
+                    <span style={{ display: "inline-block", marginTop: 7, background: t.accent, color: "#fff", borderRadius: v["--sf-r-btn"], border: v["--sf-btn-border"], boxShadow: v["--sf-btn-shadow"], padding: "4px 8px", fontSize: 9, fontWeight: 700 }}>Ver productos</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, background: v["--sf-white"], border: v["--sf-card-border"], borderRadius: v["--sf-r-card"], boxShadow: v["--sf-card-shadow"], padding: 7, marginTop: 7 }}>
+                    <div>
+                      <div style={{ fontSize: 9, color: v["--sf-mute"] }}>Alimento · 3 kg</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, marginTop: 2 }}>$25.900</div>
+                    </div>
+                    <span style={{ background: t.accent, color: "white", borderRadius: v["--sf-r-btn"], border: v["--sf-btn-border"], boxShadow: v["--sf-btn-shadow"], padding: "4px 7px", fontSize: 9, fontWeight: 700 }}>Agregar</span>
                   </div>
                 </div>
               </button>
-              <div style={{ fontWeight: 700, fontSize: 14, color: INK }}>{t.name}{on ? " ✓" : ""}</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: INK }}>{t.name}</div>
+                {on && <span style={{ fontSize: 10.5, fontWeight: 700, color: A, background: A_SOFT, borderRadius: 99, padding: "3px 7px" }}>Seleccionado</span>}
+              </div>
+              <div style={{ display: "flex", gap: 5, alignItems: "center" }} aria-label={`Paleta de ${t.name}`}>
+                {[v["--sf-ground"], t.accent, v["--sf-text"], v["--sf-icon-bg"]].map((color, index) => (
+                  <span key={index} aria-hidden="true" style={{ width: 15, height: 15, borderRadius: 99, background: color, border: "1px solid rgba(0,0,0,.12)" }} />
+                ))}
+                <span style={{ fontSize: 10.5, color: MUT, marginLeft: 2 }}>{t.hero === "split" ? "Portada dividida" : t.hero === "arch" ? "Portada en arco" : t.hero === "overlay" ? "Portada superpuesta" : "Portada ilustrada"}</span>
+              </div>
               <div style={{ fontSize: 12, color: MUT, lineHeight: 1.4 }}>{t.tagline}</div>
-              <a href={`/?tenant=${encodeURIComponent(tenant ?? "")}&estilo=${id}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5, fontWeight: 600, color: A }}>Ver en mi tienda ↗</a>
+              <a href={`/?tenant=${encodeURIComponent(tenant ?? "")}&estilo=${id}`} target="_blank" rel="noopener noreferrer" aria-label={`Abrir vista de la tienda con estilo ${t.name} en una pestaña nueva`} style={{ fontSize: 12.5, fontWeight: 600, color: A }}>Ver en mi tienda ↗</a>
             </div>
           );
         })}
