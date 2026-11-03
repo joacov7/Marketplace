@@ -380,7 +380,7 @@ export default function MerchantPanel() {
     } catch (e) { setError(String(e)); } finally { setMigrating(false); }
   }
 
-  if (!token && !authed) {
+  if (!authed) {
     const linkStyle: React.CSSProperties = { background: "transparent", border: "none", color: A, cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: 0 };
     return (
       <div style={{ background: `radial-gradient(1200px 500px at 50% -10%, ${A_SOFT}, ${SURF})`, minHeight: "100vh", display: "grid", placeItems: "center", padding: 16, fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", color: INK }}>
@@ -1472,6 +1472,22 @@ function AccountAccessCard({ tenant, token, onError }: { tenant: string | null; 
   useEffect(() => {
     fetch("/api/merchant/auth/me").then((r) => r.json()).then((d) => setMe(d?.authed ? d.email : null)).catch(() => {});
   }, []);
+
+  async function post(url: string, body: Record<string, string>, okMsg: string, withToken: boolean) {
+    setBusy(true);
+    onError(null);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(withToken ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(body),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { onError(d.error ?? "No se pudo guardar."); return false; }
+      onError(okMsg);
+      return true;
+    } finally { setBusy(false); }
+  }
 
   const field: React.CSSProperties = { ...input, width: "100%", boxSizing: "border-box" };
   return (
