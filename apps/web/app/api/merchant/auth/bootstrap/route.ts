@@ -1,20 +1,28 @@
 import { NextResponse } from "next/server";
 import { createUser } from "@commerce/platform";
 import { db } from "@/lib/db";
-import { panelTenant } from "@/lib/auth";
+import { panelTenant, requireServiceToken } from "@/lib/auth";
+import { readSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Crea un usuario administrador del panel. Protegido por `panelTenant` (código maestro o
  * sesión de admin de ESTE comercio):
- * el PRIMER admin se crea con el código de acceso maestro (todavía no hay sesión); después, un
- * admin logueado puede sumar más usuarios. Rol "owner" a nivel tenant.
+ * el primer admin se crea con el código maestro; luego, solo el código maestro o el dueño actual
+ * puede crear otra cuenta con rol "owner" a nivel tenant.
  */
 export async function POST(req: Request) {
   const panel = await panelTenant(req);
   if ("error" in panel) return panel.error;
   const { tenant } = panel;
+  const session = readSession();
+  const isTenantOwner = session?.tenantId === tenant.tenantId && session.roles.some(
+    (role) => role.role === "owner" && role.scopeType === "tenant" && role.scopeId === tenant.tenantId,
+  );
+  if (!requireServiceToken("ADMIN_API_TOKEN") && !isTenantOwner) {
+    return NextResponse.json({ error: "Solo el dueño del comercio puede crear otro acceso de administrador." }, { status: 403 });
+  }
 
   let body: { email?: string; password?: string };
   try {

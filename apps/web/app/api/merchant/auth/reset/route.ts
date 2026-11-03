@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { resetPanelPassword, clearFailures, PANEL_PASSWORD_MIN } from "@commerce/platform";
 import { db } from "@/lib/db";
 import { resolveTenant } from "@/lib/tenant";
-import { requireAdminForTenant, PANEL_ROLES } from "@/lib/auth";
+import { requireAdminForTenant, requireServiceToken, PANEL_ROLES } from "@/lib/auth";
+import { readSession } from "@/lib/session";
 import { loginRules } from "@/lib/abuse";
 import { clientIp } from "@/lib/rate-limit";
 
@@ -18,7 +19,17 @@ export async function POST(req: Request) {
   const tenant = await resolveTenant(new URL(req.url).searchParams.get("tenant"));
   if (!tenant) return NextResponse.json({ error: "tenant_not_resolved" }, { status: 400 });
   if (!requireAdminForTenant(tenant.tenantId)) {
-    return NextResponse.json({ error: "El código de acceso no es correcto." }, { status: 401 });
+    return NextResponse.json({ error: "No tenés autorización para recuperar el acceso." }, { status: 401 });
+  }
+
+  // Restablecer claves sin conocer la anterior es una operación de alto impacto:
+  // solo el código maestro o el dueño de ESTE tenant puede ejecutarla.
+  const session = readSession();
+  const isTenantOwner = session?.tenantId === tenant.tenantId && session.roles.some(
+    (role) => role.role === "owner" && role.scopeType === "tenant" && role.scopeId === tenant.tenantId,
+  );
+  if (!requireServiceToken("ADMIN_API_TOKEN") && !isTenantOwner) {
+    return NextResponse.json({ error: "Solo el dueño del comercio puede restablecer contraseñas." }, { status: 403 });
   }
 
   let body: { email?: string; newPassword?: string };
