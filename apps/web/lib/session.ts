@@ -3,9 +3,12 @@ import { signSession, verifySession, SESSION_TTL_MS, type SessionPayload, type A
 
 const COOKIE = "session";
 
-/** Secreto de firma de sesión. Cae a ADMIN_API_TOKEN para no exigir otra env var. */
+/** Secreto independiente para firmar cookies de sesión. */
 function secret(): string {
-  return process.env.SESSION_SECRET || process.env.ADMIN_API_TOKEN || "";
+  const value = process.env.SESSION_SECRET;
+  if (value && value.length >= 32) return value;
+  if (process.env.NODE_ENV === "production") throw new Error("SESSION_SECRET debe estar configurado y tener al menos 32 caracteres");
+  return "local-development-session-secret-not-for-production";
 }
 
 export function buildSessionToken(user: AuthUser, tenantId: string): string {
