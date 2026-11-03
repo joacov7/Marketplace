@@ -3,10 +3,14 @@ import { createUser } from "@commerce/platform";
 import { db } from "@/lib/db";
 import { consumeEmailToken } from "@/lib/auth-email";
 import { buildSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/session";
+import { rateLimited, rule } from "@/lib/abuse";
+import { clientIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  const limited = await rateLimited([rule(`invitation-accept:ip:${clientIp(req)}`, { limit: 10, windowMs: 60 * 60_000 })], "Demasiados intentos. Esperá un rato y volvé a intentar.");
+  if (limited) return limited;
   let body: { token?: string; password?: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "invalid_json" }, { status: 400 }); }
   if (!body.token || !body.password || body.password.length < 8) {
