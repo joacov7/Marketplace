@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
+import type { Db } from "@commerce/platform";
 
 export type EmailTokenPurpose = "owner_invitation" | "staff_invitation" | "password_reset";
 
@@ -30,9 +31,9 @@ export async function createEmailToken(input: EmailTokenInput): Promise<string> 
 }
 
 /** Consume atómicamente un token válido. Una segunda solicitud no puede reutilizarlo. */
-export async function consumeEmailToken(token: string, purpose: EmailTokenPurpose) {
+export async function consumeEmailToken(tx: Db, token: string, purpose: EmailTokenPurpose) {
   if (!token || token.length > 200) return null;
-  const rows = await db().query<{
+  const rows = await tx.query<{
     tenant_id: string; email: string; role: string | null; scope_type: string | null; scope_id: string | null;
   }>(
     `update auth_email_tokens
