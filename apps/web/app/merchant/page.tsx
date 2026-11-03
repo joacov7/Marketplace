@@ -199,10 +199,20 @@ export default function MerchantPanel() {
   const [migrating, setMigrating] = useState(false);
   const [authed, setAuthed] = useState(false);          // sesión de admin activa (cookie)
   const [li, setLi] = useState({ email: "", pass: "" }); // formulario de login
-  const [loginMode, setLoginMode] = useState<"login" | "first" | "code" | "reset">("login");
+  const [loginMode, setLoginMode] = useState<"login" | "forgot" | "invite" | "reset">("login");
+  const [emailToken, setEmailToken] = useState("");
 
   useEffect(() => {
-    setTenant(new URLSearchParams(window.location.search).get("tenant"));
+    const params = new URLSearchParams(window.location.search);
+    setTenant(params.get("tenant"));
+    const mode = params.get("mode");
+    const incomingToken = params.get("token") ?? "";
+    if ((mode === "invite" || mode === "reset") && incomingToken) {
+      setEmailToken(incomingToken);
+      setLoginMode(mode);
+      params.delete("token");
+      window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+    }
     try { setToken(localStorage.getItem("merchantToken") ?? ""); } catch { /* */ }
     // ¿Ya hay una sesión de admin abierta? (login por usuario, cookie httpOnly)
     fetch("/api/merchant/auth/me").then((r) => r.json()).then((d) => { if (d?.authed) setAuthed(true); }).catch(() => {});
@@ -329,33 +339,28 @@ export default function MerchantPanel() {
     setAuthed(true);
   }
 
-  /** Primera vez: crea el usuario admin usando el código de acceso maestro y entra. */
-  async function bootstrapAndLogin() {
+  async function requestPasswordReset() {
     setError(null);
-    if (!tokenInput.trim()) { setError("Pegá tu código de acceso actual para crear el usuario."); return; }
-    if (li.pass.length < 8) { setError("La contraseña debe tener al menos 8 caracteres."); return; }
-    const res = await fetch(`/api/merchant/auth/bootstrap${q()}`, {
-      method: "POST", headers: { authorization: `Bearer ${tokenInput.trim()}`, "content-type": "application/json" }, body: JSON.stringify({ email: li.email.trim(), password: li.pass }),
+    const res = await fetch(`/api/merchant/auth/password-reset/request${q()}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: li.email.trim() }),
     });
     const d = await res.json().catch(() => ({}));
-    if (!res.ok) { setError(d.error ?? "No se pudo crear el usuario."); return; }
-    await login();
+    if (!res.ok) { setError(d.error ?? "No se pudo solicitar el enlace."); return; }
+    setError("Si el email pertenece a una cuenta del panel, recibirás un enlace para recuperar el acceso.");
   }
 
-  /** Olvidé mi contraseña: la restablece con el código maestro y entra con la nueva. */
-  async function resetAndLogin() {
+  async function completeEmailAccess() {
     setError(null);
-    if (!li.email.trim()) { setError("Escribí el email de tu usuario del panel."); return; }
-    if (li.pass.length < 8) { setError("La contraseña nueva debe tener al menos 8 caracteres."); return; }
-    if (!tokenInput.trim()) { setError("Pegá el código de acceso (código maestro)."); return; }
-    const res = await fetch(`/api/merchant/auth/reset${q()}`, {
-      method: "POST", headers: { authorization: `Bearer ${tokenInput.trim()}`, "content-type": "application/json" },
-      body: JSON.stringify({ email: li.email.trim(), newPassword: li.pass }),
-    });
+    if (li.pass.length < 8) { setError("La contraseña debe tener al menos 8 caracteres."); return; }
+    const endpoint = loginMode === "invite" ? "/api/merchant/auth/invitation/accept" : "/api/merchant/auth/password-reset/confirm";
+    const payload = loginMode === "invite" ? { token: emailToken, password: li.pass } : { token: emailToken, newPassword: li.pass };
+    const res = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
     const d = await res.json().catch(() => ({}));
-    if (!res.ok) { setError(d.error ?? "No se pudo restablecer la contraseña."); return; }
-    setTokenInput("");
-    await login();
+    if (!res.ok) { setError(d.error ?? "No se pudo completar la operación."); return; }
+    setEmailToken("");
+    setLi({ email: "", pass: "" });
+    window.history.replaceState({}, "", window.location.pathname + (tenant ? `?tenant=${encodeURIComponent(tenant)}` : ""));
+    setAuthed(true);
   }
 
   /** Corre las migraciones pendientes y siembra categorías + catálogo demo del tenant
@@ -391,38 +396,20 @@ export default function MerchantPanel() {
             <input value={li.email} onChange={(e) => setLi({ ...li, email: e.target.value })} placeholder="Email" type="email" autoComplete="username" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, marginBottom: 8 }} />
             <input value={li.pass} onChange={(e) => setLi({ ...li, pass: e.target.value })} onKeyDown={(e) => e.key === "Enter" && login()} placeholder="Contraseña" type="password" autoComplete="current-password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12 }} />
             <button onClick={login} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>Entrar</button>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
-              <button onClick={() => { setError(null); setLoginMode("first"); }} style={linkStyle}>Primera vez: crear mi acceso</button>
-              <button onClick={() => { setError(null); setLoginMode("code"); }} style={linkStyle}>Usar código</button>
-              <button onClick={() => { setError(null); setLoginMode("reset"); }} style={linkStyle}>¿Olvidaste tu contraseña?</button>
-            </div>
+            <div style={{ textAlign: "center", marginTop: 14 }}><button onClick={() => { setError(null); setLoginMode("forgot"); }} style={linkStyle}>¿Olvidaste tu contraseña?</button></div>
           </>)}
 
-          {loginMode === "first" && (<>
-            <p style={{ color: MUT, fontSize: 13, margin: "0 0 12px", textAlign: "center", lineHeight: 1.5 }}>Creá tu usuario con el <b>código de acceso</b> actual. Lo hacés una sola vez.</p>
-            <input value={li.email} onChange={(e) => setLi({ ...li, email: e.target.value })} placeholder="Tu email" type="email" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, marginBottom: 8 }} />
-            <input value={li.pass} onChange={(e) => setLi({ ...li, pass: e.target.value })} placeholder="Contraseña nueva (mín. 8)" type="password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, marginBottom: 8 }} />
-            <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} placeholder="Código de acceso actual" type="password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12 }} />
-            <button onClick={bootstrapAndLogin} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>Crear y entrar</button>
+          {loginMode === "forgot" && (<>
+            <p style={{ color: MUT, fontSize: 13, margin: "0 0 12px", textAlign: "center" }}>Te enviaremos un enlace de recuperación a tu correo.</p>
+            <input value={li.email} onChange={(e) => setLi({ ...li, email: e.target.value })} placeholder="Email de tu usuario" type="email" autoComplete="username" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12 }} />
+            <button onClick={requestPasswordReset} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>Enviar enlace</button>
             <div style={{ textAlign: "center", marginTop: 14 }}><button onClick={() => { setError(null); setLoginMode("login"); }} style={linkStyle}>← Volver</button></div>
           </>)}
 
-          {loginMode === "reset" && (<>
-            <p style={{ color: MUT, fontSize: 13, margin: "0 0 12px", textAlign: "center", lineHeight: 1.5 }}>
-              Elegí una contraseña nueva. Para confirmar que sos vos, pegá el <b>código de acceso</b> (está en Vercel → Settings → Environment Variables → <code>ADMIN_API_TOKEN</code>).
-            </p>
-            <input value={li.email} onChange={(e) => setLi({ ...li, email: e.target.value })} placeholder="Email de tu usuario" type="email" autoComplete="username" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, marginBottom: 8 }} />
-            <input value={li.pass} onChange={(e) => setLi({ ...li, pass: e.target.value })} placeholder="Contraseña nueva (mín. 8)" type="password" autoComplete="new-password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, marginBottom: 8 }} />
-            <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && resetAndLogin()} placeholder="Código de acceso" type="password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12 }} />
-            <button onClick={resetAndLogin} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>Cambiar contraseña y entrar</button>
-            <div style={{ textAlign: "center", marginTop: 14 }}><button onClick={() => { setError(null); setLoginMode("login"); }} style={linkStyle}>← Volver</button></div>
-          </>)}
-
-          {loginMode === "code" && (<>
-            <p style={{ color: MUT, fontSize: 13, margin: "0 0 12px", textAlign: "center", lineHeight: 1.5 }}>Acceso de respaldo con el código maestro.</p>
-            <input value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveToken()} placeholder="Código de acceso" type="password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12, textAlign: "center" }} />
-            <button onClick={saveToken} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>Entrar con código</button>
-            <div style={{ textAlign: "center", marginTop: 14 }}><button onClick={() => { setError(null); setLoginMode("login"); }} style={linkStyle}>← Volver</button></div>
+          {(loginMode === "invite" || loginMode === "reset") && (<>
+            <p style={{ color: MUT, fontSize: 13, margin: "0 0 12px", textAlign: "center" }}>{loginMode === "invite" ? "Creá tu contraseña para activar el acceso al comercio." : "Elegí una contraseña nueva para recuperar tu acceso."}</p>
+            <input value={li.pass} onChange={(e) => setLi({ ...li, pass: e.target.value })} onKeyDown={(e) => e.key === "Enter" && completeEmailAccess()} placeholder="Contraseña nueva (mín. 8)" type="password" autoComplete="new-password" style={{ ...input, width: "100%", boxSizing: "border-box", padding: 12 }} />
+            <button onClick={completeEmailAccess} className="mbtn" style={{ ...btn, width: "100%", padding: 13, marginTop: 10 }}>{loginMode === "invite" ? "Activar cuenta" : "Cambiar contraseña"}</button>
           </>)}
         </div>
       </div>
