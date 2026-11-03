@@ -9,5 +9,6 @@ export const dynamic = "force-dynamic";
 export function GET() {
   const s = readSession();
   const admin = hasAdminRole(s);
-  return NextResponse.json({ authed: admin, email: admin ? s!.email : null });
+  const isOwner = admin && s!.roles.some((role) => role.role === "owner" && role.scopeType === "tenant" && role.scopeId === s!.tenantId);
+  return NextResponse.json({ authed: admin, email: admin ? s!.email : null, isOwner });
 }
