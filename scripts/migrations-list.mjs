@@ -29,4 +29,5 @@ export const MIGRATION_FILES = [
   ["0023_checkout_idempotency", "packages/modules/src/orders/migrations/0023_checkout_idempotency.sql"],
   ["0024_loyalty", "packages/modules/src/loyalty/migrations/0024_loyalty.sql"],
   ["0025_withdrawal_requests", "packages/modules/src/orders/migrations/0025_withdrawal_requests.sql"],
+  ["0026_auth_email_tokens", "packages/platform/src/db/migrations/0026_auth_email_tokens.sql"],
 ];
