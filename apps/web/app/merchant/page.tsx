@@ -1466,29 +1466,12 @@ function AccountAccessCard({ tenant, token, onError }: { tenant: string | null; 
   const [me, setMe] = useState<string | null>(null);
   const [cur, setCur] = useState("");
   const [next, setNext] = useState("");
-  const [rEmail, setREmail] = useState("");
-  const [rPass, setRPass] = useState("");
   const [busy, setBusy] = useState(false);
   const qs = `?tenant=${encodeURIComponent(tenant ?? "")}`;
 
   useEffect(() => {
     fetch("/api/merchant/auth/me").then((r) => r.json()).then((d) => setMe(d?.authed ? d.email : null)).catch(() => {});
   }, []);
-
-  async function post(url: string, body: Record<string, string>, okMsg: string, withToken: boolean) {
-    setBusy(true);
-    onError(null);
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...(withToken ? { authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(body),
-    });
-    setBusy(false);
-    const d = await res.json().catch(() => ({}));
-    if (!res.ok) { onError(d.error ?? "No se pudo guardar."); return false; }
-    onError(okMsg);
-    return true;
-  }
 
   const field: React.CSSProperties = { ...input, width: "100%", boxSizing: "border-box" };
   return (
@@ -1508,21 +1491,10 @@ function AccountAccessCard({ tenant, token, onError }: { tenant: string | null; 
         </div>
       ) : (
         <p style={{ fontSize: 12.5, color: MUT, margin: "0 0 14px" }}>
-          Entraste con el código maestro. Para tener usuario y contraseña, salí y usá <b>“Primera vez: crear mi acceso”</b>.
+          Esta sesión no tiene un usuario identificado. Cerrá sesión e ingresá con tu email y contraseña.
         </p>
       )}
-      <details style={{ fontSize: 12.5, color: MUT }}>
-        <summary style={{ cursor: "pointer", fontWeight: 600, color: INK }}>Restablecer la contraseña de un usuario del panel</summary>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginTop: 8 }} className="mform-grid">
-          <input type="email" placeholder="Email del usuario" value={rEmail} onChange={(e) => setREmail(e.target.value)} style={field} />
-          <input type="password" autoComplete="new-password" placeholder="Contraseña nueva (mín. 8)" value={rPass} onChange={(e) => setRPass(e.target.value)} style={field} />
-          <button className="mbtn" style={{ ...btnGhost, opacity: rEmail && rPass.length >= 8 && !busy ? 1 : 0.5 }} disabled={!rEmail || rPass.length < 8 || busy}
-            onClick={async () => { if (await post(`/api/merchant/auth/reset${qs}`, { email: rEmail, newPassword: rPass }, `✓ Contraseña restablecida para ${rEmail}.`, true)) { setREmail(""); setRPass(""); } }}>
-            Restablecer
-          </button>
-        </div>
-        <div style={{ marginTop: 6 }}>Pasale la contraseña nueva a esa persona por un canal privado. No aplica a cuentas de clientes de la tienda.</div>
-      </details>
+      <p style={{ fontSize: 12.5, color: MUT, margin: 0 }}>Para recuperar el acceso de otra persona, el propietario debe enviarle una invitación por email.</p>
     </div>
   );
 }
