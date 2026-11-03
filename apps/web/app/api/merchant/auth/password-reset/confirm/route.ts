@@ -15,14 +15,20 @@ export async function POST(req: Request) {
   if (!body.token || !body.newPassword || body.newPassword.length < 8) {
     return NextResponse.json({ error: "El enlace o la contraseña no son válidos." }, { status: 400 });
   }
-  const outcome = await db().tx(async (tx) => {
-    const grant = await consumeEmailToken(tx, body.token!, "password_reset");
-    if (!grant) return { grant: null, ok: false };
-    await tx.query("select set_config('app.tenant_id', $1, true)", [grant.tenant_id]);
-    const result = await resetPanelPassword(tx, { email: grant.email, newPassword: body.newPassword!, adminRoles: PANEL_ROLES });
-    return { grant, ok: result.ok };
-  });
-  if (!outcome.grant || !outcome.ok) return NextResponse.json({ error: "El enlace venció, ya fue utilizado o no se pudo actualizar la contraseña. Solicitá uno nuevo." }, { status: 400 });
+  let outcome: { grant: { tenant_id: string; email: string }; ok: true } | null = null;
+  try {
+    outcome = await db().tx(async (tx) => {
+      const grant = await consumeEmailToken(tx, body.token!, "password_reset");
+      if (!grant) return null;
+      await tx.query("select set_config('app.tenant_id', $1, true)", [grant.tenant_id]);
+      const result = await resetPanelPassword(tx, { email: grant.email, newPassword: body.newPassword!, adminRoles: PANEL_ROLES });
+      if (!result.ok) throw new Error("password_reset_failed");
+      return { grant, ok: true as const };
+    });
+  } catch (error) {
+    console.error("[auth-email] password reset transaction failed:", error instanceof Error ? error.message : "unknown");
+  }
+  if (!outcome) return NextResponse.json({ error: "El enlace venció, ya fue utilizado o no se pudo actualizar la contraseña. Solicitá uno nuevo." }, { status: 400 });
   const grant = outcome.grant;
 
   const keys = loginRules(grant.tenant_id, clientIp(req), grant.email)
