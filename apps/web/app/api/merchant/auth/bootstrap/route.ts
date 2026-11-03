@@ -9,8 +9,8 @@ export const dynamic = "force-dynamic";
 /**
  * Crea un usuario administrador del panel. Protegido por `panelTenant` (código maestro o
  * sesión de admin de ESTE comercio):
- * el PRIMER admin se crea con el código de acceso maestro (todavía no hay sesión); después, un
- * solo el código maestro o el dueño actual puede crear otra cuenta owner. Rol "owner" a nivel tenant.
+ * el primer admin se crea con el código maestro; luego, solo el código maestro o el dueño actual
+ * puede crear otra cuenta con rol "owner" a nivel tenant.
  */
 export async function POST(req: Request) {
   const panel = await panelTenant(req);
