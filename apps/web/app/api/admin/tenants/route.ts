@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
-  if (!body.slug || !body.name || !body.region?.slug || !body.ownerEmail || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(body.ownerEmail.trim())) {
+  if (!body.slug || !body.name || !body.region?.slug || !body.ownerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.ownerEmail.trim())) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
 
