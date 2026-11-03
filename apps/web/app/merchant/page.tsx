@@ -1464,13 +1464,16 @@ function SettingsTab({ tenant, token, onError }: { tenant: string | null; token:
 // ── Tu acceso: cambiar mi contraseña / restablecer la de otro usuario del panel ────────
 function AccountAccessCard({ tenant, token, onError }: { tenant: string | null; token: string; onError: (s: string | null) => void }) {
   const [me, setMe] = useState<string | null>(null);
+  const [isOwner, setIsOwner] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("admin");
   const [cur, setCur] = useState("");
   const [next, setNext] = useState("");
   const [busy, setBusy] = useState(false);
   const qs = `?tenant=${encodeURIComponent(tenant ?? "")}`;
 
   useEffect(() => {
-    fetch("/api/merchant/auth/me").then((r) => r.json()).then((d) => setMe(d?.authed ? d.email : null)).catch(() => {});
+    fetch("/api/merchant/auth/me").then((r) => r.json()).then((d) => { setMe(d?.authed ? d.email : null); setIsOwner(Boolean(d?.isOwner)); }).catch(() => {});
   }, []);
 
   async function post(url: string, body: Record<string, string>, okMsg: string, withToken: boolean) {
@@ -1486,6 +1489,21 @@ function AccountAccessCard({ tenant, token, onError }: { tenant: string | null; 
       if (!res.ok) { onError(d.error ?? "No se pudo guardar."); return false; }
       onError(okMsg);
       return true;
+    } finally { setBusy(false); }
+  }
+
+  async function sendInvitation() {
+    setBusy(true);
+    onError(null);
+    try {
+      const res = await fetch("/api/merchant/auth/invitation/send" + qs, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { onError(d.error ?? "No se pudo enviar la invitación."); return; }
+      setInviteEmail("");
+      onError("✓ Invitación enviada por email.");
     } finally { setBusy(false); }
   }
 
@@ -1510,7 +1528,21 @@ function AccountAccessCard({ tenant, token, onError }: { tenant: string | null; 
           Esta sesión no tiene un usuario identificado. Cerrá sesión e ingresá con tu email y contraseña.
         </p>
       )}
-      <p style={{ fontSize: 12.5, color: MUT, margin: 0 }}>Para recuperar el acceso de otra persona, el propietario debe enviarle una invitación por email.</p>
+      {isOwner && (
+        <div style={{ borderTop: `1px solid ${LINE}`, paddingTop: 12, marginTop: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Invitar a una persona al panel</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="Email de la persona" style={{ ...field, flex: "1 1 190px" }} />
+            <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} style={{ ...field, width: 150 }}>
+              <option value="admin">Administrador</option>
+              <option value="merchant_admin">Operador</option>
+            </select>
+            <button className="mbtn" style={{ ...btn, opacity: inviteEmail.includes("@") && !busy ? 1 : 0.5 }} disabled={!inviteEmail.includes("@") || busy} onClick={sendInvitation}>Enviar invitación</button>
+          </div>
+          <div style={{ fontSize: 12, color: MUT, marginTop: 6 }}>La persona recibirá un enlace válido por 72 horas para crear su contraseña.</div>
+        </div>
+      )}
+      {!isOwner && <p style={{ fontSize: 12.5, color: MUT, margin: 0 }}>Para invitar a otra persona al panel, contactá al propietario del comercio.</p>}
     </div>
   );
 }
