@@ -42,12 +42,10 @@ export function requireServiceToken(envVar: "ADMIN_API_TOKEN" | "CRON_SECRET"): 
 }
 
 /**
- * Acceso a UN comercio desde el panel: el código maestro, o una sesión de admin DE ESE MISMO
- * comercio. Una sesión de admin de otro comercio no alcanza (antes sí: se podía operar otro
- * comercio cambiando `?tenant=`).
+ * Acceso a UN comercio desde el panel: exclusivamente una sesión de admin DE ESE MISMO
+ * comercio. ADMIN_API_TOKEN queda reservado para operaciones internas de plataforma.
  */
 export function requireAdminForTenant(tenantId: string): boolean {
-  if (requireServiceToken("ADMIN_API_TOKEN")) return true;
   const session = readSession();
   return hasAdminRole(session) && session!.tenantId === tenantId;
 }
